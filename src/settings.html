@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Настройки</title>
+    <style>
+        :root {
+            --bg-color: #282c34;
+            --primary-color: #3e4452;
+            --text-color: #abb2bf;
+            --border-color: #4b5263;
+            --accent-color: #61afef;
+        }
+        body.light-theme {
+            --bg-color: #fafafa;
+            --primary-color: #e4e6eb;
+            --text-color: #1c1e21;
+            --border-color: #d1d5db;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            user-select: none;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 40px);
+        }
+        h2 {
+            margin-top: 0;
+        }
+        .content {
+            flex-grow: 1;
+        }
+        .setting {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        label {
+            margin-right: 15px;
+            min-width: 100px;
+        }
+        select, input[type="range"], input[type="text"], input[type="password"] {
+            background-color: var(--primary-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 5px;
+            flex-grow: 1;
+        }
+        #font-size-slider-wrapper {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+        }
+        #font-size-slider {
+            margin-right: 10px;
+        }
+        .settings-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+        .action-button {
+            background-color: var(--primary-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px 15px;
+            cursor: pointer;
+        }
+        .action-button:hover {
+            background-color: var(--border-color);
+        }
+        .action-button.primary {
+            background-color: var(--accent-color);
+            border-color: var(--accent-color);
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h2>Настройки</h2>
+
+        <div class="setting">
+            <label for="theme-select">Тема</label>
+            <select id="theme-select">
+                <option value="dark">Темная</option>
+                <option value="light">Светлая</option>
+            </select>
+        </div>
+
+        <div class="setting">
+            <label for="font-family-select">Шрифт</label>
+            <select id="font-family-select">
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Verdana, sans-serif">Verdana</option>
+                <option value="'Courier New', monospace">Courier New</option>
+                <option value="'Times New Roman', serif">Times New Roman</option>
+                <option value="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">System UI</option>
+            </select>
+        </div>
+        
+        <div class="setting">
+            <label for="font-size-slider">Размер шрифта</label>
+            <div id="font-size-slider-wrapper">
+                <input type="range" id="font-size-slider" min="10" max="24" step="1">
+                <span id="font-size-value">16px</span>
+            </div>
+        </div>
+
+            <div class="setting">
+                <label for="opacity-slider">Прозрачность</label>
+                <input type="range" id="opacity-slider" min="0.2" max="1.0" step="0.05">
+            </div>
+        
+            <div class="settings-actions">
+                <button class="action-button" id="cancel-settings-btn">Отмена</button>
+                <button class="action-button primary" id="save-settings-btn">Сохранить</button>
+            </div>
+        
+            <script>
+                const themeSelect = document.getElementById('theme-select');
+                const fontFamilySelect = document.getElementById('font-family-select');
+                const opacitySlider = document.getElementById('opacity-slider');
+                const fontSizeSlider = document.getElementById('font-size-slider');
+                const fontSizeValue = document.getElementById('font-size-value');
+                const saveSettingsBtn = document.getElementById('save-settings-btn');
+                const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+        
+                let currentSettings = {};
+        
+                // --- Real-time preview listeners ---
+                themeSelect.addEventListener('change', (e) => {
+                    currentSettings.theme = e.target.value;
+                    window.settingsApi.send('update-setting', { key: 'theme', value: e.target.value });
+                    applyTheme(e.target.value); // Apply theme to settings window itself
+                });
+                
+                fontFamilySelect.addEventListener('change', (e) => {
+                    currentSettings.fontFamily = e.target.value;
+                    window.settingsApi.send('update-setting', { key: 'fontFamily', value: e.target.value });
+                });
+        
+                fontSizeSlider.addEventListener('input', (e) => {
+                    const size = parseInt(e.target.value);
+                    currentSettings.fontSize = size;
+                    fontSizeValue.textContent = `${size}px`;
+                    window.settingsApi.send('update-setting', { key: 'fontSize', value: size });
+                });
+        
+                opacitySlider.addEventListener('input', (e) => {
+                    currentSettings.opacity = parseFloat(e.target.value);
+                    window.settingsApi.send('update-setting', { key: 'opacity', value: parseFloat(e.target.value) });
+                });
+                
+                // --- Save and Cancel ---
+                saveSettingsBtn.addEventListener('click', () => {
+                    window.settingsApi.send('save-all-settings', currentSettings);
+                });
+        
+                cancelSettingsBtn.addEventListener('click', () => {
+                    window.settingsApi.send('close-settings-window');
+                });
+        
+                // --- Load Initial Settings ---
+                function applyTheme(theme) {
+                    if (theme === 'light') {
+                        document.body.classList.add('light-theme');
+                    } else {
+                        document.body.classList.remove('light-theme');
+                    }
+                }
+        
+                window.settingsApi.receive('settings-loaded', (settings) => {
+                    currentSettings = { ...settings };
+                    themeSelect.value = settings.theme || 'dark';
+                    fontFamilySelect.value = settings.fontFamily || 'Arial, sans-serif';
+                    opacitySlider.value = settings.opacity || 0.8;
+                    fontSizeSlider.value = settings.fontSize || 16;
+                    fontSizeValue.textContent = `${settings.fontSize || 16}px`;
+                    applyTheme(settings.theme); // Apply theme to settings window itself
+                });
+                
+                window.settingsApi.send('get-settings');
+            </script></body>
+

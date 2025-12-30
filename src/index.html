@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Tray Translator</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        :root {
+            --bg-color: #282c34;
+            --primary-color: #3e4452;
+            --secondary-color: #333842;
+            --text-color: #abb2bf;
+            --border-color: #4b5263;
+            --accent-color: #61afef;
+            --record-color: #e06c75;
+            --main-font-family: 'Arial', sans-serif;
+            --main-font-size: 16px;
+        }
+
+        body.light-theme {
+            --bg-color: #fafafa;
+            --primary-color: #e4e6eb;
+            --secondary-color: #ffffff;
+            --text-color: #1c1e21;
+            --border-color: #d1d5db;
+        }
+
+        body {
+            font-family: var(--main-font-family);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            user-select: none;
+        }
+
+        .title-bar {
+            -webkit-app-region: drag;
+            height: 32px;
+            background-color: var(--primary-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 5px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+        }
+
+        .title-bar-button {
+            -webkit-app-region: no-drag;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .title-bar-button:hover {
+            background-color: var(--border-color);
+        }
+
+        .main-content {
+            padding-top: 32px;
+            flex-grow: 1;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .history-container {
+            padding: 15px;
+        }
+
+        .history-entry {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--primary-color);
+        }
+
+        .entry-header {
+            font-size: 0.8em;
+            color: var(--text-color);
+            opacity: 0.6;
+            margin-bottom: 8px;
+        }
+
+        .original-text {
+            font-size: var(--main-font-size);
+            margin-bottom: 10px;
+            user-select: text; /* Allow selecting text */
+            word-break: break-word; /* Break long words */
+            overflow-wrap: break-word; /* For modern browsers */
+        }
+        
+        .translated-text {
+            font-family: var(--main-font-family); /* Inherit font family */
+            font-size: calc(var(--main-font-size) * 0.9); /* Relative font size */
+            color: var(--accent-color);
+            padding-left: 10px;
+            border-left: 2px solid var(--accent-color);
+            user-select: text; /* Allow selecting text */
+            word-break: break-word; /* Break long words */
+            overflow-wrap: break-word; /* For modern browsers */
+        }
+
+        .scroll-buttons {
+            position: absolute; /* Positioned relative to main-content */
+            bottom: 20px;    /* 20px from the bottom of main-content */
+            right: 20px;     /* 20px from the right of main-content */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 1000;
+            opacity: 0.7;
+            transition: opacity 0.2s ease;
+        }
+
+        .scroll-buttons:hover {
+            opacity: 1; /* Fully opaque on hover */
+        }
+
+        .scroll-button {
+            background-color: var(--secondary-color); /* Button background */
+            border: none;
+            border-radius: 50%; /* Circular buttons */
+            width: 30px;      /* Button size (40px - 25% = 30px) */
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+            transition: background-color 0.2s ease;
+            -webkit-app-region: no-drag; /* Ensure buttons are clickable in Electron */
+        }
+
+        .scroll-button:hover {
+            background-color: var(--primary-color); /* Darker on hover */
+        }
+
+        .scroll-button svg {
+            color: var(--text-color); /* Icon color */
+            width: 18px;      /* Icon size (24px - 25% = 18px) */
+            height: 18px;
+        }
+
+        .controls {
+            position: relative; /* Needed for absolute positioning of the canvas */
+            padding: 10px 15px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-button {
+            background: var(--primary-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 5px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 1.2em;
+        }
+        .control-button:hover {
+            background-color: var(--border-color);
+        }
+        .control-button:active {
+            transform: translateY(1px);
+            background-color: var(--secondary-color);
+        }
+        .control-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+        #record-btn { color: var(--record-color); }
+        .hidden { display: none; }
+        
+        #main-controls { flex-grow: 1; display: flex; gap: 10px; }
+
+
+        
+        .dropdown-menu {
+            position: fixed;
+            top: 32px;
+            left: 5px;
+            background-color: var(--secondary-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            z-index: 101;
+            -webkit-app-region: no-drag;
+        }
+        .dropdown-menu-item {
+            padding: 10px 15px;
+            cursor: pointer;
+        }
+        .dropdown-menu-item:hover {
+            background-color: var(--primary-color);
+        }
+
+    </style>
+</head>
+<body>
+    <div class="title-bar">
+        <div>
+            <div class="title-bar-button" id="menu-btn">&#9776;</div>
+        </div>
+        <div style="display: flex;">
+            <div class="title-bar-button" id="minimize-btn" style="font-size: 10px;">&#128469;</div>
+            <div class="title-bar-button" id="close-btn">&#10005;</div>
+        </div>
+    </div>
+    
+    <div id="app-menu" class="dropdown-menu hidden">
+        <div class="dropdown-menu-item" id="settings-btn">Настройки</div>
+        <div class="dropdown-menu-item" id="save-all-btn">Сохранить весь текст</div>
+        <div class="dropdown-menu-item" id="clear-all-btn">Очистить историю</div>
+        <div class="dropdown-menu-item" id="exit-btn">Выход</div>
+    </div>
+
+    <div class="main-content" id="main-content">
+        <div class="history-container">
+            <!-- Entries will be added here -->
+        </div>
+        <!-- Old scroll buttons removed -->
+        <div class="scroll-buttons">
+            <button id="scroll-up" class="scroll-button">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                </svg>
+            </button>
+            <button id="scroll-down" class="scroll-button">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="translate-bar" class="controls hidden" style="padding-top: 10px; border-top: 1px solid var(--accent-color);">
+        <label for="lang-select" style="font-size: 0.9em;">Перевести на:</label>
+        <select id="lang-select" style="flex-grow: 1; background: var(--primary-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 5px;">
+            <option value="en">English</option>
+            <option value="zh">Chinese</option>
+            <option value="es">Spanish</option>
+            <option value="de">German</option>
+            <option value="fr">French</option>
+            <option value="ja">Japanese</option>
+        </select>
+        <button class="control-button" id="translate-go-btn">Go</button>
+    </div>
+
+    <div class="controls">
+        <div id="main-controls">
+            <button class="control-button" id="record-btn" title="Запись">&#128308;</button> <!-- Red Circle -->
+            <button class="control-button hidden" id="stop-btn" title="Стоп">&#9209;</button> <!-- Square -->
+            <button class="control-button" id="save-audio-btn" title="Сохранить аудио" disabled>&#128190;</button> <!-- Floppy Disk -->
+            <button class="control-button" id="save-audio-text-btn" title="Сохранить аудио и текст" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
+            <button class="control-button" id="translate-btn" title="Перевести" disabled>Перевести</button>
+        </div>
+        <button class="control-button" id="copy-btn" title="Копировать">&#128203;</button> <!-- Clipboard -->
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const closeBtn = document.getElementById('close-btn');
+        const minimizeBtn = document.getElementById('minimize-btn');
+        const menuBtn = document.getElementById('menu-btn');
+        const exitBtn = document.getElementById('exit-btn');
+        const appMenu = document.getElementById('app-menu');
+        const recordBtn = document.getElementById('record-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const saveAudioBtn = document.getElementById('save-audio-btn');
+        const saveAudioTextBtn = document.getElementById('save-audio-text-btn');
+        const translateBtn = document.getElementById('translate-btn');
+        const mainContent = document.getElementById('main-content');
+        const scrollUpBtn = document.getElementById('scroll-up');
+        const scrollDownBtn = document.getElementById('scroll-down');
+        const copyBtn = document.getElementById('copy-btn');
+        const saveAllBtn = document.getElementById('save-all-btn');
+        const settingsBtn = document.getElementById('settings-btn');
+        const clearAllBtn = document.getElementById('clear-all-btn');
+        const historyContainer = document.querySelector('.history-container');
+        const translateBar = document.getElementById('translate-bar');
+        const translateGoBtn = document.getElementById('translate-go-btn');
+        const langSelect = document.getElementById('lang-select');
+
+        // --- State ---
+        let stream;
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioBlob;
+
+
+        // --- Functions ---
+        function gatherAllText() {
+            const entries = historyContainer.querySelectorAll('.history-entry');
+            let fullText = '--- История ---\n\n';
+            // No reverse() to sort from newest to oldest
+            Array.from(entries).forEach(entry => {
+                const timestamp = entry.querySelector('.entry-header')?.innerText || '';
+                const original = entry.querySelector('.original-text')?.innerText || '';
+                const translated = entry.querySelector('.translated-text')?.innerText || '';
+                fullText += `${timestamp}\n`;
+                fullText += `Оригинал: ${original}\n`;
+                if (translated) {
+                    fullText += `Перевод: ${translated}\n`;
+                }
+                fullText += '----------------------------------------\n\n';
+            });
+            return fullText;
+        };
+
+
+
+        function updateScrollButtons() {
+            // Show scroll buttons only if content overflows
+            const scrollableHeight = mainContent.scrollHeight - mainContent.clientHeight;
+            if (scrollableHeight > 0) {
+                // Show both buttons if scrollable
+                scrollUpBtn.style.display = 'flex'; // Use flex to center SVG
+                scrollDownBtn.style.display = 'flex'; // Use flex to center SVG
+
+                // Hide scroll-up button if at the very top
+                if (mainContent.scrollTop === 0) {
+                    scrollUpBtn.style.display = 'none';
+                }
+
+                // Hide scroll-down button if at the very bottom
+                if (mainContent.scrollTop >= scrollableHeight - 1) { // -1 for a small tolerance
+                    scrollDownBtn.style.display = 'none';
+                }
+            } else {
+                // Hide both buttons if not scrollable
+                scrollUpBtn.style.display = 'none';
+                scrollDownBtn.style.display = 'none';
+            }
+        }
+
+        async function handleTranscription(blob) {
+            audioBlob = blob;
+            translateBtn.disabled = true;
+            saveAudioBtn.disabled = true;
+            saveAudioTextBtn.disabled = true;
+
+            const newEntry = document.createElement('div');
+            newEntry.className = 'history-entry';
+            const date = new Date();
+            const timestamp = `${date.toLocaleString('default', { dateStyle: 'long' })}, ${date.toLocaleTimeString()}`;
+            newEntry.dataset.isoTimestamp = date.toISOString(); // Store machine-readable timestamp
+            const originalTextField = document.createElement('div');
+            originalTextField.className = 'original-text';
+            originalTextField.textContent = 'Transcribing...';
+            newEntry.innerHTML = `<div class="entry-header">${timestamp}</div>`;
+            newEntry.appendChild(originalTextField);
+            historyContainer.insertBefore(newEntry, historyContainer.firstChild);
+            updateScrollButtons(); // Update scroll buttons visibility
+
+            const formData = new FormData();
+            formData.append('file', blob, 'audio.webm');
+            formData.append('language', 'ru');
+            formData.append('response_format', 'json');
+
+            try {
+                const response = await fetch('http://31.192.110.207:8000/v1/audio/transcriptions', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                originalTextField.textContent = result.text || 'No text recognized.';
+                
+            } catch (error) {
+                console.error('Transcription error:', error);
+                originalTextField.textContent = `[Error] Failed to transcribe: ${error.message}`;
+            } finally {
+                translateBtn.disabled = false;
+                saveAudioBtn.disabled = false;
+                saveAudioTextBtn.disabled = false;
+            }
+        }
+
+        // --- Event Listeners ---
+        closeBtn.addEventListener('click', () => window.api.close());
+        minimizeBtn.addEventListener('click', () => window.api.minimize());
+        exitBtn.addEventListener('click', () => window.api.quit());
+
+        document.body.addEventListener('click', (event) => {
+            if (!appMenu.classList.contains('hidden') && !menuBtn.contains(event.target) && !appMenu.contains(event.target)) {
+                appMenu.classList.add('hidden');
+            }
+        });
+
+        menuBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            appMenu.classList.toggle('hidden');
+        });
+        
+        settingsBtn.addEventListener('click', () => {
+            window.api.openSettings();
+            appMenu.classList.add('hidden');
+        });
+
+        clearAllBtn.addEventListener('click', () => {
+            if (confirm('Вы уверены, что хотите очистить всю историю? Это действие нельзя будет отменить.')) {
+                historyContainer.innerHTML = '';
+                updateScrollButtons(); // Update scroll buttons visibility
+            }
+            appMenu.classList.add('hidden');
+        });
+
+        saveAudioBtn.addEventListener('click', () => { 
+            if (audioBlob) { 
+                const latestEntry = historyContainer.querySelector('.history-entry');
+                const isoTimestamp = latestEntry?.dataset.isoTimestamp || new Date().toISOString();
+                window.api.saveAudio(audioBlob, isoTimestamp); 
+            } else {
+                alert("No audio has been recorded yet.");
+            }
+        });
+
+        saveAudioTextBtn.addEventListener('click', () => {
+            if (!audioBlob) {
+                alert("No audio has been recorded yet.");
+                return;
+            }
+
+            const latestEntry = historyContainer.querySelector('.history-entry');
+            if (!latestEntry) {
+                alert("No text to save.");
+                return;
+            }
+
+            const humanReadableTimestamp = latestEntry.querySelector('.entry-header')?.innerText || '';
+            const isoTimestamp = latestEntry.dataset.isoTimestamp || new Date().toISOString();
+            const original = latestEntry.querySelector('.original-text')?.innerText || '';
+            const translated = latestEntry.querySelector('.translated-text')?.innerText || '';
+            
+            let textToSave = `${humanReadableTimestamp}\n\n`;
+            textToSave += `Original: ${original}\n`;
+            if (translated) {
+                textToSave += `Translated: ${translated}\n`;
+            }
+
+            window.api.saveAudioAndText(audioBlob, textToSave, isoTimestamp);
+        });
+
+        translateBtn.addEventListener('click', () => {
+            translateBar.classList.toggle('hidden');
+        });
+
+        translateGoBtn.addEventListener('click', async () => {
+            const latestEntry = historyContainer.querySelector('.history-entry');
+            if (!latestEntry) return;
+
+            const originalText = latestEntry.querySelector('.original-text')?.innerText;
+            if (!originalText || originalText.startsWith('[Error]')) return;
+
+            const targetLang = langSelect.value;
+            let translatedDiv = latestEntry.querySelector('.translated-text');
+            if (!translatedDiv) {
+                translatedDiv = document.createElement('div');
+                translatedDiv.className = 'translated-text';
+                latestEntry.appendChild(translatedDiv);
+            }
+            
+            translatedDiv.textContent = 'Translating...';
+            translateBar.classList.add('hidden');
+
+            try {
+                const response = await fetch('http://31.192.110.207:5000/translate', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        q: originalText,
+                        source: 'ru',
+                        target: targetLang,
+                    }),
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const result = await response.json();
+                translatedDiv.textContent = result.translatedText || 'Translation failed.';
+
+            } catch (error) {
+                console.error('Translation error:', error);
+                translatedDiv.textContent = `[Error] Translation failed: ${error.message}`;
+            }
+        });
+
+        copyBtn.addEventListener('click', () => {
+            const selection = window.getSelection().toString().trim();
+            let textToCopy = '';
+
+            if (selection) {
+                textToCopy = selection;
+            } else {
+                const latestEntry = historyContainer.querySelector('.history-entry');
+                if (latestEntry) {
+                    textToCopy = latestEntry.querySelector('.original-text')?.innerText;
+                    const translatedText = latestEntry.querySelector('.translated-text')?.innerText;
+                    if (translatedText) {
+                        textToCopy += `\n${translatedText}`;
+                    }
+                }
+            }
+            
+            if (textToCopy) {
+                navigator.clipboard.writeText(textToCopy).catch(err => console.error('Failed to copy text:', err));
+            }
+        });
+
+        saveAllBtn.addEventListener('click', () => {
+            const textToSave = gatherAllText();
+            if (textToSave) { 
+                const isoTimestamp = new Date().toISOString(); // Use current time for "save all"
+                window.api.saveText(textToSave, isoTimestamp); 
+            }
+            appMenu.classList.add('hidden');
+        });
+        
+        recordBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                                mediaRecorder.onstop = () => {
+
+                                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+
+                                    handleTranscription(blob); 
+
+                                    if (stream) {
+
+                                        stream.getTracks().forEach(track => track.stop());
+
+                                    }
+
+                                };
+
+                                audioChunks = [];
+
+                                saveAudioBtn.disabled = true;
+
+                                saveAudioTextBtn.disabled = true;
+
+                                translateBtn.disabled = true;
+
+                                recordBtn.classList.add('hidden');
+
+                                stopBtn.classList.remove('hidden');
+
+                                mediaRecorder.start();
+
+                            } catch (err) {
+
+                                console.error("Error accessing microphone:", err);
+
+                            }
+
+                        });
+
+                        
+
+                        stopBtn.addEventListener('click', () => {
+
+                            if (mediaRecorder && mediaRecorder.state === 'recording') {
+
+                                mediaRecorder.stop();
+
+                            }
+
+                            
+
+                            stopBtn.classList.add('hidden');
+
+                            recordBtn.classList.remove('hidden');
+
+                        });
+
+        // --- Scroll Button Event Listeners ---
+        scrollUpBtn.addEventListener('click', () => {
+            mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        scrollDownBtn.addEventListener('click', () => {
+            mainContent.scrollTo({ top: mainContent.scrollHeight, behavior: 'smooth' });
+        });
+
+        mainContent.addEventListener('scroll', updateScrollButtons);
+        // Initial check for scroll button visibility
+        updateScrollButtons();
+
+        // --- Settings Listener ---
+        window.api.onSettingsUpdated((settings) => {
+            if (settings.theme === 'light') {
+                document.body.classList.add('light-theme');
+            } else {
+                document.body.classList.remove('light-theme');
+            }
+            document.documentElement.style.setProperty('--main-font-size', `${settings.fontSize || 16}px`);
+            document.documentElement.style.setProperty('--main-font-family', settings.fontFamily || 'Arial, sans-serif');
+        });
+    </script>
+</body>
+</html>
