@@ -1,6 +1,6 @@
 {
   "name": "tray-translator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A simple tray application for voice transcription.",
   "main": "src/index.js",
   "scripts": {
