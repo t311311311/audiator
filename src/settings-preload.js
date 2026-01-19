@@ -16,4 +16,12 @@ contextBridge.exposeInMainWorld('settingsApi', {
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
   },
+  // Get initial settings synchronously
+  getInitialSettings: () => {
+    return ipcRenderer.invoke('get-initial-settings');
+  },
+  // Receive initial settings
+  onInitialSettings: (callback) => {
+    ipcRenderer.on('initial-settings', (event, ...args) => callback(...args));
+  }
 });

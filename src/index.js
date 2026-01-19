@@ -105,6 +105,11 @@ app.on('ready', async () => {
     return store.get();
   });
 
+  // Handle requests from settings window to get initial settings
+  ipcMain.handle('get-initial-settings', () => {
+    return store.get();
+  });
+
   let pendingSettings = {}; // Temporary storage for settings form changes
 
   // --- Settings Window Logic ---
@@ -113,8 +118,11 @@ app.on('ready', async () => {
       settingsWindow.focus();
       return;
     }
+
+    // Get current settings before creating the window
+    const currentStoredSettings = store.get();
     // Initialize pendingSettings with current stored values
-    pendingSettings = { ...store.get() };
+    pendingSettings = { ...currentStoredSettings };
 
     settingsWindow = new BrowserWindow({
       width: 400,
@@ -132,10 +140,38 @@ app.on('ready', async () => {
         nodeIntegration: false,
       },
     });
+
+    // Set backgroundColor based on current theme to prevent flashing
+    if (currentStoredSettings.theme === 'light') {
+      settingsWindow.setBackgroundColor('#fafafa'); // Light theme background
+    } else {
+      settingsWindow.setBackgroundColor('#282c34'); // Dark theme background
+    }
+
     settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
     settingsWindow.setMenu(null); // Remove the default menu
-    settingsWindow.on('closed', () => { 
-      settingsWindow = null; 
+
+    // Send initial settings as soon as the page loads
+    settingsWindow.webContents.once('did-finish-load', () => {
+      // Apply the theme immediately to prevent flashing
+      if (currentStoredSettings.theme === 'light') {
+        settingsWindow.webContents.executeJavaScript(`
+          if (!document.body.classList.contains('light-theme')) {
+            document.body.classList.add('light-theme');
+          }
+        `);
+      } else {
+        settingsWindow.webContents.executeJavaScript(`
+          document.body.classList.remove('light-theme');
+        `);
+      }
+
+      // Then send the full settings
+      settingsWindow.webContents.send('initial-settings', currentStoredSettings);
+    });
+
+    settingsWindow.on('closed', () => {
+      settingsWindow = null;
       // Re-apply original settings in case real-time preview was active
       mainWindow.setOpacity(store.get('opacity'));
       mainWindow.webContents.send('settings-updated', store.get());
