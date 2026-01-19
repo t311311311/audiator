@@ -112,7 +112,7 @@
 
         .scroll-buttons {
             position: fixed; /* Positioned relative to main-content */
-            bottom: 120px;    /* 20px from the bottom of main-content */
+            bottom: 160px;    /* Increased from 120px to accommodate translate bar */
             right: 20px;     /* 20px from the right of main-content */
             display: flex;
             flex-direction: column;
@@ -326,6 +326,18 @@
         function updateScrollButtons() {
             // Show scroll buttons only if content overflows
             const scrollableHeight = mainContent.scrollHeight - mainContent.clientHeight;
+
+            // Check if translate bar is visible
+            const isTranslateBarVisible = !translateBar.classList.contains('hidden');
+            // Adjust bottom position based on translate bar visibility
+            if (isTranslateBarVisible) {
+                // If translate bar is visible, position buttons higher
+                document.querySelector('.scroll-buttons').style.bottom = '160px';
+            } else {
+                // If translate bar is hidden, use original position
+                document.querySelector('.scroll-buttons').style.bottom = '120px';
+            }
+
             if (scrollableHeight > 0) {
                 // Show both buttons if scrollable
                 scrollUpBtn.style.display = 'flex'; // Use flex to center SVG
@@ -461,6 +473,7 @@
 
         translateBtn.addEventListener('click', () => {
             translateBar.classList.toggle('hidden');
+            updateScrollButtons(); // Update scroll buttons position after toggling translate bar
         });
 
         translateGoBtn.addEventListener('click', async () => {
@@ -480,6 +493,7 @@
             
             translatedDiv.textContent = 'Translating...';
             translateBar.classList.add('hidden');
+            updateScrollButtons(); // Update scroll buttons position after hiding translate bar
 
             try {
                 const response = await fetch('http://31.192.110.207:5000/translate', {
