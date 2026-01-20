@@ -23,5 +23,9 @@ contextBridge.exposeInMainWorld('settingsApi', {
   // Receive initial settings
   onInitialSettings: (callback) => {
     ipcRenderer.on('initial-settings', (event, ...args) => callback(...args));
+  },
+  // Get app version
+  getAppVersion: () => {
+    return ipcRenderer.invoke('get-app-version');
   }
 });

@@ -110,6 +110,11 @@ app.on('ready', async () => {
     return store.get();
   });
 
+  // Handle requests to get app version
+  ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
+  });
+
   let pendingSettings = {}; // Temporary storage for settings form changes
 
   // --- Settings Window Logic ---
@@ -125,15 +130,16 @@ app.on('ready', async () => {
     pendingSettings = { ...currentStoredSettings };
 
     settingsWindow = new BrowserWindow({
-      width: 400,
-      height: 350, // Adjusted height
+      width: 450,
+      height: 380, // Increased height
       resizable: false,
       minimizable: false, // Prevent minimizing
       maximizable: false, // Prevent maximizing
       parent: mainWindow,
       modal: false,
-      frame: true,
-      title: 'Настройки', // Set the title here
+      frame: true, // Restore standard frame with title bar
+      title: '', // Empty title to remove text from title bar
+      backgroundColor: currentStoredSettings.theme === 'light' ? '#e4e6eb' : '#3e4452', // Match theme color
       webPreferences: {
         preload: path.join(__dirname, 'settings-preload.js'),
         contextIsolation: true,

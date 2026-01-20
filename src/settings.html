@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <title>Настройки</title>
-    <style>
+    <style id="theme-style">
         :root {
             --bg-color: #282c34;
             --primary-color: #3e4452;
@@ -85,10 +85,17 @@
             color: #fff;
         }
     </style>
+    <script>
+        // Immediately apply theme based on localStorage or default
+        (function() {
+            // This is a placeholder - we'll inject the actual theme via IPC later
+            // For now, we'll just make sure the element exists for later manipulation
+        })();
+    </script>
 </head>
 <body>
     <div class="content">
-        <h2>Настройки</h2>
+        <h2 style="margin-top: 15px; margin-left: 15px; margin-bottom: 25px;">Настройки</h2>
 
         <div class="setting">
             <label for="theme-select">Тема</label>
@@ -124,9 +131,12 @@
         
             <div class="settings-actions">
                 <button class="action-button" id="cancel-settings-btn">Отмена</button>
-                <button class="action-button primary" id="save-settings-btn">Сохранить</button>
+                <button class="action-button" id="save-settings-btn">Сохранить</button>
             </div>
-        
+            <div style="position: absolute; bottom: 15px; left: 25px; font-size: 0.8em; color: var(--text-color);">
+                <span>Версия: </span><span id="app-version">Загрузка...</span>
+            </div>
+
             <script>
                 const themeSelect = document.getElementById('theme-select');
                 const fontFamilySelect = document.getElementById('font-family-select');
@@ -207,5 +217,20 @@
                 });
 
                 window.settingsApi.send('get-settings');
+
+                // Load and display app version
+                window.settingsApi.getAppVersion().then(version => {
+                    document.getElementById('app-version').textContent = version;
+                }).catch(error => {
+                    console.error('Failed to get app version:', error);
+                    document.getElementById('app-version').textContent = 'Неизвестна';
+                });
+
+                // ESC key handler
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        window.settingsApi.send('close-settings-window');
+                    }
+                });
             </script></body>
 
