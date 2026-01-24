@@ -99,6 +99,23 @@ app.on('ready', async () => {
   ipcMain.on('close-app', () => { mainWindow.hide(); });
   ipcMain.on('quit-app', () => { app.isQuitting = true; app.quit(); });
   ipcMain.on('minimize-app', () => { mainWindow.minimize(); });
+  ipcMain.on('log-error', (event, { message, error, stack }) => {
+    console.error(`[${new Date().toISOString()}] ${message}: ${error}`);
+    if (stack) {
+      console.error(`Stack trace: ${stack}`);
+    }
+
+    // Optionally, write error to a log file
+    const fs = require('fs');
+    const logMessage = `[${new Date().toISOString()}] ${message}: ${error}\n`;
+    const logEntry = stack ? `${logMessage}Stack trace: ${stack}\n\n` : `${logMessage}\n`;
+
+    fs.appendFile('error.log', logEntry, (err) => {
+      if (err) {
+        console.error('Failed to write to error log:', err);
+      }
+    });
+  });
 
   // Handle requests from renderer to get current settings
   ipcMain.handle('get-current-settings', () => {

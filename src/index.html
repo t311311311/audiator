@@ -380,7 +380,6 @@
 
             const formData = new FormData();
             formData.append('file', blob, 'audio.webm');
-            formData.append('language', 'ru');
             formData.append('response_format', 'json');
 
             try {
@@ -395,10 +394,22 @@
 
                 const result = await response.json();
                 originalTextField.textContent = result.text || 'No text recognized.';
-                
+
             } catch (error) {
                 console.error('Transcription error:', error);
-                originalTextField.textContent = `[Error] Failed to transcribe: ${error.message}`;
+                // Detailed logging of error information
+                const errorMessage = `[Error] Failed to transcribe: ${error.message}`;
+                originalTextField.textContent = errorMessage;
+
+                // Log detailed error information for debugging
+                if (error.stack) {
+                    console.error('Stack trace:', error.stack);
+                }
+
+                // Send error to main process for logging
+                if (window.api && typeof window.api.logError === 'function') {
+                    window.api.logError('Transcription error', error);
+                }
             } finally {
                 translateBtn.disabled = false;
                 saveAudioBtn.disabled = false;
@@ -465,7 +476,7 @@
             let textToSave = `${humanReadableTimestamp}\n\n`;
             textToSave += `Оригинал: ${original}\n`;
             if (translated) {
-                textToSave += `Translated: ${translated}\n`;
+                textToSave += `Перевод: ${translated}\n`;
             }
 
             window.api.saveAudioAndText(audioBlob, textToSave, isoTimestamp);
@@ -516,6 +527,16 @@
             } catch (error) {
                 console.error('Translation error:', error);
                 translatedDiv.textContent = `[Error] Translation failed: ${error.message}`;
+
+                // Log detailed error information for debugging
+                if (error.stack) {
+                    console.error('Stack trace:', error.stack);
+                }
+
+                // Send error to main process for logging
+                if (window.api && typeof window.api.logError === 'function') {
+                    window.api.logError('Translation error', error);
+                }
             }
         });
 
