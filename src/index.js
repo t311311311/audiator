@@ -76,7 +76,7 @@ const createTray = () => {
     { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); }},
   ]);
 
-  tray.setToolTip('Tray Translator');
+  tray.setToolTip('Audiator');
   tray.setContextMenu(contextMenu);
   tray.on('click', () => {
     mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // Function to send a 'close' message to the main process
   close: () => ipcRenderer.send('close-app'),
-  
+
   // Function to send a 'quit' message to the main process
   quit: () => ipcRenderer.send('quit-app'),
 
@@ -34,4 +34,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Window controls ---
   minimize: () => ipcRenderer.send('minimize-app'),
+
+  // --- Logging ---
+  logError: (message, error) => ipcRenderer.send('log-error', { message, error: error.toString(), stack: error.stack }),
 });

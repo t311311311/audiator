@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>Tray Translator</title>
+    <title>Audiator</title>
     <link rel="stylesheet" href="styles.css">
     <style>
         :root {
@@ -204,6 +204,43 @@
         }
         .dropdown-menu-item:hover {
             background-color: var(--primary-color);
+        }
+
+        /* Стили для полосы прокрутки */
+        .main-content::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        .main-content::-webkit-scrollbar-track {
+            background: #3e4452;
+            border-radius: 0;
+        }
+
+        .main-content::-webkit-scrollbar-thumb {
+            background: #4a5060;
+            border-radius: 0;
+        }
+
+        .main-content::-webkit-scrollbar-thumb:hover {
+            background: #565d6f;
+        }
+
+        /* Убираем стрелки прокрутки */
+        .main-content::-webkit-scrollbar-button {
+            display: none;
+        }
+
+        /* Стили для светлой темы */
+        body.light-theme .main-content::-webkit-scrollbar-track {
+            background: #e7eaf2;
+        }
+
+        body.light-theme .main-content::-webkit-scrollbar-thumb {
+            background: #dcdee3;
+        }
+
+        body.light-theme .main-content::-webkit-scrollbar-thumb:hover {
+            background: #c5c7cc;
         }
 
     </style>
