@@ -1,0 +1,46 @@
+# Node.js / Electron
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Electron
+dist/
+dist-electron/
+out/
+*.asar
+*.blockmap
+
+# Сборки
+release-builds/
+
+# Логи
+logs/
+*.log
+error.log
+
+# Настройки IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ОС
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Временные файлы
+tmp/
+temp/
+*.tmp
+
+# Тесты
+coverage/
+.nyc_output/
+
+# Конфиги
+.env
+.env.local
+.env.*.local
