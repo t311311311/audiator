@@ -7,7 +7,6 @@
 ![Версия](https://img.shields.io/badge/версия-1.0.7-blue)
 ![Electron](https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron)
 ![Платформа](https://img.shields.io/badge/платформа-Windows-lightgrey)
-[![Лицензия](https://img.shields.io/badge/лицензия-ISC-green)](LICENSE)
 
 ---
 
@@ -146,14 +145,6 @@ tray-translator/
 ├── README.md
 └── USER_GUIDE.md          # Полная инструкция (локально)
 ```
-
----
-
-## 📄 Лицензия
-
-ISC — свободное использование с указанием автора.
-
-См. файл [LICENSE](LICENSE) для подробностей.
 
 ---
 
