@@ -19,12 +19,10 @@ Audiator — компактное трей-приложение, которое 
 ## Скриншоты
 
 ### Основное окно
-![Основное окно] 
 
 <img width="496" height="746" alt="image" src="https://github.com/user-attachments/assets/944fc31f-5487-44b1-989a-df219ba16881" />
 
 ### Настройки
-![Настройки]
 
 <img width="558" height="466" alt="image" src="https://github.com/user-attachments/assets/9345053b-a244-440b-a137-57b1b906ca1b" />
 
@@ -69,32 +67,4 @@ Audiator — компактное трей-приложение, которое 
 - [electron-builder](https://www.electron.build/) — сборка установщиков
 - [electron-store](https://github.com/sindresorhus/electron-store) — хранение настроек
 
-
-## Разработка
-
-```bash
-# Установка зависимостей
-npm install
-
-# Запуск в режиме разработки
-npm start
-
-# Сборка дистрибутива
-npm run dist
-
-# Обновление версии
-npm run version:bump
-```
-
-## Сборка
-
-Для сборки установщика выполните:
-
-```bash
-npm run dist
-```
-
-После сборки в папке `dist/` появятся:
-- `Audiator Setup X.X.X.exe` — установщик NSIS
-- `win-unpacked/` — портативная версия
 
