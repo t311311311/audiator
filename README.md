@@ -1,4 +1,4 @@
-# Audiator <img width="114" height="116" alt="image" src="https://github.com/user-attachments/assets/7873ed08-3b72-4ceb-9243-9dd8f7dc2c62" />
+# <img width="57" height="88" alt="image" src="https://github.com/user-attachments/assets/7873ed08-3b72-4ceb-9243-9dd8f7dc2c62" /> Audiator
 
 
 Audiator — компактное трей-приложение, которое живёт в системном трее и позволяет за секунды записать голос одной кнопкой, а затем онлайн выполнить транскрибацию (распознавание речи) и при необходимости перевести текст на другие языки.
