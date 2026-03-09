@@ -54,7 +54,6 @@ gh auth login --with-token
 | Файл | Назначение |
 |------|------------|
 | `README.md` | Описание проекта |
-| `LICENSE` | Лицензия ISC |
 | `CHANGELOG.md` | История изменений |
 | `.gitignore` | Игнорируемые файлы |
 | `release-notes.md` | Примечания к релизу |
