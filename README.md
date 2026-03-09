@@ -1,4 +1,4 @@
-# <img src="src/icon.ico" width="32" height="32" align="top" alt="Audiator"> Audiator
+# <img width="57" height="88" alt="image" src="https://github.com/user-attachments/assets/7873ed08-3b72-4ceb-9243-9dd8f7dc2c62" /> Audiator
 
 **Audiator** — компактное приложение, которое живёт в системном трее и позволяет за секунды записать голос одной кнопкой, а затем онлайн выполнить транскрибацию (распознавание речи) и при необходимости перевести текст на другие языки.
 
@@ -24,6 +24,14 @@
 ---
 
 ## 📥 Установка
+
+### Основное окно
+
+<img width="496" height="746" alt="image" src="https://github.com/user-attachments/assets/944fc31f-5487-44b1-989a-df219ba16881" />
+
+### Настройки
+
+<img width="558" height="466" alt="image" src="https://github.com/user-attachments/assets/9345053b-a244-440b-a137-57b1b906ca1b" />
 
 1. Перейдите в раздел [Releases](https://github.com/t311311311/audiator/releases)
 2. Скачайте последний установщик `Audiator Setup X.X.X.exe`
@@ -129,7 +137,7 @@ npm run version:bump
 ## 📂 Структура проекта
 
 ```
-tray-translator/
+audiator/
 ├── src/
 │   ├── index.js           # Главный процесс
 │   ├── index.html         # Основное окно
@@ -145,6 +153,14 @@ tray-translator/
 ├── README.md
 └── USER_GUIDE.md          # Полная инструкция (локально)
 ```
+
+---
+
+## 📄 Лицензия
+
+ISC — свободное использование с указанием автора.
+
+См. файл [LICENSE](LICENSE) для подробностей.
 
 ---
 
