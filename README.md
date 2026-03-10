@@ -4,9 +4,10 @@
 
 Вы можете сохранять результаты в удобном виде: отдельно аудио, аудио вместе с текстом транскрибации, а также всю историю в текстовый файл — включая вариант перевода. Интерфейс настраивается под себя: выбор шрифта, переключение светлой/тёмной темы и регулировка прозрачности окна.
 
-![Версия](https://img.shields.io/badge/версия-1.0.7-blue)
+![Версия](https://img.shields.io/badge/версия-1.0.8-blue)
 ![Electron](https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron)
 ![Платформа](https://img.shields.io/badge/платформа-Windows-lightgrey)
+[![Скачать](https://img.shields.io/badge/скачать-exe-green)](https://github.com/t311311311/audiator/releases/latest)
 
 ---
 
@@ -112,50 +113,6 @@
 
 ---
 
-## 📦 Разработка
-
-```bash
-# Клонирование репозитория
-git clone https://github.com/t311311311/audiator.git
-cd audiator
-
-# Установка зависимостей
-npm install
-
-# Запуск в режиме разработки
-npm start
-
-# Сборка дистрибутива
-npm run dist
-
-# Обновление версии
-npm run version:bump
-```
-
----
-
-## 📂 Структура проекта
-
-```
-audiator/
-├── src/
-│   ├── index.js           # Главный процесс
-│   ├── index.html         # Основное окно
-│   ├── settings.html      # Окно настроек
-│   ├── preload.js         # Preload скрипт (main)
-│   ├── settings-preload.js # Preload скрипт (settings)
-│   ├── styles.css         # Стили
-│   └── icon.ico           # Иконка приложения
-├── scripts/
-│   └── bump-version.js    # Скрипт обновления версии
-├── dist/                   # Сборки (после npm run dist)
-├── package.json
-├── README.md
-└── USER_GUIDE.md          # Полная инструкция (локально)
-```
-
----
-
 ## 👤 Автор
 
 Разработано для транскрипции и перевода аудио.
@@ -166,10 +123,8 @@ audiator/
 
 ## 📞 Поддержка
 
-- 📖 [Wiki](https://github.com/t311311311/audiator/wiki) — документация и инструкции
-- 🐛 [Issues](https://github.com/t311311311/audiator/issues) — сообщения об ошибках
-- 📬 [Discussions](https://github.com/t311311311/audiator/discussions) — вопросы и обсуждения
+- 🐛 [Issues](https://github.com/t311311311/audiator/issues) — сообщения об ошибках и предложения
 
 ---
 
-**Audiator v1.0.7** | © 2026
+**Audiator v1.0.8** | © 2026
