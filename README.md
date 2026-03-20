@@ -58,7 +58,7 @@
 
 ### Настройки
 
-<img width="558" height="466" alt="image" src="https://github.com/user-attachments/assets/9345053b-a244-440b-a137-57b1b906ca1b" />
+<img width="391" height="326" alt="image" src="https://github.com/user-attachments/assets/9345053b-a244-440b-a137-57b1b906ca1b" />
 
 ### Работа в трее
 
