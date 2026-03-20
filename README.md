@@ -36,7 +36,7 @@
 ## 🚀 Использование
 ### Основное окно
 
-<img width="496" height="746" alt="image" src="https://github.com/user-attachments/assets/944fc31f-5487-44b1-989a-df219ba16881" />
+<img width="347" height="522" alt="image" src="https://github.com/user-attachments/assets/944fc31f-5487-44b1-989a-df219ba16881" />
 
 ### Основная панель
 
