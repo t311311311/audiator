@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # Whisper ASR - транскрибация (порт 8000)
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    ports:
+      - "8000:9000"
+    volumes:
+      - whisper-cache:/root/.cache/
+    environment:
+      - ASR_MODEL=base
+      - ASR_ENGINE=openai_whisper
+      - SERVER_NAME=0.0.0.0
+      - SERVER_PORT=9000
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # LibreTranslate - перевод (порт 5000)
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    ports:
+      - "5000:5000"
+    environment:
+      - LT_HOST=0.0.0.0
+      - LT_PORT=5000
+      - LT_UPDATE_MODELS=true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  whisper-cache:
