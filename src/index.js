@@ -83,6 +83,46 @@ const createTray = () => {
   });
 };
 
+let activationWindow = null;
+
+const showActivationWindow = () => {
+  if (activationWindow) {
+    activationWindow.focus();
+    return;
+  }
+
+  activationWindow = new BrowserWindow({
+    width: 450,
+    height: 700,
+    frame: true,
+    resizable: false,
+    parent: mainWindow,
+    modal: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  activationWindow.loadFile(path.join(__dirname, 'activation.html'));
+
+  activationWindow.on('closed', () => {
+    activationWindow = null;
+  });
+
+  // Listen for activation complete
+  ipcMain.once('activation-complete', (event, { type, subscriptionEnd }) => {
+    if (activationWindow) {
+      activationWindow.close();
+    }
+    // Show main window
+    if (mainWindow) {
+      mainWindow.show();
+    }
+  });
+};
+
 app.on('ready', async () => {
   // Request microphone access on macOS
   if (process.platform === 'darwin') {
@@ -92,10 +132,20 @@ app.on('ready', async () => {
       console.log('Microphone access was denied.');
     }
   }
+  
+  // Check authorization status
+  const auth = require('./auth');
+  const authStatus = await auth.checkStatus();
+  
   createWindow();
   createTray();
-  broadcastSettings(); // Apply settings on startup
+  broadcastSettings();
   
+  // Show activation window if not authenticated
+  if (!authStatus.authenticated) {
+    showActivationWindow();
+  }
+
   ipcMain.on('close-app', () => { mainWindow.hide(); });
   ipcMain.on('quit-app', () => { app.isQuitting = true; app.quit(); });
   ipcMain.on('minimize-app', () => { mainWindow.minimize(); });
@@ -299,31 +349,117 @@ app.on('ready', async () => {
   // Handle saving both audio and text
   ipcMain.on('save-audio-and-text', (event, { audio, text, timestamp }) => {
     const formattedTimestamp = formatTimestampForFilename(timestamp);
-    const defaultName = `ad_${formattedTimestamp}.webm`; // Default to the audio name
+    const defaultName = `ad_${formattedTimestamp}.webm`;
     dialog.showSaveDialog({
       title: 'Save Audio and Text',
       defaultPath: defaultName,
-      filters: [{ name: 'WebM Audio', extensions: ['webm'] }] // Suggest WebM by default
+      filters: [{ name: 'WebM Audio', extensions: ['webm'] }]
     }).then(result => {
       if (!result.canceled && result.filePath) {
-        // Construct paths based on user's choice, but force our naming convention for the final files
         const dir = path.dirname(result.filePath);
         const audioPath = path.join(dir, `ad_${formattedTimestamp}.webm`);
         const textPath = path.join(dir, `tr_${formattedTimestamp}.txt`);
 
-        // Save audio
         fs.writeFile(audioPath, audio, (err) => {
           if (err) console.error('Failed to save audio:', err);
           else console.log('Audio saved successfully:', audioPath);
         });
 
-        // Save text
         fs.writeFile(textPath, text, (err) => {
           if (err) console.error('Failed to save text:', err);
           else console.log('Text saved successfully:', textPath);
         });
       }
     }).catch(err => console.error('Error showing save dialog for audio/text:', err));
+  });
+
+  // === AUTHORIZATION HANDLERS ===
+  const auth = require('./auth');
+
+  // Check authorization status
+  ipcMain.handle('check-auth', async () => {
+    try {
+      const status = await auth.checkStatus();
+      return status;
+    } catch (e) {
+      console.error('Auth check failed:', e.message);
+      return { authenticated: false, reason: 'error', error: e.message };
+    }
+  });
+
+  // Start trial
+  ipcMain.handle('start-trial', async () => {
+    try {
+      const result = await auth.startTrial('Audiator Desktop');
+      return { success: true, subscriptionEnd: result.subscription_end };
+    } catch (e) {
+      console.error('Trial start failed:', e.message);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Activate subscription
+  ipcMain.handle('activate-subscription', async (event, { plan, paymentId }) => {
+    try {
+      const result = await auth.activateSubscription(plan, paymentId);
+      return { success: true, subscriptionEnd: result.subscription_end };
+    } catch (e) {
+      console.error('Subscription activation failed:', e.message);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Logout
+  ipcMain.handle('logout', () => {
+    auth.logout();
+    return { success: true };
+  });
+
+  // === API HANDLERS ===
+  const api = require('./api');
+
+  // Transcribe audio
+  ipcMain.handle('transcribe', async (event, { audioBlob, language }) => {
+    try {
+      const result = await api.transcribe(audioBlob, language);
+      return { success: true, text: result.text, language: result.language };
+    } catch (e) {
+      console.error('Transcription failed:', e.message);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Translate text
+  ipcMain.handle('translate', async (event, { text, targetLang, sourceLang }) => {
+    try {
+      const result = await api.translate(text, targetLang, sourceLang);
+      return { success: true, translatedText: result.translatedText, detectedLanguage: result.detectedLanguage };
+    } catch (e) {
+      console.error('Translation failed:', e.message);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Get supported languages
+  ipcMain.handle('get-supported-languages', async () => {
+    try {
+      const languages = await api.getSupportedLanguages();
+      return { success: true, languages };
+    } catch (e) {
+      console.error('Get languages failed:', e.message);
+      return { success: false, error: e.message, languages: [] };
+    }
+  });
+
+  // Check server health
+  ipcMain.handle('check-server-health', async () => {
+    try {
+      const health = await api.checkServicesHealth();
+      return health.whisper && health.translate;
+    } catch (e) {
+      console.error('Server health check failed:', e.message);
+      return false;
+    }
   });
 });
 

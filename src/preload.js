@@ -37,4 +37,16 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Logging ---
   logError: (message, error) => ipcRenderer.send('log-error', { message, error: error.toString(), stack: error.stack }),
+
+  // --- Authorization ---
+  checkAuth: () => ipcRenderer.invoke('check-auth'),
+  startTrial: () => ipcRenderer.invoke('start-trial'),
+  activateSubscription: (plan, paymentId) => ipcRenderer.invoke('activate-subscription', { plan, paymentId }),
+  logout: () => ipcRenderer.invoke('logout'),
+  onAuthRequired: (callback) => ipcRenderer.on('auth-required', () => callback()),
+
+  // --- API ---
+  transcribe: async (audioBlob, language) => ipcRenderer.invoke('transcribe', { audioBlob, language }),
+  translate: async (text, targetLang, sourceLang) => ipcRenderer.invoke('translate', { text, targetLang, sourceLang }),
+  getSupportedLanguages: () => ipcRenderer.invoke('get-supported-languages'),
 });
