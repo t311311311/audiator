@@ -417,11 +417,10 @@
             updateScrollButtons(); // Update scroll buttons visibility
 
             const formData = new FormData();
-            formData.append('file', blob, 'audio.webm');
-            formData.append('response_format', 'json');
+            formData.append('audio_file', blob, 'audio.webm');
 
             try {
-                const response = await fetch('http://31.192.110.207:8000/v1/audio/transcriptions', {
+                const response = await fetch('http://31.192.110.207:8000/asr?encode=true&task=transcribe&output=json', {
                     method: 'POST',
                     body: formData,
                 });
