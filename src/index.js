@@ -125,8 +125,8 @@ const showActivationWindow = () => {
 
 app.on('ready', async () => {
   // Require modules
-  const auth = require('./auth');
-  const api = require('./api');
+  // const auth = require('./auth');
+  // const api = require('./api');
   
   // Request microphone access on macOS
   if (process.platform === 'darwin') {
@@ -137,17 +137,18 @@ app.on('ready', async () => {
     }
   }
 
-  // Check authorization status
-  const authStatus = await auth.checkStatus();
+  // Check authorization status - TEMPORARILY DISABLED
+  // const authStatus = await auth.checkStatus();
+  const authStatus = { authenticated: true }; // Always authenticated for now
 
   createWindow();
   createTray();
   broadcastSettings();
 
-  // Show activation window if not authenticated
-  if (!authStatus.authenticated) {
-    showActivationWindow();
-  }
+  // Show activation window if not authenticated - TEMPORARILY DISABLED
+  // if (!authStatus.authenticated) {
+  //   showActivationWindow();
+  // }
 
   ipcMain.on('close-app', () => { mainWindow.hide(); });
   ipcMain.on('quit-app', () => { app.isQuitting = true; app.quit(); });
@@ -376,94 +377,93 @@ app.on('ready', async () => {
     }).catch(err => console.error('Error showing save dialog for audio/text:', err));
   });
 
-  // === AUTHORIZATION HANDLERS ===
-  // auth already required at top of app.on('ready')
+  // === AUTHORIZATION HANDLERS - TEMPORARILY DISABLED ===
+  // const auth = require('./auth');
+  // const api = require('./api');
 
-  // Check authorization status
-  ipcMain.handle('check-auth', async () => {
-    try {
-      const status = await auth.checkStatus();
-      return status;
-    } catch (e) {
-      console.error('Auth check failed:', e.message);
-      return { authenticated: false, reason: 'error', error: e.message };
-    }
-  });
+  // // Check authorization status
+  // ipcMain.handle('check-auth', async () => {
+  //   try {
+  //     const status = await auth.checkStatus();
+  //     return status;
+  //   } catch (e) {
+  //     console.error('Auth check failed:', e.message);
+  //     return { authenticated: false, reason: 'error', error: e.message };
+  //   }
+  // });
 
-  // Start trial
-  ipcMain.handle('start-trial', async () => {
-    try {
-      const result = await auth.startTrial('Audiator Desktop');
-      return { success: true, subscriptionEnd: result.subscription_end };
-    } catch (e) {
-      console.error('Trial start failed:', e.message);
-      return { success: false, error: e.message };
-    }
-  });
+  // // Start trial
+  // ipcMain.handle('start-trial', async () => {
+  //   try {
+  //     const result = await auth.startTrial('Audiator Desktop');
+  //     return { success: true, subscriptionEnd: result.subscription_end };
+  //   } catch (e) {
+  //     console.error('Trial start failed:', e.message);
+  //     return { success: false, error: e.message };
+  //   }
+  // });
 
-  // Activate subscription
-  ipcMain.handle('activate-subscription', async (event, { plan, paymentId }) => {
-    try {
-      const result = await auth.activateSubscription(plan, paymentId);
-      return { success: true, subscriptionEnd: result.subscription_end };
-    } catch (e) {
-      console.error('Subscription activation failed:', e.message);
-      return { success: false, error: e.message };
-    }
-  });
+  // // Activate subscription
+  // ipcMain.handle('activate-subscription', async (event, { plan, paymentId }) => {
+  //   try {
+  //     const result = await auth.activateSubscription(plan, paymentId);
+  //     return { success: true, subscriptionEnd: result.subscription_end };
+  //   } catch (e) {
+  //     console.error('Subscription activation failed:', e.message);
+  //     return { success: false, error: e.message };
+  //   }
+  // });
 
-  // Logout
-  ipcMain.handle('logout', () => {
-    auth.logout();
-    return { success: true };
-  });
+  // // Logout
+  // ipcMain.handle('logout', () => {
+  //   auth.logout();
+  //   return { success: true };
+  // });
 
-  // === API HANDLERS ===
-  // api already required at top of app.on('ready')
+  // // === API HANDLERS ===
+  // // Transcribe audio
+  // ipcMain.handle('transcribe', async (event, { audioBlob, language }) => {
+  //   try {
+  //     const result = await api.transcribe(audioBlob, language);
+  //     return { success: true, text: result.text, language: result.language };
+  //   } catch (e) {
+  //     console.error('Transcription failed:', e.message);
+  //     return { success: false, error: e.message };
+  //   }
+  // });
 
-  // Transcribe audio
-  ipcMain.handle('transcribe', async (event, { audioBlob, language }) => {
-    try {
-      const result = await api.transcribe(audioBlob, language);
-      return { success: true, text: result.text, language: result.language };
-    } catch (e) {
-      console.error('Transcription failed:', e.message);
-      return { success: false, error: e.message };
-    }
-  });
+  // // Translate text
+  // ipcMain.handle('translate', async (event, { text, targetLang, sourceLang }) => {
+  //   try {
+  //     const result = await api.translate(text, targetLang, sourceLang);
+  //     return { success: true, translatedText: result.translatedText, detectedLanguage: result.detectedLanguage };
+  //   } catch (e) {
+  //     console.error('Translation failed:', e.message);
+  //     return { success: false, error: e.message };
+  //   }
+  // });
 
-  // Translate text
-  ipcMain.handle('translate', async (event, { text, targetLang, sourceLang }) => {
-    try {
-      const result = await api.translate(text, targetLang, sourceLang);
-      return { success: true, translatedText: result.translatedText, detectedLanguage: result.detectedLanguage };
-    } catch (e) {
-      console.error('Translation failed:', e.message);
-      return { success: false, error: e.message };
-    }
-  });
+  // // Get supported languages
+  // ipcMain.handle('get-supported-languages', async () => {
+  //   try {
+  //     const languages = await api.getSupportedLanguages();
+  //     return { success: true, languages };
+  //   } catch (e) {
+  //     console.error('Get languages failed:', e.message);
+  //     return { success: false, error: e.message, languages: [] };
+  //   }
+  // });
 
-  // Get supported languages
-  ipcMain.handle('get-supported-languages', async () => {
-    try {
-      const languages = await api.getSupportedLanguages();
-      return { success: true, languages };
-    } catch (e) {
-      console.error('Get languages failed:', e.message);
-      return { success: false, error: e.message, languages: [] };
-    }
-  });
-
-  // Check server health
-  ipcMain.handle('check-server-health', async () => {
-    try {
-      const health = await api.checkServicesHealth();
-      return health.whisper && health.translate;
-    } catch (e) {
-      console.error('Server health check failed:', e.message);
-      return false;
-    }
-  });
+  // // Check server health
+  // ipcMain.handle('check-server-health', async () => {
+  //   try {
+  //     const health = await api.checkServicesHealth();
+  //     return health.whisper && health.translate;
+  //   } catch (e) {
+  //     console.error('Server health check failed:', e.message);
+  //     return false;
+  //   }
+  // });
 });
 
 app.on('window-all-closed', () => { /* ... existing code ... */ });
