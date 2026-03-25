@@ -124,6 +124,10 @@ const showActivationWindow = () => {
 };
 
 app.on('ready', async () => {
+  // Require modules
+  const auth = require('./auth');
+  const api = require('./api');
+  
   // Request microphone access on macOS
   if (process.platform === 'darwin') {
     const { systemPreferences } = require('electron');
@@ -132,15 +136,14 @@ app.on('ready', async () => {
       console.log('Microphone access was denied.');
     }
   }
-  
+
   // Check authorization status
-  const auth = require('./auth');
   const authStatus = await auth.checkStatus();
-  
+
   createWindow();
   createTray();
   broadcastSettings();
-  
+
   // Show activation window if not authenticated
   if (!authStatus.authenticated) {
     showActivationWindow();
@@ -374,7 +377,7 @@ app.on('ready', async () => {
   });
 
   // === AUTHORIZATION HANDLERS ===
-  const auth = require('./auth');
+  // auth already required at top of app.on('ready')
 
   // Check authorization status
   ipcMain.handle('check-auth', async () => {
@@ -416,7 +419,7 @@ app.on('ready', async () => {
   });
 
   // === API HANDLERS ===
-  const api = require('./api');
+  // api already required at top of app.on('ready')
 
   // Transcribe audio
   ipcMain.handle('transcribe', async (event, { audioBlob, language }) => {
