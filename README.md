@@ -4,10 +4,10 @@
 
 Вы можете сохранять результаты в удобном виде: отдельно аудио, аудио вместе с текстом транскрибации, а также всю историю в текстовый файл — включая вариант перевода. Интерфейс настраивается под себя: выбор шрифта, переключение светлой/тёмной темы и регулировка прозрачности окна.
 
-![Версия](https://img.shields.io/badge/версия-1.0.8-blue)
+![Версия](https://img.shields.io/badge/версия-1.0.9-blue)
 ![Electron](https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron)
 ![Платформа](https://img.shields.io/badge/платформа-Windows-lightgrey)
-[![Скачать](https://img.shields.io/badge/скачать-exe-green)](https://github.com/t311311311/audiator/releases/latest)
+[![Скачать](https://img.shields.io/badge/скачать-exe-green)](https://github.com/t311311311/audiator/releases/tag/v1.0.9)
 
 ---
 
@@ -125,4 +125,4 @@
 
 ---
 
-**Audiator v1.0.8** | © 2026
+**Audiator v1.0.9** | © 2026
