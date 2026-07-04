@@ -118,8 +118,33 @@ function removeToken() {
  */
 function generateDeviceId() {
   const crypto = require('crypto');
-  const mac = require('os').networkInterfaces().eth0?.mac || 'unknown';
-  return crypto.createHash('sha256').update(mac + process.platform).digest('hex').slice(0, 16);
+  const os = require('os');
+
+  // Collect a stable, machine-unique signature from all non-internal MAC
+  // addresses. The previous implementation read only `eth0`, which does not
+  // exist on Windows/macOS, so every such device produced the same id.
+  let mac = '';
+  try {
+    const interfaces = os.networkInterfaces();
+    const macs = [];
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name] || []) {
+        if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
+          macs.push(iface.mac);
+        }
+      }
+    }
+    macs.sort(); // deterministic regardless of interface enumeration order
+    mac = macs[0] || '';
+  } catch (e) {
+    console.error('Failed to read network interfaces:', e);
+  }
+
+  // Fallback for machines with no usable MAC (e.g. all interfaces filtered).
+  const fallback = `${os.hostname()}|${os.userInfo().username}`;
+  const signature = `${mac || fallback}|${process.platform}|${os.arch()}`;
+
+  return crypto.createHash('sha256').update(signature).digest('hex').slice(0, 16);
 }
 
 /**
