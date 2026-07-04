@@ -4,7 +4,15 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import Optional
 import hashlib
+import os
 import time
+
+# Load a local .env file if python-dotenv is installed (optional dependency).
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 app = FastAPI(title="Audiator Auth Server")
 
@@ -16,7 +24,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SECRET_KEY = "audiator-secret-key-2024"
+# The signing secret MUST come from the environment. The previous hardcoded
+# value was committed to a public repository and is considered compromised.
+# Generate a fresh one, e.g.:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+# and provide it via the AUDIATOR_SECRET_KEY env var (or a local .env file).
+SECRET_KEY = os.environ.get("AUDIATOR_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "AUDIATOR_SECRET_KEY is not set. Refusing to start with an insecure "
+        "default secret. Set AUDIATOR_SECRET_KEY in the environment or a .env file."
+    )
 TRIAL_DAYS = 14
 SUBSCRIPTION_PRICES = {
     "1_month": {"months": 1, "price": 299},

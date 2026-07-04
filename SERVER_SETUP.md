@@ -95,6 +95,7 @@ passlib[bcrypt]==1.7.4
 sqlalchemy==2.0.23
 aiosqlite==0.19.0
 python-multipart==0.0.6
+python-dotenv==1.0.1
 EOF
 
 # main.py
@@ -105,7 +106,15 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import Optional
 import hashlib
+import os
 import time
+
+# Load a local .env file if python-dotenv is installed (optional dependency).
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 app = FastAPI(title="Audiator Auth Server")
 
@@ -117,7 +126,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SECRET_KEY = "audiator-secret-key-2024"
+SECRET_KEY = os.environ.get("AUDIATOR_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("AUDIATOR_SECRET_KEY is not set. Set it in the environment or a .env file.")
 TRIAL_DAYS = 14
 SUBSCRIPTION_PRICES = {
     "1_month": {"months": 1, "price": 299},
@@ -262,8 +273,13 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=3000)
 EOF
 
-# Установить зависимости и запустить
+# Установить зависимости
 pip3 install -r requirements.txt
+
+# Сгенерировать и задать секрет (ОБЯЗАТЕЛЬНО — без него сервер не стартует)
+export AUDIATOR_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+
+# Запустить
 nohup python3 main.py > auth-server.log 2>&1 &
 
 # Проверка
