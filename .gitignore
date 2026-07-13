@@ -44,3 +44,8 @@ coverage/
 .env
 .env.local
 .env.*.local
+
+# База данных auth-сервера
+*.db
+*.sqlite
+*.sqlite3

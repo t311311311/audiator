@@ -14,6 +14,8 @@ try:
 except ImportError:
     pass
 
+from db import init_db, get_user, upsert_user
+
 app = FastAPI(title="Audiator Auth Server")
 
 app.add_middleware(
@@ -41,7 +43,8 @@ SUBSCRIPTION_PRICES = {
     "12_months": {"months": 12, "price": 2490}
 }
 
-users_db = {}
+# Persistence: create tables on startup (SQLite by default; see db.py).
+init_db()
 
 class TrialRequest(BaseModel):
     device_id: str
@@ -90,7 +93,7 @@ def health():
 @app.post("/api/auth/trial", response_model=TokenResponse)
 def start_trial(request: TrialRequest):
     device_id = request.device_id
-    user = users_db.get(device_id)
+    user = get_user(device_id)
     
     if user and user.get("is_trial"):
         raise HTTPException(status_code=400, detail="Trial already used")
@@ -106,12 +109,13 @@ def start_trial(request: TrialRequest):
         )
     
     trial_end = datetime.now() + timedelta(days=TRIAL_DAYS)
-    users_db[device_id] = {
-        "device_name": request.device_name,
-        "created_at": datetime.now(),
-        "is_trial": True,
-        "subscription_end": trial_end
-    }
+    upsert_user(
+        device_id,
+        device_name=request.device_name,
+        created_at=datetime.now(),
+        is_trial=True,
+        subscription_end=trial_end,
+    )
     
     return TokenResponse(
         access_token=create_token(device_id, TRIAL_DAYS),
@@ -128,7 +132,7 @@ def activate_subscription(request: SubscriptionRequest):
     if plan not in SUBSCRIPTION_PRICES:
         raise HTTPException(status_code=400, detail="Invalid plan")
     
-    user = users_db.get(device_id)
+    user = get_user(device_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -141,12 +145,12 @@ def activate_subscription(request: SubscriptionRequest):
     else:
         new_end = now + timedelta(days=months * 30)
     
-    users_db[device_id] = {
-        **user,
-        "is_trial": False,
-        "subscription_end": new_end,
-        "last_payment": request.payment_id
-    }
+    upsert_user(
+        device_id,
+        is_trial=False,
+        subscription_end=new_end,
+        last_payment=request.payment_id,
+    )
     
     return TokenResponse(
         access_token=create_token(device_id, months * 30),
@@ -160,7 +164,7 @@ def get_status(authorization: Optional[str] = Header(None)):
     token = authorization.replace("Bearer ", "") if authorization else None
     payload = verify_token(token)
     device_id = payload["device_id"]
-    user = users_db.get(device_id)
+    user = get_user(device_id)
     subscription_end = user.get("subscription_end") if user else None
     
     return TokenResponse(
