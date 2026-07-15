@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Query, Request
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -6,6 +7,8 @@ from typing import Optional
 import hashlib
 import os
 import time
+
+import httpx
 
 # Load a local .env file if python-dotenv is installed (optional dependency).
 try:
@@ -177,6 +180,67 @@ def get_status(authorization: Optional[str] = Header(None)):
 @app.get("/api/auth/plans")
 def get_plans():
     return {"plans": SUBSCRIPTION_PRICES, "trial_days": TRIAL_DAYS}
+
+
+# === Authenticated gateway to the ASR / translation services (AUD-8) ===
+# The public ASR (Whisper) and translation (LibreTranslate) services were
+# reachable by anyone. These endpoints require a valid subscription token and
+# proxy the request to the internal services, so access can be gated per
+# subscription. Internal service URLs default to localhost and are overridable.
+WHISPER_URL = os.environ.get("WHISPER_URL", "http://127.0.0.1:8000")
+TRANSLATE_URL = os.environ.get("TRANSLATE_URL", "http://127.0.0.1:5000")
+
+
+def require_active_subscription(authorization: Optional[str]) -> str:
+    """Validate the Bearer token and require a non-expired subscription.
+
+    Raises 401 for a missing/invalid/expired token and 403 when the token is
+    valid but the subscription (or trial) is not currently active.
+    """
+    token = authorization.replace("Bearer ", "") if authorization else None
+    payload = verify_token(token)  # raises 401 on bad/expired token
+    device_id = payload["device_id"]
+    user = get_user(device_id)
+    sub_end = user.get("subscription_end") if user else None
+    if not sub_end or sub_end < datetime.now():
+        raise HTTPException(status_code=403, detail="No active subscription")
+    return device_id
+
+
+@app.post("/asr")
+async def gateway_asr(
+    audio_file: UploadFile = File(...),
+    encode: Optional[str] = Query(None),
+    task: Optional[str] = Query(None),
+    output: Optional[str] = Query(None),
+    language: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    require_active_subscription(authorization)
+    params = {k: v for k, v in {
+        "encode": encode, "task": task, "output": output, "language": language,
+    }.items() if v is not None}
+    data = await audio_file.read()
+    files = {"audio_file": (
+        audio_file.filename or "audio.webm", data,
+        audio_file.content_type or "application/octet-stream",
+    )}
+    async with httpx.AsyncClient(timeout=180) as client:
+        r = await client.post(f"{WHISPER_URL}/asr", params=params, files=files)
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type", "application/json"))
+
+
+@app.post("/translate")
+async def gateway_translate(request: Request, authorization: Optional[str] = Header(None)):
+    require_active_subscription(authorization)
+    body = await request.body()
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(f"{TRANSLATE_URL}/translate", content=body,
+                              headers={"Content-Type": "application/json"})
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type", "application/json"))
+
 
 if __name__ == "__main__":
     import uvicorn
