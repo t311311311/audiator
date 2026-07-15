@@ -416,21 +416,13 @@
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
 
-            const formData = new FormData();
-            formData.append('file', blob, 'audio.webm');
-            formData.append('response_format', 'json');
-
             try {
-                const response = await fetch('http://31.192.110.207:8000/v1/audio/transcriptions', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                // Идёт через аутентифицирующий гейтвей: main-процесс подставит
+                // токен подписки, поэтому прямого обращения к сервису тут нет.
+                const result = await window.api.transcribe(blob);
+                if (!result.success) {
+                    throw new Error(result.error || 'Transcription failed');
                 }
-
-                const result = await response.json();
                 originalTextField.textContent = result.text || 'No text recognized.';
 
             } catch (error) {
@@ -545,21 +537,10 @@
             updateScrollButtons(); // Update scroll buttons position after hiding translate bar
 
             try {
-                const response = await fetch('http://31.192.110.207:5000/translate', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        q: originalText,
-                        source: 'auto',
-                        target: targetLang,
-                    }),
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
+                const result = await window.api.translate(originalText, targetLang, 'auto');
+                if (!result.success) {
+                    throw new Error(result.error || 'Translation failed');
                 }
-
-                const result = await response.json();
                 translatedDiv.textContent = result.translatedText || 'Translation failed.';
 
             } catch (error) {

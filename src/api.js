@@ -1,35 +1,72 @@
+const auth = require('./auth');
+
 // === КОНФИГУРАЦИЯ ===
-const WHISPER_URL = 'http://31.192.110.207:8000';
-const TRANSLATE_URL = 'http://31.192.110.207:5000';
+// Транскрибация и перевод идут через аутентифицирующий гейтвей на auth-сервере:
+// он проверяет токен подписки и уже сам проксирует во внутренние Whisper /
+// LibreTranslate (AUD-8). Клиент больше не обращается к ним напрямую.
+const GATEWAY_URL = process.env.AUDIATOR_GATEWAY_URL || 'http://31.192.110.207:3000';
 
 /**
- * Транскрибация аудиофайла
- * @param {Blob} audioBlob - Аудиофайл (webm/wav/mp3)
+ * Ошибка, означающая, что нужна активация (нет токена, истёк, нет подписки).
+ */
+class AuthRequiredError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AuthRequiredError';
+    this.authRequired = true;
+  }
+}
+
+function authHeaders() {
+  const token = auth.getToken();
+  if (!token) {
+    throw new AuthRequiredError('Требуется активация');
+  }
+  return { 'Authorization': `Bearer ${token}` };
+}
+
+/**
+ * Превратить неуспешный ответ гейтвея в осмысленную ошибку.
+ */
+async function raiseGatewayError(response) {
+  const body = await response.text();
+  if (response.status === 401) {
+    throw new AuthRequiredError('Сессия истекла, требуется повторная активация');
+  }
+  if (response.status === 403) {
+    throw new AuthRequiredError('Подписка не активна');
+  }
+  throw new Error(`${response.status} - ${body}`);
+}
+
+/**
+ * Транскрибация аудио
+ * @param {Buffer|Uint8Array} audioBuffer - Аудиоданные (Blob не проходит через IPC)
  * @param {string} language - Код языка (опционально)
  * @returns {Promise<{text: string, language?: string}>}
  */
-async function transcribe(audioBlob, language = '') {
+async function transcribe(audioBuffer, language = '') {
   const formData = new FormData();
-  formData.append('audio_file', audioBlob, 'recording.webm');
-  
-  const url = new URL(`${WHISPER_URL}/asr`);
+  formData.append('audio_file', new Blob([audioBuffer], { type: 'audio/webm' }), 'recording.webm');
+
+  const url = new URL(`${GATEWAY_URL}/asr`);
   url.searchParams.set('encode', 'true');
   url.searchParams.set('task', 'transcribe');
   url.searchParams.set('output', 'json');
   if (language) {
     url.searchParams.set('language', language);
   }
-  
+
   const response = await fetch(url.toString(), {
     method: 'POST',
-    body: formData
+    body: formData,
+    headers: authHeaders()
   });
-  
+
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Transcription failed: ${response.status} - ${error}`);
+    await raiseGatewayError(response);
   }
-  
+
   return await response.json();
 }
 
@@ -41,9 +78,9 @@ async function transcribe(audioBlob, language = '') {
  * @returns {Promise<{translatedText: string, detectedLanguage?: string}>}
  */
 async function translate(text, targetLang = 'ru', sourceLang = 'auto') {
-  const response = await fetch(`${TRANSLATE_URL}/translate`, {
+  const response = await fetch(`${GATEWAY_URL}/translate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({
       q: text,
       source: sourceLang,
@@ -51,12 +88,11 @@ async function translate(text, targetLang = 'ru', sourceLang = 'auto') {
       format: 'text'
     })
   });
-  
+
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Translation failed: ${response.status} - ${error}`);
+    await raiseGatewayError(response);
   }
-  
+
   const result = await response.json();
   return {
     translatedText: result.translatedText,
@@ -69,44 +105,34 @@ async function translate(text, targetLang = 'ru', sourceLang = 'auto') {
  * @returns {Promise<Array<{code: string, name: string}>>}
  */
 async function getSupportedLanguages() {
-  const response = await fetch(`${TRANSLATE_URL}/languages`);
-  
+  const response = await fetch(`${GATEWAY_URL}/languages`, { headers: authHeaders() });
+
   if (!response.ok) {
-    throw new Error('Failed to get supported languages');
+    await raiseGatewayError(response);
   }
-  
+
   return await response.json();
 }
 
 /**
- * Проверить доступность сервисов
+ * Проверить доступность сервисов (через гейтвей, токен не нужен)
  * @returns {Promise<{whisper: boolean, translate: boolean}>}
  */
 async function checkServicesHealth() {
-  const results = { whisper: false, translate: false };
-  
   try {
-    // Whisper не имеет /health эндпоинта, проверяем корень
-    const whisperRes = await fetch(`${WHISPER_URL}/`, { method: 'GET' });
-    results.whisper = whisperRes.ok || whisperRes.status === 307;
+    const response = await fetch(`${GATEWAY_URL}/health`, { method: 'GET' });
+    const ok = response.ok;
+    return { whisper: ok, translate: ok };
   } catch (e) {
-    console.warn('Whisper health check failed:', e.message);
+    console.warn('Gateway health check failed:', e.message);
+    return { whisper: false, translate: false };
   }
-  
-  try {
-    // LibreTranslate не имеет /health эндпоинта, проверяем языки
-    const translateRes = await fetch(`${TRANSLATE_URL}/languages`, { method: 'GET' });
-    results.translate = translateRes.ok;
-  } catch (e) {
-    console.warn('Translate health check failed:', e.message);
-  }
-  
-  return results;
 }
 
 module.exports = {
   transcribe,
   translate,
   getSupportedLanguages,
-  checkServicesHealth
+  checkServicesHealth,
+  AuthRequiredError
 };

@@ -374,7 +374,8 @@ app.on('ready', async () => {
   });
 
   // === AUTHORIZATION HANDLERS ===
-  const auth = require('./auth');
+  // `auth` is already required above, where the startup auth check runs;
+  // re-declaring it here is a SyntaxError that stops the app from starting.
 
   // Check authorization status
   ipcMain.handle('check-auth', async () => {
@@ -419,13 +420,14 @@ app.on('ready', async () => {
   const api = require('./api');
 
   // Transcribe audio
-  ipcMain.handle('transcribe', async (event, { audioBlob, language }) => {
+  ipcMain.handle('transcribe', async (event, { audioBuffer, language }) => {
     try {
-      const result = await api.transcribe(audioBlob, language);
+      const result = await api.transcribe(audioBuffer, language);
       return { success: true, text: result.text, language: result.language };
     } catch (e) {
       console.error('Transcription failed:', e.message);
-      return { success: false, error: e.message };
+      if (e.authRequired) showActivationWindow();
+      return { success: false, error: e.message, authRequired: !!e.authRequired };
     }
   });
 
@@ -436,7 +438,8 @@ app.on('ready', async () => {
       return { success: true, translatedText: result.translatedText, detectedLanguage: result.detectedLanguage };
     } catch (e) {
       console.error('Translation failed:', e.message);
-      return { success: false, error: e.message };
+      if (e.authRequired) showActivationWindow();
+      return { success: false, error: e.message, authRequired: !!e.authRequired };
     }
   });
 

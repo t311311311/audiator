@@ -242,6 +242,15 @@ async def gateway_translate(request: Request, authorization: Optional[str] = Hea
                     media_type=r.headers.get("content-type", "application/json"))
 
 
+@app.get("/languages")
+async def gateway_languages(authorization: Optional[str] = Header(None)):
+    require_active_subscription(authorization)
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{TRANSLATE_URL}/languages")
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type", "application/json"))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=3000)

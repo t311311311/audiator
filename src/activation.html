@@ -320,17 +320,18 @@
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
-        
-        let selectedPlan = null;
+        // contextIsolation включён, поэтому require('electron') в рендерере не
+        // работает — всё идёт через безопасный мост window.api из preload.js.
 
-        // Обработка выбора плана
+        // Планы показываем, но активировать подписку пока нельзя: онлайн-оплата
+        // ещё не подключена (AUD-14/15).
         document.querySelectorAll('.plan-card').forEach(card => {
             card.addEventListener('click', () => {
                 document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('selected'));
                 card.classList.add('selected');
-                selectedPlan = card.dataset.plan;
-                document.getElementById('buySubscriptionBtn').disabled = false;
+                const status = document.getElementById('statusMessage');
+                status.className = 'status-message loading';
+                status.textContent = 'Онлайн-оплата скоро появится. Сейчас доступен бесплатный период.';
             });
         });
 
@@ -344,14 +345,14 @@
             status.innerHTML = '<span class="loading-spinner"></span>Активация триала...';
             
             try {
-                const result = await ipcRenderer.invoke('start-trial');
+                const result = await window.api.startTrial();
                 
                 if (result.success) {
                     status.className = 'status-message success';
                     status.textContent = '✅ Триал активирован! Запуск...';
                     
                     setTimeout(() => {
-                        ipcRenderer.send('activation-complete', { type: 'trial', subscriptionEnd: result.subscriptionEnd });
+                        window.api.activationComplete({ type: 'trial', subscriptionEnd: result.subscriptionEnd });
                     }, 1000);
                 } else {
                     throw new Error(result.error || 'Не удалось активировать триал');
@@ -363,46 +364,19 @@
             }
         });
 
-        // Покупка подписки (заглушка для демонстрации)
-        document.getElementById('buySubscriptionBtn').addEventListener('click', async () => {
-            if (!selectedPlan) return;
-            
-            const btn = document.getElementById('buySubscriptionBtn');
-            const status = document.getElementById('statusMessage');
-            
-            btn.disabled = true;
-            status.className = 'status-message loading';
-            status.innerHTML = '<span class="loading-spinner"></span>Обработка...';
-            
-            try {
-                // TODO: Интеграция с платёжной системой
-                const result = await ipcRenderer.invoke('activate-subscription', { 
-                    plan: selectedPlan, 
-                    paymentId: 'demo-' + Date.now() 
-                });
-                
-                if (result.success) {
-                    status.className = 'status-message success';
-                    status.textContent = '✅ Подписка активирована! Запуск...';
-                    
-                    setTimeout(() => {
-                        ipcRenderer.send('activation-complete', { type: 'subscription', subscriptionEnd: result.subscriptionEnd });
-                    }, 1000);
-                } else {
-                    throw new Error(result.error || 'Не удалось активировать подписку');
-                }
-            } catch (error) {
-                status.className = 'status-message error';
-                status.textContent = '❌ ' + error.message;
-                btn.disabled = false;
-            }
-        });
+        // Кнопка оплаты отключена до подключения платёжного провайдера (AUD-14)
+        // и серверной проверки платежа (AUD-15). Раньше здесь вызывался
+        // activate-subscription с выдуманным paymentId ('demo-' + Date.now()),
+        // что позволяло активировать платную подписку бесплатно.
+        const buyBtn = document.getElementById('buySubscriptionBtn');
+        buyBtn.disabled = true;
+        buyBtn.textContent = 'Оплата скоро будет доступна';
 
         // Проверка сервера при загрузке
         async function checkServer() {
             const statusEl = document.getElementById('serverStatus');
             try {
-                const healthy = await ipcRenderer.invoke('check-server-health');
+                const healthy = await window.api.checkServerHealth();
                 if (healthy) {
                     statusEl.textContent = '● Сервер доступен';
                     statusEl.className = 'server-status online';

@@ -44,9 +44,15 @@ contextBridge.exposeInMainWorld('api', {
   activateSubscription: (plan, paymentId) => ipcRenderer.invoke('activate-subscription', { plan, paymentId }),
   logout: () => ipcRenderer.invoke('logout'),
   onAuthRequired: (callback) => ipcRenderer.on('auth-required', () => callback()),
+  activationComplete: (payload) => ipcRenderer.send('activation-complete', payload),
+  checkServerHealth: () => ipcRenderer.invoke('check-server-health'),
 
   // --- API ---
-  transcribe: async (audioBlob, language) => ipcRenderer.invoke('transcribe', { audioBlob, language }),
+  // A Blob cannot cross the IPC boundary: send the raw bytes instead.
+  transcribe: async (audioBlob, language) => {
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    return ipcRenderer.invoke('transcribe', { audioBuffer: Buffer.from(arrayBuffer), language });
+  },
   translate: async (text, targetLang, sourceLang) => ipcRenderer.invoke('translate', { text, targetLang, sourceLang }),
   getSupportedLanguages: () => ipcRenderer.invoke('get-supported-languages'),
 });
