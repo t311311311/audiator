@@ -7,10 +7,10 @@ set ``DATABASE_URL`` to a Postgres URL to switch backends without code changes,
 e.g. ``postgresql+psycopg://user:pass@host:5432/audiator``.
 """
 import os
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import create_engine, String, Boolean, DateTime
+from sqlalchemy import create_engine, String, Boolean, DateTime, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 # Default to a local SQLite file next to the app. Override via env for Postgres.
@@ -35,6 +35,19 @@ class User(Base):
     is_trial: Mapped[bool] = mapped_column(Boolean, default=False)
     subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_payment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class Usage(Base):
+    """Per-device, per-day transcription usage in seconds (AUD-13 quota).
+
+    Keyed by (device_id, day) where day is an ISO 'YYYY-MM-DD' string so the
+    daily bucket is trivial to query and survives restarts.
+    """
+    __tablename__ = "usage"
+
+    device_id: Mapped[str] = mapped_column(String, primary_key=True)
+    day: Mapped[str] = mapped_column(String, primary_key=True)
+    seconds: Mapped[int] = mapped_column(Integer, default=0)
 
 
 def init_db() -> None:
@@ -69,4 +82,26 @@ def upsert_user(device_id: str, **fields) -> None:
             s.add(u)
         for key, value in fields.items():
             setattr(u, key, value)
+        s.commit()
+
+
+def usage_today(device_id: str) -> int:
+    """Return seconds of audio transcribed by this device today (0 if none)."""
+    today = date.today().isoformat()
+    with SessionLocal() as s:
+        u = s.get(Usage, (device_id, today))
+        return int(u.seconds) if u else 0
+
+
+def add_usage(device_id: str, seconds: int) -> None:
+    """Add transcribed seconds to today's bucket for this device."""
+    if seconds <= 0:
+        return
+    today = date.today().isoformat()
+    with SessionLocal() as s:
+        u = s.get(Usage, (device_id, today))
+        if u is None:
+            u = Usage(device_id=device_id, day=today, seconds=0)
+            s.add(u)
+        u.seconds = int(u.seconds) + int(seconds)
         s.commit()

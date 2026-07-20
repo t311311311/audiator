@@ -17,7 +17,8 @@ try:
 except ImportError:
     pass
 
-from db import init_db, get_user, upsert_user
+from db import init_db, get_user, upsert_user, usage_today, add_usage
+import rate
 
 app = FastAPI(title="Audiator Auth Server")
 
@@ -45,6 +46,43 @@ SUBSCRIPTION_PRICES = {
     "1_month": {"months": 1, "price": 299},
     "12_months": {"months": 12, "price": 2490}
 }
+
+# --- Rate limiting & usage quotas (AUD-13); all tunable via env ---
+TRIAL_PER_IP_DAY = int(os.environ.get("TRIAL_PER_IP_DAY", "10"))
+ASR_PER_MIN = int(os.environ.get("ASR_PER_MIN", "20"))
+TRANSLATE_PER_MIN = int(os.environ.get("TRANSLATE_PER_MIN", "40"))
+ASR_DAILY_SECONDS = int(os.environ.get("ASR_DAILY_SECONDS", "14400"))  # 4h/device/day
+
+
+def _client_ip(request: Request) -> str:
+    """Direct client IP. If a reverse proxy is put in front (AUD-7 TLS), this
+    must start honouring X-Forwarded-For instead of the socket peer."""
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate(key: str, limit: int, window_sec: int) -> None:
+    """Raise 429 with Retry-After when the sliding window is exhausted."""
+    allowed, retry_after = rate.check(key, limit, window_sec)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _asr_seconds(response) -> int:
+    """Seconds of audio actually transcribed, read from the Whisper JSON
+    response (last segment's end time). Returns 0 when it cannot be determined,
+    so an unparsable response is never billed against the quota."""
+    try:
+        segments = response.json().get("segments") or []
+        if segments:
+            return int(round(float(segments[-1].get("end", 0))))
+    except Exception:
+        pass
+    return 0
+
 
 # Persistence: create tables on startup (SQLite by default; see db.py).
 init_db()
@@ -94,7 +132,11 @@ def health():
     return {"status": "ok", "timestamp": datetime.now()}
 
 @app.post("/api/auth/trial", response_model=TokenResponse)
-def start_trial(request: TrialRequest):
+def start_trial(request: TrialRequest, http_request: Request):
+    # Anti-abuse: this endpoint mints free access and trusts a client-supplied
+    # device_id, so cap how many trials one IP can request per day. It does not
+    # stop an attacker with a proxy pool, but it kills casual mass minting.
+    _enforce_rate(f"trial:{_client_ip(http_request)}", TRIAL_PER_IP_DAY, 86400)
     device_id = request.device_id
     user = get_user(device_id)
     
@@ -216,7 +258,12 @@ async def gateway_asr(
     language: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
 ):
-    require_active_subscription(authorization)
+    device_id = require_active_subscription(authorization)
+    _enforce_rate(f"asr:{device_id}", ASR_PER_MIN, 60)
+    # Cost ceiling: transcription is the expensive path (Whisper CPU time is
+    # proportional to audio length). Checked before the work, recorded after.
+    if usage_today(device_id) >= ASR_DAILY_SECONDS:
+        raise HTTPException(status_code=402, detail="Daily transcription quota exceeded")
     params = {k: v for k, v in {
         "encode": encode, "task": task, "output": output, "language": language,
     }.items() if v is not None}
@@ -227,13 +274,16 @@ async def gateway_asr(
     )}
     async with httpx.AsyncClient(timeout=180) as client:
         r = await client.post(f"{WHISPER_URL}/asr", params=params, files=files)
+    if r.status_code == 200:
+        add_usage(device_id, _asr_seconds(r))
     return Response(content=r.content, status_code=r.status_code,
                     media_type=r.headers.get("content-type", "application/json"))
 
 
 @app.post("/translate")
 async def gateway_translate(request: Request, authorization: Optional[str] = Header(None)):
-    require_active_subscription(authorization)
+    device_id = require_active_subscription(authorization)
+    _enforce_rate(f"translate:{device_id}", TRANSLATE_PER_MIN, 60)
     body = await request.body()
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(f"{TRANSLATE_URL}/translate", content=body,
