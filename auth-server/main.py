@@ -55,8 +55,12 @@ ASR_DAILY_SECONDS = int(os.environ.get("ASR_DAILY_SECONDS", "14400"))  # 4h/devi
 
 
 def _client_ip(request: Request) -> str:
-    """Direct client IP. If a reverse proxy is put in front (AUD-7 TLS), this
-    must start honouring X-Forwarded-For instead of the socket peer."""
+    """Client IP for rate limiting. Behind the nginx reverse proxy (AUD-7 TLS)
+    the socket peer is 127.0.0.1, so honour X-Forwarded-For, which nginx sets to
+    the real client IP. The left-most entry is the originating client."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -303,4 +307,7 @@ async def gateway_languages(authorization: Optional[str] = Header(None)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=3000)
+    # Bind to localhost when behind the nginx reverse proxy (AUD-7): only nginx
+    # should reach the app, which also prevents X-Forwarded-For spoofing. Default
+    # stays 0.0.0.0 for direct/dev use; production sets BIND_HOST=127.0.0.1.
+    uvicorn.run(app, host=os.environ.get("BIND_HOST", "0.0.0.0"), port=3000)
