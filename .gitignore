@@ -49,3 +49,9 @@ coverage/
 *.db
 *.sqlite
 *.sqlite3
+
+# Local dev backend
+.venv/
+auth-server/audiator.db
+auth-server/*.serverbak
+*.serverbackup

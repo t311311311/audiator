@@ -2,7 +2,7 @@ const https = require('https');
 const http = require('http');
 
 // === КОНФИГУРАЦИЯ ===
-const AUTH_SERVER_URL = 'http://31.192.110.207:3000';
+const AUTH_SERVER_URL = process.env.AUDIATOR_AUTH_URL || 'http://127.0.0.1:3000';
 
 /**
  * HTTP запрос к серверу авторизации

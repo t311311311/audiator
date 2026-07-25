@@ -4,7 +4,7 @@ const auth = require('./auth');
 // Транскрибация и перевод идут через аутентифицирующий гейтвей на auth-сервере:
 // он проверяет токен подписки и уже сам проксирует во внутренние Whisper /
 // LibreTranslate (AUD-8). Клиент больше не обращается к ним напрямую.
-const GATEWAY_URL = process.env.AUDIATOR_GATEWAY_URL || 'http://31.192.110.207:3000';
+const GATEWAY_URL = process.env.AUDIATOR_GATEWAY_URL || 'http://127.0.0.1:3000';
 
 /**
  * Ошибка, означающая, что нужна активация (нет токена, истёк, нет подписки).
