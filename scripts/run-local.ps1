@@ -24,8 +24,10 @@ Start-Process -FilePath $py -ArgumentList "main.py" -WorkingDirectory $auth
 
 $lt = Join-Path $root ".venv\Scripts\libretranslate.exe"
 if (Test-Path $lt) {
+    # Loads whatever language models are installed. Add more with:
+    #   .venv\Scripts\python.exe scripts\install-lang.py <code> <code>
     Write-Host "Starting LibreTranslate (127.0.0.1:5000)..." -ForegroundColor Cyan
-    Start-Process -FilePath $lt -ArgumentList "--host","127.0.0.1","--port","5000","--load-only","en,ru,es,de,fr"
+    Start-Process -FilePath $lt -ArgumentList "--host","127.0.0.1","--port","5000"
 } else {
     Write-Host "LibreTranslate not installed - translation disabled (transcription still works)." -ForegroundColor Yellow
 }
