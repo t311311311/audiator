@@ -55,4 +55,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   translate: async (text, targetLang, sourceLang) => ipcRenderer.invoke('translate', { text, targetLang, sourceLang }),
   getSupportedLanguages: () => ipcRenderer.invoke('get-supported-languages'),
+
+  // --- Recording overlay / global hotkey (AUD-40) ---
+  onHotkeyToggleRecord: (cb) => ipcRenderer.on('hotkey-toggle-record', () => cb()),
+  recordingStarted: () => ipcRenderer.send('recording-started'),
+  recordingStopped: () => ipcRenderer.send('recording-stopped'),
+  recLevel: (level) => ipcRenderer.send('rec-level', level),
 });

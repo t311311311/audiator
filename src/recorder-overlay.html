@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    html, body {
+      margin: 0; height: 100%; background: transparent; overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, sans-serif; -webkit-user-select: none; cursor: default;
+    }
+    .card {
+      display: flex; align-items: center; gap: 10px; height: 100%; box-sizing: border-box;
+      padding: 0 14px; background: rgba(20, 22, 28, 0.88); border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    }
+    .dot {
+      width: 12px; height: 12px; border-radius: 50%; background: #e05c5c;
+      flex: 0 0 auto; animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+    .label { color: #cfd3dc; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; flex: 0 0 auto; }
+    .meter {
+      flex: 1 1 auto; height: 14px; border-radius: 7px;
+      background: rgba(255, 255, 255, 0.08); overflow: hidden;
+    }
+    .fill {
+      height: 100%; width: 0%; border-radius: 7px; background: #3ec46d;
+      transition: width 0.05s linear, background-color 0.1s linear;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="dot"></div>
+    <div class="label">REC</div>
+    <div class="meter"><div class="fill" id="fill"></div></div>
+  </div>
+  <script>
+    const fill = document.getElementById('fill');
+    let cur = 0; // current displayed level 0..1
+
+    // Fast rise, gentle fall (VU-meter feel); colour green -> yellow -> red by level.
+    function frame() {
+      fill.style.width = Math.round(cur * 100) + '%';
+      const hue = 120 * (1 - cur); // 120=green, 60=yellow, 0=red
+      fill.style.backgroundColor = 'hsl(' + hue + ', 85%, 50%)';
+      cur *= 0.85; // decay toward 0 between updates
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    if (window.overlay && window.overlay.onLevel) {
+      window.overlay.onLevel((level) => { if (level > cur) cur = level; });
+    }
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -31,6 +31,37 @@ if (require('electron-squirrel-startup')) {
 let tray = null;
 let mainWindow = null;
 let settingsWindow = null;
+let overlayWindow = null;
+
+// --- Recording overlay: a small always-on-top level meter shown while recording ---
+const createOverlay = () => {
+  const width = 300, height = 70;
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  overlayWindow = new BrowserWindow({
+    width, height,
+    x: Math.round((area.width - width) / 2),
+    y: 24,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    skipTaskbar: true,
+    focusable: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  overlayWindow.setIgnoreMouseEvents(true); // passive indicator; clicks pass through
+  overlayWindow.loadFile(path.join(__dirname, 'recorder-overlay.html'));
+  overlayWindow.on('closed', () => { overlayWindow = null; });
+};
 
 // Function to send settings to all windows
 function broadcastSettings() {
@@ -140,7 +171,26 @@ app.on('ready', async () => {
   createWindow();
   createTray();
   broadcastSettings();
-  
+  createOverlay();
+
+  // Global hotkey (works even when the app is in the tray/background): toggle recording.
+  globalShortcut.register('CommandOrControl+Shift+R', () => {
+    if (mainWindow) mainWindow.webContents.send('hotkey-toggle-record');
+  });
+
+  // Recording overlay lifecycle, driven by the renderer that owns the mic stream.
+  ipcMain.on('recording-started', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
+  });
+  ipcMain.on('recording-stopped', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+  });
+  ipcMain.on('rec-level', (event, level) => {
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+      overlayWindow.webContents.send('rec-level', level);
+    }
+  });
+
   // Show activation window if not authenticated
   if (!authStatus.authenticated) {
     showActivationWindow();
@@ -466,5 +516,6 @@ app.on('ready', async () => {
   });
 });
 
+app.on('will-quit', () => { globalShortcut.unregisterAll(); });
 app.on('window-all-closed', () => { /* ... existing code ... */ });
 app.on('activate', () => { /* ... existing code ... */ });
