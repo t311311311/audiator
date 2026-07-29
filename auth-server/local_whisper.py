@@ -7,7 +7,7 @@ production the containerised whisper service is used instead; this shim only
 exists so development does not require Docker or a remote server.
 
 Run:  python local_whisper.py   (listens on 127.0.0.1:8000)
-Env:  WHISPER_MODEL (default 'base'), WHISPER_PORT (default 8000)
+Env:  WHISPER_MODEL (default 'small'), WHISPER_PORT (default 8000)
 """
 import os
 import tempfile
@@ -15,7 +15,7 @@ import tempfile
 from fastapi import FastAPI, UploadFile, File, Query
 from faster_whisper import WhisperModel
 
-MODEL_NAME = os.environ.get("WHISPER_MODEL", "base")
+MODEL_NAME = os.environ.get("WHISPER_MODEL", "small")
 PORT = int(os.environ.get("WHISPER_PORT", "8000"))
 
 app = FastAPI(title="Local Whisper Shim")
