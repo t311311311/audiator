@@ -340,7 +340,10 @@
         let audioBlob;
 
         // --- Recording level meter + global hotkey (AUD-40) ---
-        let _meterCtx = null, _meterRAF = null;
+        // Uses setInterval, not requestAnimationFrame: recording usually runs with
+        // this window hidden in the tray, and Chromium stops rAF in hidden windows,
+        // which froze the overlay meter.
+        let _meterCtx = null, _meterTimer = null;
         function startLevelMeter(mediaStream) {
             try {
                 stopLevelMeter();
@@ -350,21 +353,17 @@
                 analyser.fftSize = 512;
                 src.connect(analyser);
                 const buf = new Uint8Array(analyser.fftSize);
-                let last = 0;
-                const tick = () => {
+                _meterTimer = setInterval(() => {
                     analyser.getByteTimeDomainData(buf);
                     let sum = 0;
                     for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
                     const level = Math.min(1, Math.sqrt(sum / buf.length) * 3); // scale: speech RMS is small
-                    const now = performance.now();
-                    if (now - last > 33 && window.api.recLevel) { window.api.recLevel(level); last = now; }
-                    _meterRAF = requestAnimationFrame(tick);
-                };
-                tick();
+                    if (window.api.recLevel) window.api.recLevel(level);
+                }, 40); // ~25fps is plenty for a level bar
             } catch (e) { console.error('level meter failed', e); }
         }
         function stopLevelMeter() {
-            if (_meterRAF) { cancelAnimationFrame(_meterRAF); _meterRAF = null; }
+            if (_meterTimer) { clearInterval(_meterTimer); _meterTimer = null; }
             if (_meterCtx) { try { _meterCtx.close(); } catch (e) {} _meterCtx = null; }
         }
         if (window.api && window.api.onHotkeyToggleRecord) {

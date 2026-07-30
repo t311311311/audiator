@@ -33,14 +33,18 @@ let mainWindow = null;
 let settingsWindow = null;
 let overlayWindow = null;
 
-// --- Recording overlay: a small always-on-top level meter shown while recording ---
+// --- Recording overlay: a compact always-on-top level meter shown while recording ---
+// It stands in for the main window: visible only while recording AND the main
+// window is hidden. Clicking it brings the main window back.
+let isRecording = false;
+
 const createOverlay = () => {
-  const width = 300, height = 70;
+  const width = 190, height = 40;
   const area = screen.getPrimaryDisplay().workAreaSize;
   overlayWindow = new BrowserWindow({
     width, height,
     x: Math.round((area.width - width) / 2),
-    y: 24,
+    y: area.height - height - 16, // bottom centre, just above the taskbar
     frame: false,
     transparent: true,
     resizable: false,
@@ -48,7 +52,7 @@ const createOverlay = () => {
     minimizable: false,
     maximizable: false,
     skipTaskbar: true,
-    focusable: false,
+    focusable: false, // never steals focus from whatever the user is typing in
     alwaysOnTop: true,
     hasShadow: false,
     show: false,
@@ -56,11 +60,25 @@ const createOverlay = () => {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false, // keep the meter animating while hidden/unfocused
     },
   });
-  overlayWindow.setIgnoreMouseEvents(true); // passive indicator; clicks pass through
+  overlayWindow.setOpacity(store.get('opacity', 0.8)); // same translucency as the main window
   overlayWindow.loadFile(path.join(__dirname, 'recorder-overlay.html'));
   overlayWindow.on('closed', () => { overlayWindow = null; });
+};
+
+// The overlay and the main window are two views of the same state: show the
+// overlay only while recording with the main window out of sight.
+const syncOverlay = () => {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
+                      mainWindow.isVisible() && !mainWindow.isMinimized();
+  if (isRecording && !mainVisible) {
+    if (!overlayWindow.isVisible()) overlayWindow.showInactive();
+  } else if (overlayWindow.isVisible()) {
+    overlayWindow.hide();
+  }
 };
 
 // Function to send settings to all windows
@@ -85,6 +103,9 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Recording keeps running with the window hidden in the tray; without this
+      // Chromium throttles its timers and the level meter freezes.
+      backgroundThrottling: false,
     },
   });
 
@@ -174,21 +195,36 @@ app.on('ready', async () => {
   createOverlay();
 
   // Global hotkey (works even when the app is in the tray/background): toggle recording.
-  globalShortcut.register('CommandOrControl+Shift+R', () => {
-    if (mainWindow) mainWindow.webContents.send('hotkey-toggle-record');
-  });
+  // Starting from the hotkey means the user is working elsewhere, so get the
+  // window out of the way and let the overlay report progress instead.
+  if (!globalShortcut.register('CommandOrControl+Space', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!isRecording && mainWindow.isVisible()) mainWindow.hide();
+    mainWindow.webContents.send('hotkey-toggle-record');
+  })) {
+    console.error('Failed to register hotkey Ctrl+Space (already taken by another app)');
+  }
 
   // Recording overlay lifecycle, driven by the renderer that owns the mic stream.
-  ipcMain.on('recording-started', () => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
-  });
-  ipcMain.on('recording-stopped', () => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
-  });
+  ipcMain.on('recording-started', () => { isRecording = true; syncOverlay(); });
+  ipcMain.on('recording-stopped', () => { isRecording = false; syncOverlay(); });
   ipcMain.on('rec-level', (event, level) => {
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
       overlayWindow.webContents.send('rec-level', level);
     }
+  });
+  // Clicking the overlay swaps it back for the main window (recording continues).
+  ipcMain.on('overlay-clicked', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+  // Hiding/minimising the window while recording hands over to the overlay.
+  ['hide', 'minimize', 'show', 'restore', 'focus'].forEach((evt) => {
+    mainWindow.on(evt, () => setTimeout(syncOverlay, 0));
   });
 
   // Show activation window if not authenticated
@@ -323,6 +359,9 @@ app.on('ready', async () => {
     }
     // Apply all saved settings to main window (e.g., opacity)
     mainWindow.setOpacity(store.get('opacity'));
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setOpacity(store.get('opacity')); // keep the overlay in step
+    }
     broadcastSettings(); // Broadcast final saved settings to all windows
     if (settingsWindow) {
       settingsWindow.close();

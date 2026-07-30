@@ -5,52 +5,75 @@
   <style>
     html, body {
       margin: 0; height: 100%; background: transparent; overflow: hidden;
-      font-family: 'Segoe UI', Tahoma, sans-serif; -webkit-user-select: none; cursor: default;
+      -webkit-user-select: none; cursor: pointer;
     }
-    .card {
-      display: flex; align-items: center; gap: 10px; height: 100%; box-sizing: border-box;
-      padding: 0 14px; background: rgba(20, 22, 28, 0.88); border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    .bar {
+      display: flex; align-items: center; gap: 8px; height: 100%; box-sizing: border-box;
+      padding: 0 12px; background: #23262e; border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
     }
-    .dot {
-      width: 12px; height: 12px; border-radius: 50%; background: #e05c5c;
-      flex: 0 0 auto; animation: pulse 1s ease-in-out infinite;
-    }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-    .label { color: #cfd3dc; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; flex: 0 0 auto; }
-    .meter {
-      flex: 1 1 auto; height: 14px; border-radius: 7px;
-      background: rgba(255, 255, 255, 0.08); overflow: hidden;
-    }
-    .fill {
-      height: 100%; width: 0%; border-radius: 7px; background: #3ec46d;
-      transition: width 0.05s linear, background-color 0.1s linear;
+    .mic { flex: 0 0 auto; width: 15px; height: 15px; color: #e06c75; }
+    .mic svg { width: 100%; height: 100%; display: block; }
+    /* Pulse so it reads as "recording" even in silence. */
+    .rec { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+    .eq { flex: 1 1 auto; display: flex; align-items: center; gap: 3px; height: 20px; }
+    .eq i {
+      display: block; flex: 1 1 0; height: 3px; min-height: 3px; border-radius: 2px;
+      background: #3ec46d; transform-origin: center;
+      transition: height 0.07s linear, background-color 0.12s linear;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="dot"></div>
-    <div class="label">REC</div>
-    <div class="meter"><div class="fill" id="fill"></div></div>
+  <div class="bar" id="bar">
+    <div class="mic rec">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+        <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+      </svg>
+    </div>
+    <div class="eq" id="eq"></div>
   </div>
-  <script>
-    const fill = document.getElementById('fill');
-    let cur = 0; // current displayed level 0..1
 
-    // Fast rise, gentle fall (VU-meter feel); colour green -> yellow -> red by level.
-    function frame() {
-      fill.style.width = Math.round(cur * 100) + '%';
-      const hue = 120 * (1 - cur); // 120=green, 60=yellow, 0=red
-      fill.style.backgroundColor = 'hsl(' + hue + ', 85%, 50%)';
-      cur *= 0.85; // decay toward 0 between updates
-      requestAnimationFrame(frame);
+  <script>
+    const BARS = 16;
+    const eq = document.getElementById('eq');
+    const bars = [];
+    for (let i = 0; i < BARS; i++) { const b = document.createElement('i'); eq.appendChild(b); bars.push(b); }
+
+    // Per-bar weights so the middle reacts more than the edges (equaliser look).
+    const weight = bars.map((_, i) => {
+      const d = Math.abs(i - (BARS - 1) / 2) / ((BARS - 1) / 2); // 0 centre .. 1 edge
+      return 0.45 + 0.55 * (1 - d * d);
+    });
+
+    let level = 0;      // smoothed level 0..1
+    const MAX_H = 20;   // px, matches .eq height
+
+    function render() {
+      for (let i = 0; i < BARS; i++) {
+        // A little per-bar jitter keeps it alive without looking random.
+        const jitter = 0.85 + 0.3 * Math.sin(performance.now() / 130 + i);
+        const v = Math.max(0, Math.min(1, level * weight[i] * jitter));
+        bars[i].style.height = Math.max(3, Math.round(v * MAX_H)) + 'px';
+        // green (120) -> yellow (60) -> red (0) as it gets louder
+        bars[i].style.backgroundColor = 'hsl(' + Math.round(120 * (1 - v)) + ', 85%, 52%)';
+      }
+      level *= 0.90; // decay between incoming samples
+      requestAnimationFrame(render);
     }
-    requestAnimationFrame(frame);
+    requestAnimationFrame(render);
 
     if (window.overlay && window.overlay.onLevel) {
-      window.overlay.onLevel((level) => { if (level > cur) cur = level; });
+      window.overlay.onLevel((v) => { if (v > level) level = v; }); // fast attack, slow release
     }
+
+    // Clicking the bar hands control back to the main window.
+    document.getElementById('bar').addEventListener('click', () => {
+      if (window.overlay && window.overlay.clicked) window.overlay.clicked();
+    });
   </script>
 </body>
 </html>
