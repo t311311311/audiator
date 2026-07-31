@@ -53,7 +53,9 @@ const createOverlay = () => {
     minimizable: false,
     maximizable: false,
     skipTaskbar: true,
-    focusable: false, // never steals focus from whatever the user is typing in
+    // Must stay focusable: on Windows a non-focusable window (WS_EX_NOACTIVATE)
+    // does not deliver clicks to the page, so tapping the bar did nothing.
+    // It is shown with showInactive(), which already avoids stealing focus.
     alwaysOnTop: true,
     hasShadow: false,
     show: false,
@@ -260,6 +262,7 @@ app.on('ready', async () => {
   });
   // Clicking the overlay swaps it back for the main window (recording continues).
   ipcMain.on('overlay-clicked', () => {
+    console.log('[overlay] clicked -> revealing main window');
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
     revealMainWindow();
   });
