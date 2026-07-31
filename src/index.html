@@ -183,6 +183,22 @@
         }
         #record-btn { color: var(--record-color); }
         .hidden { display: none; }
+
+        /* Recording state of the stop button: mic + a tiny live equaliser, in the
+           same visual language as the floating overlay, sized to fit the button. */
+        #stop-btn { padding: 6px 10px; }
+        .btn-rec { display: flex; align-items: center; gap: 5px; height: 18px; }
+        .btn-mic {
+            width: 13px; height: 13px; flex: 0 0 auto; color: var(--record-color);
+            animation: btn-pulse 1.4s ease-in-out infinite;
+        }
+        @keyframes btn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+        .btn-eq { display: flex; align-items: center; gap: 1.5px; height: 16px; }
+        .btn-eq i {
+            display: block; width: 2px; height: 2px; border-radius: 1px;
+            background: #3ec46d;
+            transition: height 0.04s linear, background-color 0.08s linear;
+        }
         
         #main-controls { flex-grow: 1; display: flex; gap: 10px; }
 
@@ -301,7 +317,15 @@
     <div class="controls">
         <div id="main-controls">
             <button class="control-button" id="record-btn" title="Запись">&#128308;</button> <!-- Red Circle -->
-            <button class="control-button hidden" id="stop-btn" title="Стоп">&#9209;</button> <!-- Square -->
+            <button class="control-button hidden" id="stop-btn" title="Стоп">
+                <span class="btn-rec">
+                    <svg class="btn-mic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+                        <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+                    </svg>
+                    <span class="btn-eq" id="btn-eq"></span>
+                </span>
+            </button>
             <button class="control-button" id="save-audio-btn" title="Сохранить аудио" disabled>&#128190;</button> <!-- Floppy Disk -->
             <button class="control-button" id="save-audio-text-btn" title="Сохранить аудио и текст" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
             <button class="control-button" id="translate-btn" title="Перевести" disabled>Перевести</button>
@@ -344,6 +368,35 @@
         // this window hidden in the tray, and Chromium stops rAF in hidden windows,
         // which froze the overlay meter.
         let _meterCtx = null, _meterTimer = null;
+
+        // Tiny equaliser living inside the stop button, mirroring the overlay.
+        const BTN_BARS = 6, BTN_MAX_H = 16;
+        const btnEq = document.getElementById('btn-eq');
+        const btnBars = [];
+        for (let i = 0; i < BTN_BARS; i++) { const b = document.createElement('i'); btnEq.appendChild(b); btnBars.push(b); }
+        const btnWeight = btnBars.map((_, i) => {
+            const d = Math.abs(i - (BTN_BARS - 1) / 2) / ((BTN_BARS - 1) / 2);
+            return 0.5 + 0.5 * (1 - d * d); // middle bars swing widest
+        });
+        let _btnLevel = 0, _btnRAF = null;
+        function paintButtonMeter() {
+            const t = performance.now();
+            for (let i = 0; i < BTN_BARS; i++) {
+                const jitter = 0.72 + 0.42 * Math.sin(t / 90 + i * 0.9)
+                                    + 0.16 * Math.sin(t / 47 - i * 1.5);
+                const v = Math.max(0, Math.min(1, _btnLevel * btnWeight[i] * jitter));
+                btnBars[i].style.height = Math.max(2, Math.round(v * BTN_MAX_H)) + 'px';
+                btnBars[i].style.backgroundColor = 'hsl(' + Math.round(120 * (1 - v)) + ', 85%, 52%)';
+            }
+            _btnLevel *= 0.82;
+            _btnRAF = requestAnimationFrame(paintButtonMeter);
+        }
+        function stopButtonMeter() {
+            if (_btnRAF) { cancelAnimationFrame(_btnRAF); _btnRAF = null; }
+            _btnLevel = 0;
+            btnBars.forEach(b => { b.style.height = '2px'; b.style.backgroundColor = '#3ec46d'; });
+        }
+
         function startLevelMeter(mediaStream) {
             try {
                 stopLevelMeter();
@@ -362,13 +415,16 @@
                     // gain it up, then bend the curve so quiet speech already moves
                     // the bars and only shouting reaches the red.
                     const level = Math.min(1, Math.pow(rms * 5, 0.65));
+                    if (level > _btnLevel) _btnLevel = level; // feed the in-button meter
                     if (window.api.recLevel) window.api.recLevel(level);
                 }, 33); // ~30fps keeps the meter feeling instant
+                if (!_btnRAF) paintButtonMeter();
             } catch (e) { console.error('level meter failed', e); }
         }
         function stopLevelMeter() {
             if (_meterTimer) { clearInterval(_meterTimer); _meterTimer = null; }
             if (_meterCtx) { try { _meterCtx.close(); } catch (e) {} _meterCtx = null; }
+            stopButtonMeter();
         }
         if (window.api && window.api.onHotkeyToggleRecord) {
             window.api.onHotkeyToggleRecord(() => {

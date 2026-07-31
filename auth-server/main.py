@@ -52,6 +52,10 @@ TRIAL_PER_IP_DAY = int(os.environ.get("TRIAL_PER_IP_DAY", "10"))
 ASR_PER_MIN = int(os.environ.get("ASR_PER_MIN", "20"))
 TRANSLATE_PER_MIN = int(os.environ.get("TRANSLATE_PER_MIN", "40"))
 ASR_DAILY_SECONDS = int(os.environ.get("ASR_DAILY_SECONDS", "14400"))  # 4h/device/day
+# Daily transcription allowance by tier (seconds). The free tier is the "gift"
+# every user gets without a subscription; admins are unlimited.
+FREE_DAILY_SECONDS = int(os.environ.get("FREE_DAILY_SECONDS", "3600"))    # 60 min
+PAID_DAILY_SECONDS = int(os.environ.get("PAID_DAILY_SECONDS", str(ASR_DAILY_SECONDS)))
 
 
 def _client_ip(request: Request) -> str:
@@ -228,6 +232,22 @@ def get_plans():
     return {"plans": SUBSCRIPTION_PRICES, "trial_days": TRIAL_DAYS}
 
 
+@app.get("/api/auth/quota")
+def get_quota(authorization: Optional[str] = Header(None)):
+    """How much of today's transcription allowance is left, for the UI to show."""
+    device_id = require_active_subscription(authorization)
+    user = get_user(device_id)
+    limit = daily_limit_for(device_id)
+    used = usage_today(device_id)
+    return {
+        "role": (user or {}).get("role") or "free",
+        "unlimited": limit == 0,
+        "limit_seconds": limit,
+        "used_seconds": used,
+        "remaining_seconds": None if limit == 0 else max(0, limit - used),
+    }
+
+
 # === Authenticated gateway to the ASR / translation services (AUD-8) ===
 # The public ASR (Whisper) and translation (LibreTranslate) services were
 # reachable by anyone. These endpoints require a valid subscription token and
@@ -238,19 +258,31 @@ TRANSLATE_URL = os.environ.get("TRANSLATE_URL", "http://127.0.0.1:5000")
 
 
 def require_active_subscription(authorization: Optional[str]) -> str:
-    """Validate the Bearer token and require a non-expired subscription.
+    """Validate the Bearer token and return the device id.
 
-    Raises 401 for a missing/invalid/expired token and 403 when the token is
-    valid but the subscription (or trial) is not currently active.
+    Access tiers (the daily transcription allowance is enforced separately, in
+    the /asr handler):
+      admin       - unlimited, no subscription needed (for testing)
+      subscriber  - active paid subscription or trial
+      free        - no subscription: still allowed, but capped by the daily gift
+
+    Raises 401 for a missing/invalid/expired token.
     """
     token = authorization.replace("Bearer ", "") if authorization else None
     payload = verify_token(token)  # raises 401 on bad/expired token
-    device_id = payload["device_id"]
+    return payload["device_id"]
+
+
+def daily_limit_for(device_id: str) -> int:
+    """Seconds of audio this device may transcribe today. 0 means unlimited."""
     user = get_user(device_id)
-    sub_end = user.get("subscription_end") if user else None
-    if not sub_end or sub_end < datetime.now():
-        raise HTTPException(status_code=403, detail="No active subscription")
-    return device_id
+    role = (user or {}).get("role") or "free"
+    if role == "admin":
+        return 0  # unlimited
+    sub_end = (user or {}).get("subscription_end")
+    if sub_end and sub_end > datetime.now():
+        return PAID_DAILY_SECONDS
+    return FREE_DAILY_SECONDS
 
 
 @app.post("/asr")
@@ -266,8 +298,12 @@ async def gateway_asr(
     _enforce_rate(f"asr:{device_id}", ASR_PER_MIN, 60)
     # Cost ceiling: transcription is the expensive path (Whisper CPU time is
     # proportional to audio length). Checked before the work, recorded after.
-    if usage_today(device_id) >= ASR_DAILY_SECONDS:
-        raise HTTPException(status_code=402, detail="Daily transcription quota exceeded")
+    limit = daily_limit_for(device_id)
+    if limit and usage_today(device_id) >= limit:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Дневной лимит {limit // 60} мин исчерпан. Попробуйте завтра.",
+        )
     params = {k: v for k, v in {
         "encode": encode, "task": task, "output": output, "language": language,
     }.items() if v is not None}

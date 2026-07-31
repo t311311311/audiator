@@ -35,6 +35,9 @@ class User(Base):
     is_trial: Mapped[bool] = mapped_column(Boolean, default=False)
     subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_payment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Access tier. 'admin' bypasses quotas (for testing), 'free' gets the daily
+    # gift allowance, 'paid' is a real subscriber.
+    role: Mapped[str] = mapped_column(String, default="free")
 
 
 class Usage(Base):
@@ -51,8 +54,16 @@ class Usage(Base):
 
 
 def init_db() -> None:
-    """Create tables on first run. Safe to call on every startup."""
+    """Create tables on first run and add columns introduced later.
+
+    ``create_all`` only creates missing *tables*, so a database made by an older
+    version keeps its old columns. Add those in place, which SQLite supports and
+    which keeps existing users and their subscriptions intact."""
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)")}
+        if existing and "role" not in existing:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'free'")
 
 
 def get_user(device_id: str) -> Optional[dict]:
@@ -70,7 +81,21 @@ def get_user(device_id: str) -> Optional[dict]:
             "is_trial": u.is_trial,
             "subscription_end": u.subscription_end,
             "last_payment": u.last_payment,
+            "role": u.role or "free",
         }
+
+
+def list_users() -> list:
+    """All accounts, newest first — used by the admin CLI."""
+    with SessionLocal() as s:
+        rows = s.query(User).order_by(User.created_at.desc()).all()
+        return [{
+            "device_id": u.device_id,
+            "device_name": u.device_name,
+            "role": u.role or "free",
+            "is_trial": u.is_trial,
+            "subscription_end": u.subscription_end,
+        } for u in rows]
 
 
 def upsert_user(device_id: str, **fields) -> None:

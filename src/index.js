@@ -144,18 +144,22 @@ const showActivationWindow = () => {
   }
 
   activationWindow = new BrowserWindow({
-    width: 450,
-    height: 700,
+    width: 460,
+    height: 730, // fits the whole card without a scrollbar
     frame: true,
     resizable: false,
     parent: mainWindow,
     modal: true,
+    title: 'Активация Audiator',
+    backgroundColor: '#282c34', // avoids a white flash before the page paints
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  activationWindow.setMenu(null); // no File/Edit/View bar on a product dialog
 
   activationWindow.loadFile(path.join(__dirname, 'activation.html'));
 
