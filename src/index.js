@@ -79,6 +79,8 @@ const createOverlay = () => {
   overlayWindow.on('focus', () => {
     if (!overlayWindow.isVisible()) return; // ignore focus while hidden
     console.log('[overlay] focused (clicked) -> revealing main window');
+    showingDone = false; // the reminder has been acted on
+    overlayWindow.webContents.send('overlay-reset');
     overlayWindow.hide();
     revealMainWindow();
   });
@@ -91,6 +93,12 @@ const createOverlay = () => {
 // permanently pinning the window there.
 const revealMainWindow = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Opening the window is the user acting on the "Готово! Ctrl+V" reminder,
+  // whichever route they took (bar, tray icon, tray menu).
+  showingDone = false;
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('overlay-reset');
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.setAlwaysOnTop(true);
   mainWindow.show();
@@ -282,19 +290,15 @@ app.on('ready', async () => {
     const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
                         mainWindow.isVisible() && !mainWindow.isMinimized();
     if (!mainVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+      // Stays up until the user acts on it: clicking the bar (which opens the
+      // window) or starting another recording clears it. There is deliberately
+      // no timer — the reminder is only useful while the text is unpasted, and
+      // Windows gives no way to detect that a paste happened.
       showingDone = true;
       overlayWindow.webContents.send('overlay-done');
       overlayWindow.showInactive();
-      setTimeout(() => {
-        showingDone = false;
-        if (overlayWindow && !overlayWindow.isDestroyed()) {
-          overlayWindow.webContents.send('overlay-reset');
-        }
-        syncOverlay();
-      }, 3000); // long enough to read "Готово! Ctrl+V" and act on it
-    } else {
-      syncOverlay();
     }
+    syncOverlay();
   });
   ipcMain.on('rec-level', (event, level) => {
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
@@ -304,7 +308,11 @@ app.on('ready', async () => {
   // Clicking the overlay swaps it back for the main window (recording continues).
   ipcMain.on('overlay-clicked', () => {
     console.log('[overlay] clicked -> revealing main window');
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+    showingDone = false;
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('overlay-reset');
+      overlayWindow.hide();
+    }
     revealMainWindow();
   });
   // Hiding/minimising the window while recording hands over to the overlay.
