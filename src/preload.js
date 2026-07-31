@@ -62,4 +62,6 @@ contextBridge.exposeInMainWorld('api', {
   recordingStopped: () => ipcRenderer.send('recording-stopped'),
   recLevel: (level) => ipcRenderer.send('rec-level', level),
   copyToClipboard: (text) => ipcRenderer.send('copy-to-clipboard', text),
+  transcribingStarted: () => ipcRenderer.send('transcribing-started'),
+  transcribingFailed: () => ipcRenderer.send('transcribing-failed'),
 });

@@ -36,8 +36,10 @@ let overlayWindow = null;
 // --- Recording overlay: a compact always-on-top level meter shown while recording ---
 // It stands in for the main window: visible only while recording AND the main
 // window is hidden. Clicking it brings the main window back.
+// Overlay states, in the order they happen: recording -> transcribing -> ready.
 let isRecording = false;
-let showingDone = false; // overlay is briefly confirming "copied"
+let transcribing = false; // waiting for the transcript
+let showingDone = false;  // briefly showing "Готово! Ctrl+V"
 
 const createOverlay = () => {
   const width = 96, height = 40;
@@ -106,7 +108,7 @@ const syncOverlay = () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
                       mainWindow.isVisible() && !mainWindow.isMinimized();
-  if ((isRecording || showingDone) && !mainVisible) {
+  if ((isRecording || transcribing || showingDone) && !mainVisible) {
     if (!overlayWindow.isVisible()) overlayWindow.showInactive();
   } else if (overlayWindow.isVisible()) {
     overlayWindow.hide();
@@ -242,13 +244,39 @@ app.on('ready', async () => {
   }
 
   // Recording overlay lifecycle, driven by the renderer that owns the mic stream.
-  ipcMain.on('recording-started', () => { isRecording = true; syncOverlay(); });
+  ipcMain.on('recording-started', () => {
+    isRecording = true;
+    transcribing = false;
+    showingDone = false;
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('overlay-reset'); // back to the equaliser
+    }
+    syncOverlay();
+  });
   ipcMain.on('recording-stopped', () => { isRecording = false; syncOverlay(); });
+
+  // Transcription can take a while; keep the bar up saying so instead of
+  // vanishing and reappearing.
+  ipcMain.on('transcribing-started', () => {
+    transcribing = true;
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('overlay-busy');
+    }
+    syncOverlay();
+  });
+  ipcMain.on('transcribing-failed', () => {
+    transcribing = false;
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('overlay-reset');
+    }
+    syncOverlay();
+  });
   // Copy from the main process: navigator.clipboard needs a focused document,
   // and recording usually finishes with this window hidden in the tray.
   ipcMain.on('copy-to-clipboard', (event, text) => {
     if (!text) return;
     clipboard.writeText(text);
+    transcribing = false;
     // With the window hidden the in-app toast would go unseen, so confirm in
     // the overlay instead — otherwise the hotkey flow gives no feedback at all.
     const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
@@ -263,7 +291,9 @@ app.on('ready', async () => {
           overlayWindow.webContents.send('overlay-reset');
         }
         syncOverlay();
-      }, 2200);
+      }, 3000); // long enough to read "Готово! Ctrl+V" and act on it
+    } else {
+      syncOverlay();
     }
   });
   ipcMain.on('rec-level', (event, level) => {

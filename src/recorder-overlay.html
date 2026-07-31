@@ -18,15 +18,30 @@
     .rec { animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
-    /* "Copied" confirmation replaces the equaliser for a moment. */
-    .done {
+    /* Status text replaces the equaliser between recording and the result.
+       Two short lines keep the bar the same size at only 96px wide. */
+    .status {
       display: none; flex: 1 1 auto; font-family: 'Segoe UI', Tahoma, sans-serif;
-      font-size: 9px; color: #98c379; white-space: nowrap; text-align: center;
-      letter-spacing: -0.2px; /* the bar is only 96px wide */
+      font-size: 9px; line-height: 1.15; text-align: center; letter-spacing: -0.2px;
     }
-    body.is-done .eq { display: none; }
-    body.is-done .done { display: block; }
-    body.is-done .mic { color: #98c379; animation: none; }
+    .status b { display: block; font-weight: 600; }
+
+    /* Transcription running: red, softly breathing. */
+    body.is-busy .eq, body.is-busy .mic { display: none; }
+    body.is-busy .status { display: block; color: #e06c75; animation: blink 1.1s ease-in-out infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    /* Result ready: green, glowing. */
+    body.is-done .eq, body.is-done .mic { display: none; }
+    body.is-done .status {
+      display: block; color: #98c379;
+      text-shadow: 0 0 6px rgba(152, 195, 121, 0.9), 0 0 12px rgba(152, 195, 121, 0.5);
+      animation: glow 1.6s ease-in-out infinite;
+    }
+    @keyframes glow {
+      0%, 100% { text-shadow: 0 0 5px rgba(152,195,121,0.75), 0 0 10px rgba(152,195,121,0.35); }
+      50%      { text-shadow: 0 0 9px rgba(152,195,121,1),    0 0 18px rgba(152,195,121,0.6); }
+    }
 
     .eq { flex: 1 1 auto; display: flex; align-items: center; gap: 1.5px; height: 20px; }
     .eq i {
@@ -46,7 +61,7 @@
       </svg>
     </div>
     <div class="eq" id="eq"></div>
-    <div class="done" id="done">Скопировано</div>
+    <div class="status" id="status"><b>Выполняется</b><b>транскрибация!</b></div>
   </div>
 
   <script>
@@ -81,10 +96,26 @@
     }
     requestAnimationFrame(render);
 
+    // The bar walks through three states without changing size:
+    // recording (equaliser) -> transcribing (red) -> ready (green).
+    const statusEl = document.getElementById('status');
+    function setState(cls, line1, line2) {
+      level = 0;
+      document.body.classList.remove('is-busy', 'is-done');
+      if (cls) {
+        statusEl.innerHTML = '';
+        const a = document.createElement('b'); a.textContent = line1;
+        const b = document.createElement('b'); b.textContent = line2;
+        statusEl.append(a, b);
+        document.body.classList.add(cls);
+      }
+    }
+
     if (window.overlay && window.overlay.onLevel) {
       window.overlay.onLevel((v) => { if (v > level) level = v; }); // fast attack, slow release
-      window.overlay.onDone(() => { level = 0; document.body.classList.add('is-done'); });
-      window.overlay.onReset(() => document.body.classList.remove('is-done'));
+      window.overlay.onBusy(() => setState('is-busy', 'Выполняется', 'транскрибация!'));
+      window.overlay.onDone(() => setState('is-done', 'Готово!', 'Ctrl+V'));
+      window.overlay.onReset(() => setState(null));
     }
 
     // Clicking the bar hands control back to the main window. mousedown as well

@@ -532,6 +532,10 @@
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
 
+            // Tell the overlay we are working, so it can say so instead of
+            // disappearing while the server thinks.
+            if (window.api.transcribingStarted) window.api.transcribingStarted();
+
             try {
                 // Идёт через аутентифицирующий гейтвей: main-процесс подставит
                 // токен подписки, поэтому прямого обращения к сервису тут нет.
@@ -546,6 +550,10 @@
                 if (result.text && window.api.copyToClipboard) {
                     window.api.copyToClipboard(result.text);
                     showToast('Текст скопирован — вставьте через Ctrl+V');
+                } else if (window.api.transcribingFailed) {
+                    // Nothing recognised: clear the overlay's "transcribing" state,
+                    // otherwise the bar would sit there saying it is still working.
+                    window.api.transcribingFailed();
                 }
 
             } catch (error) {
@@ -563,6 +571,9 @@
                 if (window.api && typeof window.api.logError === 'function') {
                     window.api.logError('Transcription error', error);
                 }
+                // Clear the overlay's "transcribing" state so the bar does not
+                // hang on that message after a failure.
+                if (window.api.transcribingFailed) window.api.transcribingFailed();
             } finally {
                 translateBtn.disabled = false;
                 saveAudioBtn.disabled = false;
