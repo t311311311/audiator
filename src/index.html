@@ -184,6 +184,16 @@
         #record-btn { color: var(--record-color); }
         .hidden { display: none; }
 
+        /* Brief confirmation strip, e.g. after the transcript is copied. */
+        #toast {
+            position: fixed; left: 50%; transform: translateX(-50%);
+            bottom: 74px; z-index: 2000; max-width: 88%;
+            background: #23262e; color: #cfd3dc; border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 8px; padding: 7px 12px; font-size: 12px; text-align: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+        }
+        #toast.show { opacity: 1; }
+
         /* Recording state of the stop button: mic + a tiny live equaliser, in the
            same visual language as the floating overlay, sized to fit the button. */
         #stop-btn { padding: 6px 10px; }
@@ -300,6 +310,8 @@
     </div>
 
 
+    <div id="toast"></div>
+
     <div id="translate-bar" class="controls hidden" style="padding-top: 10px; border-top: 1px solid var(--accent-color);">
         <label for="lang-select" style="font-size: 0.9em;">Перевести на:</label>
         <select id="lang-select" style="flex-grow: 1; background: var(--primary-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 5px;">
@@ -368,6 +380,17 @@
         // this window hidden in the tray, and Chromium stops rAF in hidden windows,
         // which froze the overlay meter.
         let _meterCtx = null, _meterTimer = null;
+
+        // Short-lived confirmation inside the window. When the window is hidden
+        // (the usual hotkey flow) the overlay shows the same message instead.
+        let _toastTimer = null;
+        function showToast(message) {
+            const el = document.getElementById('toast');
+            el.textContent = message;
+            el.classList.add('show');
+            clearTimeout(_toastTimer);
+            _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+        }
 
         // Tiny equaliser living inside the stop button, mirroring the overlay.
         const BTN_BARS = 6, BTN_MAX_H = 16;
@@ -517,6 +540,13 @@
                     throw new Error(result.error || 'Transcription failed');
                 }
                 originalTextField.textContent = result.text || 'No text recognized.';
+
+                // Put the transcript straight on the clipboard so it can be pasted
+                // with Ctrl+V without reopening the window.
+                if (result.text && window.api.copyToClipboard) {
+                    window.api.copyToClipboard(result.text);
+                    showToast('Текст скопирован — вставьте через Ctrl+V');
+                }
 
             } catch (error) {
                 console.error('Transcription error:', error);

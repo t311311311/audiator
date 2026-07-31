@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -37,6 +37,7 @@ let overlayWindow = null;
 // It stands in for the main window: visible only while recording AND the main
 // window is hidden. Clicking it brings the main window back.
 let isRecording = false;
+let showingDone = false; // overlay is briefly confirming "copied"
 
 const createOverlay = () => {
   const width = 96, height = 40;
@@ -68,13 +69,31 @@ const createOverlay = () => {
   overlayWindow.on('closed', () => { overlayWindow = null; });
 };
 
+// Bring the main window to the front and give it focus.
+// Windows refuses a plain focus() call from a background process, so the window
+// would appear behind whatever the user was working in. Flipping alwaysOnTop on
+// and straight back off is the standard way to get to the front without
+// permanently pinning the window there.
+const revealMainWindow = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.show();
+  mainWindow.moveTop();
+  mainWindow.focus();
+  app.focus({ steal: true });
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false);
+  }, 200);
+};
+
 // The overlay and the main window are two views of the same state: show the
 // overlay only while recording with the main window out of sight.
 const syncOverlay = () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
                       mainWindow.isVisible() && !mainWindow.isMinimized();
-  if (isRecording && !mainVisible) {
+  if ((isRecording || showingDone) && !mainVisible) {
     if (!overlayWindow.isVisible()) overlayWindow.showInactive();
   } else if (overlayWindow.isVisible()) {
     overlayWindow.hide();
@@ -124,14 +143,14 @@ const createTray = () => {
   tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show App', click: () => { mainWindow.show(); }},
+    { label: 'Show App', click: () => { revealMainWindow(); }},
     { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); }},
   ]);
 
   tray.setToolTip('Audiator');
   tray.setContextMenu(contextMenu);
   tray.on('click', () => {
-    mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+    mainWindow.isVisible() ? mainWindow.hide() : revealMainWindow();
   });
 };
 
@@ -212,6 +231,28 @@ app.on('ready', async () => {
   // Recording overlay lifecycle, driven by the renderer that owns the mic stream.
   ipcMain.on('recording-started', () => { isRecording = true; syncOverlay(); });
   ipcMain.on('recording-stopped', () => { isRecording = false; syncOverlay(); });
+  // Copy from the main process: navigator.clipboard needs a focused document,
+  // and recording usually finishes with this window hidden in the tray.
+  ipcMain.on('copy-to-clipboard', (event, text) => {
+    if (!text) return;
+    clipboard.writeText(text);
+    // With the window hidden the in-app toast would go unseen, so confirm in
+    // the overlay instead — otherwise the hotkey flow gives no feedback at all.
+    const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
+                        mainWindow.isVisible() && !mainWindow.isMinimized();
+    if (!mainVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+      showingDone = true;
+      overlayWindow.webContents.send('overlay-done');
+      overlayWindow.showInactive();
+      setTimeout(() => {
+        showingDone = false;
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+          overlayWindow.webContents.send('overlay-reset');
+        }
+        syncOverlay();
+      }, 2200);
+    }
+  });
   ipcMain.on('rec-level', (event, level) => {
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
       overlayWindow.webContents.send('rec-level', level);
@@ -220,11 +261,7 @@ app.on('ready', async () => {
   // Clicking the overlay swaps it back for the main window (recording continues).
   ipcMain.on('overlay-clicked', () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    revealMainWindow();
   });
   // Hiding/minimising the window while recording hands over to the overlay.
   ['hide', 'minimize', 'show', 'restore', 'focus'].forEach((evt) => {

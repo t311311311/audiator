@@ -18,6 +18,16 @@
     .rec { animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
+    /* "Copied" confirmation replaces the equaliser for a moment. */
+    .done {
+      display: none; flex: 1 1 auto; font-family: 'Segoe UI', Tahoma, sans-serif;
+      font-size: 9px; color: #98c379; white-space: nowrap; text-align: center;
+      letter-spacing: -0.2px; /* the bar is only 96px wide */
+    }
+    body.is-done .eq { display: none; }
+    body.is-done .done { display: block; }
+    body.is-done .mic { color: #98c379; animation: none; }
+
     .eq { flex: 1 1 auto; display: flex; align-items: center; gap: 1.5px; height: 20px; }
     .eq i {
       display: block; flex: 1 1 0; height: 2px; min-height: 2px; border-radius: 1px;
@@ -29,13 +39,14 @@
 </head>
 <body>
   <div class="bar" id="bar">
-    <div class="mic rec">
+    <div class="mic rec" id="mic">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
         <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
       </svg>
     </div>
     <div class="eq" id="eq"></div>
+    <div class="done" id="done">Скопировано</div>
   </div>
 
   <script>
@@ -72,6 +83,8 @@
 
     if (window.overlay && window.overlay.onLevel) {
       window.overlay.onLevel((v) => { if (v > level) level = v; }); // fast attack, slow release
+      window.overlay.onDone(() => { level = 0; document.body.classList.add('is-done'); });
+      window.overlay.onReset(() => document.body.classList.remove('is-done'));
     }
 
     // Clicking the bar hands control back to the main window.
