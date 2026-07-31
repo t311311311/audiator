@@ -39,7 +39,7 @@ let overlayWindow = null;
 // Overlay states, in the order they happen: recording -> transcribing -> ready.
 let isRecording = false;
 let transcribing = false; // waiting for the transcript
-let showingDone = false;  // briefly showing "Готово! Ctrl+V"
+let showingDone = false;  // showing "Готово! Ctrl+V" until the user acts on it
 
 const createOverlay = () => {
   const width = 96, height = 40;
