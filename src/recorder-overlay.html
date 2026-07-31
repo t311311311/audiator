@@ -8,21 +8,22 @@
       -webkit-user-select: none; cursor: pointer;
     }
     .bar {
-      display: flex; align-items: center; gap: 8px; height: 100%; box-sizing: border-box;
-      padding: 0 12px; background: #23262e; border-radius: 20px;
+      display: flex; align-items: center; gap: 6px; height: 100%; box-sizing: border-box;
+      padding: 0 8px; background: #23262e; border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.10);
     }
-    .mic { flex: 0 0 auto; width: 15px; height: 15px; color: #e06c75; }
+    .mic { flex: 0 0 auto; width: 13px; height: 13px; color: #e06c75; }
     .mic svg { width: 100%; height: 100%; display: block; }
     /* Pulse so it reads as "recording" even in silence. */
     .rec { animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
-    .eq { flex: 1 1 auto; display: flex; align-items: center; gap: 3px; height: 20px; }
+    .eq { flex: 1 1 auto; display: flex; align-items: center; gap: 1.5px; height: 20px; }
     .eq i {
-      display: block; flex: 1 1 0; height: 3px; min-height: 3px; border-radius: 2px;
+      display: block; flex: 1 1 0; height: 2px; min-height: 2px; border-radius: 1px;
       background: #3ec46d; transform-origin: center;
-      transition: height 0.07s linear, background-color 0.12s linear;
+      /* Snappy: the meter should feel instant, so keep transitions very short. */
+      transition: height 0.04s linear, background-color 0.08s linear;
     }
   </style>
 </head>
@@ -53,15 +54,18 @@
     const MAX_H = 20;   // px, matches .eq height
 
     function render() {
+      const t = performance.now();
       for (let i = 0; i < BARS; i++) {
-        // A little per-bar jitter keeps it alive without looking random.
-        const jitter = 0.85 + 0.3 * Math.sin(performance.now() / 130 + i);
+        // Two detuned waves per bar: the ripple travels along the equaliser
+        // instead of every bar wobbling in lockstep.
+        const jitter = 0.72 + 0.42 * Math.sin(t / 90 + i * 0.7)
+                            + 0.16 * Math.sin(t / 47 - i * 1.3);
         const v = Math.max(0, Math.min(1, level * weight[i] * jitter));
-        bars[i].style.height = Math.max(3, Math.round(v * MAX_H)) + 'px';
+        bars[i].style.height = Math.max(2, Math.round(v * MAX_H)) + 'px';
         // green (120) -> yellow (60) -> red (0) as it gets louder
         bars[i].style.backgroundColor = 'hsl(' + Math.round(120 * (1 - v)) + ', 85%, 52%)';
       }
-      level *= 0.90; // decay between incoming samples
+      level *= 0.82; // quicker fall-off, so peaks read as distinct hits
       requestAnimationFrame(render);
     }
     requestAnimationFrame(render);

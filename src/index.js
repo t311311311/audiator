@@ -39,7 +39,7 @@ let overlayWindow = null;
 let isRecording = false;
 
 const createOverlay = () => {
-  const width = 190, height = 40;
+  const width = 96, height = 40;
   const area = screen.getPrimaryDisplay().workAreaSize;
   overlayWindow = new BrowserWindow({
     width, height,

@@ -357,9 +357,13 @@
                     analyser.getByteTimeDomainData(buf);
                     let sum = 0;
                     for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
-                    const level = Math.min(1, Math.sqrt(sum / buf.length) * 3); // scale: speech RMS is small
+                    const rms = Math.sqrt(sum / buf.length);
+                    // Speech RMS is small and loudness is perceived logarithmically:
+                    // gain it up, then bend the curve so quiet speech already moves
+                    // the bars and only shouting reaches the red.
+                    const level = Math.min(1, Math.pow(rms * 5, 0.65));
                     if (window.api.recLevel) window.api.recLevel(level);
-                }, 40); // ~25fps is plenty for a level bar
+                }, 33); // ~30fps keeps the meter feeling instant
             } catch (e) { console.error('level meter failed', e); }
         }
         function stopLevelMeter() {
