@@ -69,6 +69,17 @@ const createOverlay = () => {
   overlayWindow.setOpacity(store.get('opacity', 0.8)); // same translucency as the main window
   overlayWindow.loadFile(path.join(__dirname, 'recorder-overlay.html'));
   overlayWindow.on('closed', () => { overlayWindow = null; });
+
+  // Primary path for "user tapped the bar". The overlay is always shown with
+  // showInactive() and is kept out of the taskbar and Alt-Tab, so the only way
+  // it can gain focus is a real click on it. Acting on focus works even when
+  // the click never reaches the page, which is what happened before.
+  overlayWindow.on('focus', () => {
+    if (!overlayWindow.isVisible()) return; // ignore focus while hidden
+    console.log('[overlay] focused (clicked) -> revealing main window');
+    overlayWindow.hide();
+    revealMainWindow();
+  });
 };
 
 // Bring the main window to the front and give it focus.

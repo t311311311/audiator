@@ -87,10 +87,17 @@
       window.overlay.onReset(() => document.body.classList.remove('is-done'));
     }
 
-    // Clicking the bar hands control back to the main window.
-    document.getElementById('bar').addEventListener('click', () => {
+    // Clicking the bar hands control back to the main window. mousedown as well
+    // as click: some window styles deliver one but not the other. The main
+    // process also treats focus as a click, so this is belt and braces.
+    function handoff(e) {
+      e.preventDefault();
       if (window.overlay && window.overlay.clicked) window.overlay.clicked();
-    });
+      else console.error('overlay bridge missing - preload did not load');
+    }
+    const barEl = document.getElementById('bar');
+    barEl.addEventListener('mousedown', handoff);
+    barEl.addEventListener('click', handoff);
   </script>
 </body>
 </html>
