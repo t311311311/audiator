@@ -41,6 +41,64 @@ let isRecording = false;
 let transcribing = false; // waiting for the transcript
 let showingDone = false;  // showing "Готово! Ctrl+V" until the user acts on it
 
+// --- Paste detection -------------------------------------------------------
+// Windows never tells an application that the user pasted, so the only way to
+// dismiss the "Готово! Ctrl+V" reminder on the paste itself is a system-wide
+// key hook. It is deliberately started only while that reminder is on screen
+// and stopped the moment it clears, so the app is not watching the keyboard
+// during normal use. If the native module is missing the app carries on without
+// paste detection.
+let uiohook = null;
+let hookRunning = false;
+try {
+  uiohook = require('uiohook-napi');
+} catch (e) {
+  console.error('uiohook-napi unavailable, paste detection disabled:', e.message);
+}
+
+const startPasteWatch = () => {
+  if (!uiohook || hookRunning) return;
+  try {
+    uiohook.uIOhook.start();
+    hookRunning = true;
+  } catch (e) {
+    console.error('could not start the key hook:', e.message);
+  }
+};
+
+const stopPasteWatch = () => {
+  if (!uiohook || !hookRunning) return;
+  try {
+    uiohook.uIOhook.stop();
+    hookRunning = false;
+  } catch (e) {
+    console.error('could not stop the key hook:', e.message);
+  }
+};
+
+// The one place that takes the reminder down, so the hook is always stopped
+// with it no matter how the user dismissed it: pasting, clicking the bar,
+// opening the window, or starting another recording.
+const clearDoneReminder = () => {
+  if (!showingDone) return;
+  showingDone = false;
+  stopPasteWatch();
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('overlay-reset');
+  }
+};
+
+if (uiohook) {
+  uiohook.uIOhook.on('keydown', (e) => {
+    if (!showingDone) return; // only ever acted on while the reminder is up
+    if (e.keycode === uiohook.UiohookKey.V && (e.ctrlKey || e.metaKey)) {
+      console.log('[overlay] paste detected -> dismissing reminder');
+      clearDoneReminder();
+      if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+    }
+  });
+}
+
 const createOverlay = () => {
   const width = 96, height = 40;
   const area = screen.getPrimaryDisplay().workAreaSize;
@@ -79,8 +137,7 @@ const createOverlay = () => {
   overlayWindow.on('focus', () => {
     if (!overlayWindow.isVisible()) return; // ignore focus while hidden
     console.log('[overlay] focused (clicked) -> revealing main window');
-    showingDone = false; // the reminder has been acted on
-    overlayWindow.webContents.send('overlay-reset');
+    clearDoneReminder(); // acted on
     overlayWindow.hide();
     revealMainWindow();
   });
@@ -95,10 +152,7 @@ const revealMainWindow = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   // Opening the window is the user acting on the "Готово! Ctrl+V" reminder,
   // whichever route they took (bar, tray icon, tray menu).
-  showingDone = false;
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('overlay-reset');
-  }
+  clearDoneReminder();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.setAlwaysOnTop(true);
   mainWindow.show();
@@ -255,7 +309,7 @@ app.on('ready', async () => {
   ipcMain.on('recording-started', () => {
     isRecording = true;
     transcribing = false;
-    showingDone = false;
+    clearDoneReminder();
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.webContents.send('overlay-reset'); // back to the equaliser
     }
@@ -297,6 +351,7 @@ app.on('ready', async () => {
       showingDone = true;
       overlayWindow.webContents.send('overlay-done');
       overlayWindow.showInactive();
+      startPasteWatch(); // watch for Ctrl+V only while this reminder is up
     }
     syncOverlay();
   });
@@ -308,11 +363,8 @@ app.on('ready', async () => {
   // Clicking the overlay swaps it back for the main window (recording continues).
   ipcMain.on('overlay-clicked', () => {
     console.log('[overlay] clicked -> revealing main window');
-    showingDone = false;
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('overlay-reset');
-      overlayWindow.hide();
-    }
+    clearDoneReminder();
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
     revealMainWindow();
   });
   // Hiding/minimising the window while recording hands over to the overlay.
@@ -648,6 +700,9 @@ app.on('ready', async () => {
   });
 });
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  stopPasteWatch(); // a live hook would keep the process alive
+});
 app.on('window-all-closed', () => { /* ... existing code ... */ });
 app.on('activate', () => { /* ... existing code ... */ });
