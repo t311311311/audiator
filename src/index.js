@@ -285,6 +285,14 @@ app.on('ready', async () => {
     }
   }
   
+  // Development runs talk to services on this machine; start whatever is not
+  // already up, so `npm start` is all that is needed. Packaged builds use the
+  // remote server and skip this entirely.
+  if (!app.isPackaged) {
+    const { startLocalBackend } = require('./local-backend');
+    await startLocalBackend(path.join(__dirname, '..'));
+  }
+
   // Check authorization status
   const auth = require('./auth');
   const authStatus = await auth.checkStatus();
@@ -703,6 +711,9 @@ app.on('ready', async () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopPasteWatch(); // a live hook would keep the process alive
+  if (!app.isPackaged) {
+    require('./local-backend').stopLocalBackend();
+  }
 });
 app.on('window-all-closed', () => { /* ... existing code ... */ });
 app.on('activate', () => { /* ... existing code ... */ });
