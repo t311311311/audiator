@@ -55,3 +55,7 @@ coverage/
 auth-server/audiator.db
 auth-server/*.serverbak
 *.serverbackup
+
+# Python bytecode
+__pycache__/
+*.pyc
