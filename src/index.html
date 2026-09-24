@@ -194,21 +194,17 @@
         }
         #toast.show { opacity: 1; }
 
-        /* Recording state of the stop button: mic + a tiny live equaliser, in the
-           same visual language as the floating overlay, sized to fit the button. */
-        #stop-btn { padding: 6px 10px; }
-        .btn-rec { display: flex; align-items: center; gap: 5px; height: 18px; }
-        .btn-mic {
-            width: 13px; height: 13px; flex: 0 0 auto; color: var(--record-color);
-            animation: btn-pulse 1.4s ease-in-out infinite;
+        /* The record button shows the floating bar's microphone in the same soft
+           red: still while idle, slowly breathing while recording, so the window
+           and the bar say "recording" the same way. (A tiny live equaliser here
+           was hard to notice, a blinking red dot too harsh; the level meter
+           lives on the bar.) */
+        .mic-icon {
+            display: inline-block; vertical-align: middle; width: 20px; height: 20px;
+            color: var(--record-color);
         }
-        @keyframes btn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-        .btn-eq { display: flex; align-items: center; gap: 1.5px; height: 16px; }
-        .btn-eq i {
-            display: block; width: 2px; height: 2px; border-radius: 1px;
-            background: #3ec46d;
-            transition: height 0.04s linear, background-color 0.08s linear;
-        }
+        #stop-btn .mic-icon { animation: rec-pulse 1.4s ease-in-out infinite; }
+        @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
         
         #main-controls { flex-grow: 1; display: flex; gap: 10px; }
 
@@ -224,6 +220,16 @@
            instead of pushing the copy button past the right edge. */
         #main-controls { min-width: 0; }
         #main-controls > .control-button { flex: 0 0 auto; }
+        /* Every icon button is the same fixed box, and the stop button takes the
+           record button's box while recording. Sized to content they differed
+           (record 48px, stop 59px, save+text 59px), so pressing record shoved
+           the row sideways and cut the translate label to "Переве…".
+           50px fits the widest icon ("💾+") and leaves the translate button its
+           full label in every language. The height is fixed too: left to the
+           content it followed the font (40px for Latin/Cyrillic, 42px for
+           Chinese). Buttons centre their content vertically on their own. */
+        .icon-button { width: 50px; padding: 0; }
+        #main-controls > .control-button, #copy-btn { height: 43px; }
         /* Two ids on purpose: this must outrank the "#main-controls > .control-button"
            rule above, or the button never grows (measured: the gap stayed 57px). */
         #main-controls > #translate-btn {
@@ -350,21 +356,23 @@
 
     <div class="controls">
         <div id="main-controls">
-            <button class="control-button" id="record-btn" title="Запись" data-i18n-title="title.record">&#128308;</button> <!-- Red Circle -->
-            <button class="control-button hidden" id="stop-btn" title="Стоп" data-i18n-title="title.stop">
-                <span class="btn-rec">
-                    <svg class="btn-mic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
-                        <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
-                    </svg>
-                    <span class="btn-eq" id="btn-eq"></span>
-                </span>
+            <button class="control-button icon-button" id="record-btn" title="Запись (Ctrl+Space)" data-i18n-title="title.record">
+                <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+                    <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+                </svg>
             </button>
-            <button class="control-button" id="save-audio-btn" title="Сохранить аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
-            <button class="control-button" id="save-audio-text-btn" title="Сохранить аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
+            <button class="control-button icon-button hidden" id="stop-btn" title="Стоп (Ctrl+Space)" data-i18n-title="title.stop">
+                <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+                    <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+                </svg>
+            </button>
+            <button class="control-button icon-button" id="save-audio-btn" title="Сохранить аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
+            <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
             <button class="control-button" id="translate-btn" title="Перевести" data-i18n="btn.translate" data-i18n-title="title.translate" disabled>Перевести</button>
         </div>
-        <button class="control-button" id="copy-btn" title="Копировать" data-i18n-title="title.copy">&#128203;</button> <!-- Clipboard -->
+        <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copy">&#128203;</button> <!-- Clipboard -->
     </div>
 
     <script>
@@ -450,34 +458,6 @@
             _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
         }
 
-        // Tiny equaliser living inside the stop button, mirroring the overlay.
-        const BTN_BARS = 6, BTN_MAX_H = 16;
-        const btnEq = document.getElementById('btn-eq');
-        const btnBars = [];
-        for (let i = 0; i < BTN_BARS; i++) { const b = document.createElement('i'); btnEq.appendChild(b); btnBars.push(b); }
-        const btnWeight = btnBars.map((_, i) => {
-            const d = Math.abs(i - (BTN_BARS - 1) / 2) / ((BTN_BARS - 1) / 2);
-            return 0.5 + 0.5 * (1 - d * d); // middle bars swing widest
-        });
-        let _btnLevel = 0, _btnRAF = null;
-        function paintButtonMeter() {
-            const t = performance.now();
-            for (let i = 0; i < BTN_BARS; i++) {
-                const jitter = 0.72 + 0.42 * Math.sin(t / 90 + i * 0.9)
-                                    + 0.16 * Math.sin(t / 47 - i * 1.5);
-                const v = Math.max(0, Math.min(1, _btnLevel * btnWeight[i] * jitter));
-                btnBars[i].style.height = Math.max(2, Math.round(v * BTN_MAX_H)) + 'px';
-                btnBars[i].style.backgroundColor = 'hsl(' + Math.round(120 * (1 - v)) + ', 85%, 52%)';
-            }
-            _btnLevel *= 0.82;
-            _btnRAF = requestAnimationFrame(paintButtonMeter);
-        }
-        function stopButtonMeter() {
-            if (_btnRAF) { cancelAnimationFrame(_btnRAF); _btnRAF = null; }
-            _btnLevel = 0;
-            btnBars.forEach(b => { b.style.height = '2px'; b.style.backgroundColor = '#3ec46d'; });
-        }
-
         function startLevelMeter(mediaStream) {
             try {
                 stopLevelMeter();
@@ -496,16 +476,13 @@
                     // gain it up, then bend the curve so quiet speech already moves
                     // the bars and only shouting reaches the red.
                     const level = Math.min(1, Math.pow(rms * 5, 0.65));
-                    if (level > _btnLevel) _btnLevel = level; // feed the in-button meter
                     if (window.api.recLevel) window.api.recLevel(level);
                 }, 33); // ~30fps keeps the meter feeling instant
-                if (!_btnRAF) paintButtonMeter();
             } catch (e) { console.error('level meter failed', e); }
         }
         function stopLevelMeter() {
             if (_meterTimer) { clearInterval(_meterTimer); _meterTimer = null; }
             if (_meterCtx) { try { _meterCtx.close(); } catch (e) {} _meterCtx = null; }
-            stopButtonMeter();
         }
         if (window.api && window.api.onHotkeyToggleRecord) {
             window.api.onHotkeyToggleRecord(() => {
