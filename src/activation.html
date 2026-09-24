@@ -276,56 +276,68 @@
             </svg>
         </div>
         
-        <h1>Добро пожаловать в Audiator</h1>
-        <p class="subtitle">Транскрибация и перевод аудио в один клик</p>
+        <h1 data-i18n="act.welcome">Добро пожаловать в Audiator</h1>
+        <p class="subtitle" data-i18n="act.subtitle">Транскрибация и перевод аудио в один клик</p>
 
         <div class="trial-section">
-            <div class="trial-badge">🎁 14 дней бесплатно</div>
-            <button class="btn" id="startTrialBtn">Начать бесплатный период</button>
-            <p style="font-size: 11px; opacity: 0.6; margin-top: 8px;">
-                Не требуется банковская карта
-            </p>
+            <div class="trial-badge" data-i18n="act.trialBadge">🎁 14 дней бесплатно</div>
+            <button class="btn" id="startTrialBtn" data-i18n="act.startTrial">Начать бесплатный период</button>
+            <p style="font-size: 11px; opacity: 0.6; margin-top: 8px;" data-i18n="act.noCard">Не требуется банковская карта</p>
         </div>
 
         <div class="divider">
-            <span>ИЛИ</span>
+            <span data-i18n="act.or">ИЛИ</span>
         </div>
 
-        <h3 style="text-align: center; margin-bottom: 12px; font-size: 14px;">Выберите подписку:</h3>
+        <h3 style="text-align: center; margin-bottom: 12px; font-size: 14px;" data-i18n="act.choosePlan">Выберите подписку:</h3>
         
         <div class="plans">
             <div class="plan-card" data-plan="1_month">
-                <div class="plan-name">1 месяц</div>
+                <div class="plan-name" data-i18n="act.month1">1 месяц</div>
                 <div class="plan-price">299 ₽</div>
-                <div class="plan-period">299 ₽/мес</div>
+                <div class="plan-period" data-i18n="act.perMonth1">299 ₽/мес</div>
             </div>
             <div class="plan-card" data-plan="12_months">
-                <div class="plan-name">12 месяцев</div>
+                <div class="plan-name" data-i18n="act.months12">12 месяцев</div>
                 <div class="plan-price">2 490 ₽</div>
-                <div class="plan-period">~207 ₽/мес</div>
-                <div class="best-value">ВЫГОДНО</div>
+                <div class="plan-period" data-i18n="act.perMonth12">~207 ₽/мес</div>
+                <div class="best-value" data-i18n="act.bestValue">ВЫГОДНО</div>
             </div>
         </div>
 
-        <button class="btn btn-secondary" id="buySubscriptionBtn" disabled>
-            Оформить подписку
-        </button>
+        <button class="btn btn-secondary" id="buySubscriptionBtn" disabled>Оформить подписку</button>
 
         <div class="status-message" id="statusMessage"></div>
         
-        <div class="server-status" id="serverStatus">Проверка сервера...</div>
+        <div class="server-status" id="serverStatus" data-i18n="act.checkingServer">Проверка сервера...</div>
 
         <div class="features">
-            <div class="feature">Транскрибация без ограничений</div>
-            <div class="feature">Перевод на 6 языков</div>
-            <div class="feature">Сохранение истории</div>
-            <div class="feature">Работа в фоновом режиме</div>
+            <div class="feature" data-i18n="act.feat1">Транскрибация без ограничений</div>
+            <div class="feature" data-i18n="act.feat2">Перевод на 6 языков</div>
+            <div class="feature" data-i18n="act.feat3">Сохранение истории</div>
+            <div class="feature" data-i18n="act.feat4">Работа в фоновом режиме</div>
         </div>
     </div>
 
     <script>
         // contextIsolation включён, поэтому require('electron') в рендерере не
         // работает — всё идёт через безопасный мост window.api из preload.js.
+
+        // --- Interface language (AUD-33) ---
+        let STR = {};
+        const S = (key) => (STR[key] !== undefined ? STR[key] : key);
+        function applyI18n() {
+            return window.api.getI18n().then((i18n) => {
+                STR = i18n.strings;
+                document.documentElement.lang = i18n.lang;
+                // The page <title> would otherwise overwrite the translated window title.
+                document.title = S('act.windowTitle');
+                document.querySelectorAll('[data-i18n]').forEach((el) => {
+                    const s = STR[el.dataset.i18n];
+                    if (s !== undefined) el.textContent = s;
+                });
+            }).catch((e) => console.error('i18n load failed', e));
+        }
 
         // Планы показываем, но активировать подписку пока нельзя: онлайн-оплата
         // ещё не подключена (AUD-14/15).
@@ -335,7 +347,7 @@
                 card.classList.add('selected');
                 const status = document.getElementById('statusMessage');
                 status.className = 'status-message loading';
-                status.textContent = 'Онлайн-оплата скоро появится. Сейчас доступен бесплатный период.';
+                status.textContent = S('act.planSoon');
             });
         });
 
@@ -346,20 +358,20 @@
             
             btn.disabled = true;
             status.className = 'status-message loading';
-            status.innerHTML = '<span class="loading-spinner"></span>Активация триала...';
+            status.innerHTML = '<span class="loading-spinner"></span>' + S('act.activating');
             
             try {
                 const result = await window.api.startTrial();
                 
                 if (result.success) {
                     status.className = 'status-message success';
-                    status.textContent = '✅ Триал активирован! Запуск...';
+                    status.textContent = S('act.activated');
                     
                     setTimeout(() => {
                         window.api.activationComplete({ type: 'trial', subscriptionEnd: result.subscriptionEnd });
                     }, 1000);
                 } else {
-                    throw new Error(result.error || 'Не удалось активировать триал');
+                    throw new Error(result.error || S('act.trialFailed'));
                 }
             } catch (error) {
                 status.className = 'status-message error';
@@ -374,7 +386,6 @@
         // что позволяло активировать платную подписку бесплатно.
         const buyBtn = document.getElementById('buySubscriptionBtn');
         buyBtn.disabled = true;
-        buyBtn.textContent = 'Оплата скоро будет доступна';
 
         // Проверка сервера при загрузке
         async function checkServer() {
@@ -382,19 +393,25 @@
             try {
                 const healthy = await window.api.checkServerHealth();
                 if (healthy) {
-                    statusEl.textContent = '● Сервер доступен';
+                    statusEl.textContent = S('act.serverUp');
                     statusEl.className = 'server-status online';
                 } else {
-                    statusEl.textContent = '● Сервер недоступен';
+                    statusEl.textContent = S('act.serverDown');
                     statusEl.className = 'server-status offline';
                 }
             } catch (e) {
-                statusEl.textContent = '● Ошибка подключения';
+                statusEl.textContent = S('act.serverError');
                 statusEl.className = 'server-status offline';
             }
         }
-        
-        checkServer();
+
+        // Strings first, then anything that writes text: the server check and
+        // the payment button would otherwise be overwritten by the translation
+        // pass if it happened to finish after them.
+        applyI18n().then(() => {
+            buyBtn.textContent = S('act.paymentSoon');
+            checkServer();
+        });
     </script>
 </body>
 </html>

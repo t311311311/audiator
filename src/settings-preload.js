@@ -27,5 +27,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   // Get app version
   getAppVersion: () => {
     return ipcRenderer.invoke('get-app-version');
-  }
+  },
+  // Interface strings for the current language: { lang, languages, strings }
+  getI18n: (lang) => ipcRenderer.invoke('get-i18n', lang),
 });

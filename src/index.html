@@ -283,10 +283,10 @@
     </div>
     
     <div id="app-menu" class="dropdown-menu hidden">
-        <div class="dropdown-menu-item" id="settings-btn">Настройки</div>
-        <div class="dropdown-menu-item" id="save-all-btn">Сохранить весь текст</div>
-        <div class="dropdown-menu-item" id="clear-all-btn">Очистить историю</div>
-        <div class="dropdown-menu-item" id="exit-btn">Выход</div>
+        <div class="dropdown-menu-item" id="settings-btn" data-i18n="menu.settings">Настройки</div>
+        <div class="dropdown-menu-item" id="save-all-btn" data-i18n="menu.saveAll">Сохранить весь текст</div>
+        <div class="dropdown-menu-item" id="clear-all-btn" data-i18n="menu.clearHistory">Очистить историю</div>
+        <div class="dropdown-menu-item" id="exit-btn" data-i18n="menu.exit">Выход</div>
     </div>
 
     <div class="main-content" id="main-content">
@@ -313,23 +313,23 @@
     <div id="toast"></div>
 
     <div id="translate-bar" class="controls hidden" style="padding-top: 10px; border-top: 1px solid var(--accent-color);">
-        <label for="lang-select" style="font-size: 0.9em;">Перевести на:</label>
+        <label for="lang-select" style="font-size: 0.9em;" data-i18n="translate.to">Перевести на:</label>
         <select id="lang-select" style="flex-grow: 1; background: var(--primary-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 5px;">
             <option value="en">English</option>
-            <option value="zh">Chinese</option>
-            <option value="es">Spanish</option>
-            <option value="de">German</option>
-            <option value="fr">French</option>
-            <option value="ja">Japanese</option>
+            <option value="zh">中文</option>
+            <option value="es">Español</option>
+            <option value="de">Deutsch</option>
+            <option value="fr">Français</option>
+            <option value="ja">日本語</option>
             <option value="ru">Русский</option>
         </select>
-        <button class="control-button" id="translate-go-btn">Go</button>
+        <button class="control-button" id="translate-go-btn" data-i18n="btn.go">Go</button>
     </div>
 
     <div class="controls">
         <div id="main-controls">
-            <button class="control-button" id="record-btn" title="Запись">&#128308;</button> <!-- Red Circle -->
-            <button class="control-button hidden" id="stop-btn" title="Стоп">
+            <button class="control-button" id="record-btn" title="Запись" data-i18n-title="title.record">&#128308;</button> <!-- Red Circle -->
+            <button class="control-button hidden" id="stop-btn" title="Стоп" data-i18n-title="title.stop">
                 <span class="btn-rec">
                     <svg class="btn-mic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
@@ -338,14 +338,35 @@
                     <span class="btn-eq" id="btn-eq"></span>
                 </span>
             </button>
-            <button class="control-button" id="save-audio-btn" title="Сохранить аудио" disabled>&#128190;</button> <!-- Floppy Disk -->
-            <button class="control-button" id="save-audio-text-btn" title="Сохранить аудио и текст" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
-            <button class="control-button" id="translate-btn" title="Перевести" disabled>Перевести</button>
+            <button class="control-button" id="save-audio-btn" title="Сохранить аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
+            <button class="control-button" id="save-audio-text-btn" title="Сохранить аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
+            <button class="control-button" id="translate-btn" title="Перевести" data-i18n="btn.translate" data-i18n-title="title.translate" disabled>Перевести</button>
         </div>
-        <button class="control-button" id="copy-btn" title="Копировать">&#128203;</button> <!-- Clipboard -->
+        <button class="control-button" id="copy-btn" title="Копировать" data-i18n-title="title.copy">&#128203;</button> <!-- Clipboard -->
     </div>
 
     <script>
+        // --- Interface language (AUD-33) ---
+        // Strings come from the main process (i18n.js). S() falls back to the
+        // key itself so a missing string is visible instead of blank.
+        let STR = {};
+        const S = (key) => (STR[key] !== undefined ? STR[key] : key);
+        function applyI18n() {
+            return window.api.getI18n().then((i18n) => {
+                STR = i18n.strings;
+                document.documentElement.lang = i18n.lang;
+                document.querySelectorAll('[data-i18n]').forEach((el) => {
+                    const s = STR[el.dataset.i18n];
+                    if (s !== undefined) el.textContent = s;
+                });
+                document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+                    const s = STR[el.dataset.i18nTitle];
+                    if (s !== undefined) el.title = s;
+                });
+            }).catch((e) => console.error('i18n load failed', e));
+        }
+        applyI18n();
+
         // --- DOM Elements ---
         const closeBtn = document.getElementById('close-btn');
         const minimizeBtn = document.getElementById('minimize-btn');
@@ -459,16 +480,16 @@
         // --- Functions ---
         function gatherAllText() {
             const entries = historyContainer.querySelectorAll('.history-entry');
-            let fullText = '--- История ---\n\n';
+            let fullText = S('history.header') + '\n\n';
             // No reverse() to sort from newest to oldest
             Array.from(entries).forEach(entry => {
                 const timestamp = entry.querySelector('.entry-header')?.innerText || '';
                 const original = entry.querySelector('.original-text')?.innerText || '';
                 const translated = entry.querySelector('.translated-text')?.innerText || '';
                 fullText += `${timestamp}\n`;
-                fullText += `Оригинал: ${original}\n`;
+                fullText += `${S('history.original')}: ${original}\n`;
                 if (translated) {
-                    fullText += `Перевод: ${translated}\n`;
+                    fullText += `${S('history.translation')}: ${translated}\n`;
                 }
                 fullText += '----------------------------------------\n\n';
             });
@@ -526,7 +547,7 @@
             newEntry.dataset.isoTimestamp = date.toISOString(); // Store machine-readable timestamp
             const originalTextField = document.createElement('div');
             originalTextField.className = 'original-text';
-            originalTextField.textContent = 'Transcribing...';
+            originalTextField.textContent = S('status.transcribing');
             newEntry.innerHTML = `<div class="entry-header">${timestamp}</div>`;
             newEntry.appendChild(originalTextField);
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
@@ -543,13 +564,15 @@
                 if (!result.success) {
                     throw new Error(result.error || 'Transcription failed');
                 }
-                originalTextField.textContent = result.text || 'No text recognized.';
+                originalTextField.textContent = result.text || S('status.noText');
+                // Marked rather than detected by its wording, which now depends on the language.
+                if (!result.text) originalTextField.dataset.state = 'empty';
 
                 // Put the transcript straight on the clipboard so it can be pasted
                 // with Ctrl+V without reopening the window.
                 if (result.text && window.api.copyToClipboard) {
                     window.api.copyToClipboard(result.text);
-                    showToast('Текст скопирован — вставьте через Ctrl+V');
+                    showToast(S('toast.copied'));
                 } else if (window.api.transcribingFailed) {
                     // Nothing recognised: clear the overlay's "transcribing" state,
                     // otherwise the bar would sit there saying it is still working.
@@ -559,8 +582,9 @@
             } catch (error) {
                 console.error('Transcription error:', error);
                 // Detailed logging of error information
-                const errorMessage = `[Error] Failed to transcribe: ${error.message}`;
+                const errorMessage = `${S('error.transcribe')}: ${error.message}`;
                 originalTextField.textContent = errorMessage;
+                originalTextField.dataset.state = 'error';
 
                 // Log detailed error information for debugging
                 if (error.stack) {
@@ -603,7 +627,7 @@
         });
 
         clearAllBtn.addEventListener('click', () => {
-            if (confirm('Вы уверены, что хотите очистить всю историю? Это действие нельзя будет отменить.')) {
+            if (confirm(S('confirm.clearHistory'))) {
                 historyContainer.innerHTML = '';
                 updateScrollButtons(); // Update scroll buttons visibility
             }
@@ -616,19 +640,19 @@
                 const isoTimestamp = latestEntry?.dataset.isoTimestamp || new Date().toISOString();
                 window.api.saveAudio(audioBlob, isoTimestamp); 
             } else {
-                alert("No audio has been recorded yet.");
+                alert(S('alert.noAudio'));
             }
         });
 
         saveAudioTextBtn.addEventListener('click', () => {
             if (!audioBlob) {
-                alert("No audio has been recorded yet.");
+                alert(S('alert.noAudio'));
                 return;
             }
 
             const latestEntry = historyContainer.querySelector('.history-entry');
             if (!latestEntry) {
-                alert("No text to save.");
+                alert(S('alert.noText'));
                 return;
             }
 
@@ -638,9 +662,9 @@
             const translated = latestEntry.querySelector('.translated-text')?.innerText || '';
             
             let textToSave = `${humanReadableTimestamp}\n\n`;
-            textToSave += `Оригинал: ${original}\n`;
+            textToSave += `${S('history.original')}: ${original}\n`;
             if (translated) {
-                textToSave += `Перевод: ${translated}\n`;
+                textToSave += `${S('history.translation')}: ${translated}\n`;
             }
 
             window.api.saveAudioAndText(audioBlob, textToSave, isoTimestamp);
@@ -655,8 +679,10 @@
             const latestEntry = historyContainer.querySelector('.history-entry');
             if (!latestEntry) return;
 
-            const originalText = latestEntry.querySelector('.original-text')?.innerText;
-            if (!originalText || originalText.startsWith('[Error]')) return;
+            const originalEl = latestEntry.querySelector('.original-text');
+            const originalText = originalEl?.innerText;
+            // Skip entries that hold an error or 'nothing recognised' rather than speech.
+            if (!originalText || originalEl.dataset.state) return;
 
             const targetLang = langSelect.value;
             let translatedDiv = latestEntry.querySelector('.translated-text');
@@ -666,20 +692,20 @@
                 latestEntry.appendChild(translatedDiv);
             }
             
-            translatedDiv.textContent = 'Translating...';
+            translatedDiv.textContent = S('status.translating');
             translateBar.classList.add('hidden');
             updateScrollButtons(); // Update scroll buttons position after hiding translate bar
 
             try {
                 const result = await window.api.translate(originalText, targetLang, 'auto');
                 if (!result.success) {
-                    throw new Error(result.error || 'Translation failed');
+                    throw new Error(result.error || S('error.translate'));
                 }
-                translatedDiv.textContent = result.translatedText || 'Translation failed.';
+                translatedDiv.textContent = result.translatedText || S('error.translate');
 
             } catch (error) {
                 console.error('Translation error:', error);
-                translatedDiv.textContent = `[Error] Translation failed: ${error.message}`;
+                translatedDiv.textContent = `${S('error.translate')}: ${error.message}`;
 
                 // Log detailed error information for debugging
                 if (error.stack) {
@@ -807,6 +833,7 @@
 
         // --- Settings Listener ---
         window.api.onSettingsUpdated((settings) => {
+            applyI18n(); // the language may have changed with these settings
             if (settings.theme === 'light') {
                 document.body.classList.add('light-theme');
             } else {
