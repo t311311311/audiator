@@ -19,6 +19,11 @@ TMP_DB = pathlib.Path(tempfile.mkdtemp(prefix="audiator-tests-")) / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TMP_DB.as_posix()}"
 os.environ["AUDIATOR_SECRET_KEY"] = "test-secret-not-the-real-one"
 os.environ["PAYMENTS_ENABLED"] = "0"
+# Nothing listens on port 1. The suite must never reach the real whisper and
+# LibreTranslate that `npm start` brings up: a test that expects the proxy call
+# to fail passed or failed depending on whether the app happened to be running.
+os.environ["WHISPER_URL"] = "http://127.0.0.1:1"
+os.environ["TRANSLATE_URL"] = "http://127.0.0.1:1"
 
 import db    # noqa: E402
 import main  # noqa: E402
