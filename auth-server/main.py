@@ -55,6 +55,9 @@ ASR_DAILY_SECONDS = int(os.environ.get("ASR_DAILY_SECONDS", "14400"))  # 4h/devi
 # Daily transcription allowance by tier (seconds). The free tier is the "gift"
 # every user gets without a subscription; admins are unlimited.
 FREE_DAILY_SECONDS = int(os.environ.get("FREE_DAILY_SECONDS", "3600"))    # 60 min
+# Paid subscriptions stay switched off until payment is verified server-side
+# (AUD-15). Flip this on only together with that verification.
+PAYMENTS_ENABLED = os.environ.get("PAYMENTS_ENABLED", "0") == "1"
 PAID_DAILY_SECONDS = int(os.environ.get("PAID_DAILY_SECONDS", str(ASR_DAILY_SECONDS)))
 
 
@@ -179,12 +182,23 @@ def start_trial(request: TrialRequest, http_request: Request):
 
 @app.post("/api/auth/subscription", response_model=TokenResponse)
 def activate_subscription(request: SubscriptionRequest):
+    # This endpoint takes the payment id on trust from the client, so anyone
+    # could hand themselves a paid subscription with a single request — and
+    # thereby skip the free tier's daily limit. It stays closed until payments
+    # are verified server-side against the provider's webhook (AUD-15); the UI
+    # already says payment is not available yet.
+    if not PAYMENTS_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Оплата пока недоступна. Подписка будет доступна после подключения платежей.",
+        )
+
     device_id = request.device_id
     plan = request.plan
-    
+
     if plan not in SUBSCRIPTION_PRICES:
         raise HTTPException(status_code=400, detail="Invalid plan")
-    
+
     user = get_user(device_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

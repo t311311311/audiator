@@ -1,0 +1,5 @@
+# Development/test dependencies (not installed on the server).
+#   .venv\Scripts\python.exe -m pip install -r auth-server/requirements-dev.txt
+#   .venv\Scripts\python.exe -m pytest auth-server/tests
+-r requirements.txt
+pytest==9.1.1
