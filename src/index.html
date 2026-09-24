@@ -165,7 +165,7 @@
             border: 1px solid var(--border-color);
             color: var(--text-color);
             border-radius: 5px;
-            padding: 8px 12px;
+            padding: 8px 10px; /* 10, not 12: frees room for longer labels (AUD-33) */
             cursor: pointer;
             font-size: 1.2em;
         }
@@ -211,6 +211,28 @@
         }
         
         #main-controls { flex-grow: 1; display: flex; gap: 10px; }
+
+        /* One row, one height, the same spacing in every language (AUD-33).
+           The translate label varies in length ("Translate", "Перевести", "翻译"):
+           a long one squeezed the row until the "+" of the save-with-text button
+           wrapped onto a second line and stretched the whole row taller, and a
+           short one left a wide gap before the copy button. So: nothing wraps,
+           icon buttons keep their size, and the text button takes what is left. */
+        .control-button { white-space: nowrap; }
+        /* min-width: 0 lets the group get narrower than its content, so a label
+           that is too long is squeezed (and then scaled to fit by the script)
+           instead of pushing the copy button past the right edge. */
+        #main-controls { min-width: 0; }
+        #main-controls > .control-button { flex: 0 0 auto; }
+        /* Two ids on purpose: this must outrank the "#main-controls > .control-button"
+           rule above, or the button never grows (measured: the gap stayed 57px). */
+        #main-controls > #translate-btn {
+            flex: 1 1 auto;
+            min-width: 0;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis; /* only if the window ever gets too narrow */
+        }
 
 
         
@@ -363,7 +385,22 @@
                     const s = STR[el.dataset.i18nTitle];
                     if (s !== undefined) el.title = s;
                 });
+                fitTranslateLabel();
             }).catch((e) => console.error('i18n load failed', e));
+        }
+
+        // Keep the translate label whole on its button whatever the language or
+        // font: shrink it a pixel at a time, only when it does not fit (a wide
+        // font such as Verdana, or a long word such as "Übersetzen").
+        function fitTranslateLabel() {
+            const b = document.getElementById('translate-btn');
+            b.style.fontSize = ''; // start from the stylesheet size every time
+            let size = parseFloat(getComputedStyle(b).fontSize);
+            const floor = size * 0.75;
+            while (b.scrollWidth > b.clientWidth && size > floor) {
+                size -= 1;
+                b.style.fontSize = size + 'px';
+            }
         }
         applyI18n();
 
@@ -854,6 +891,8 @@
                 document.documentElement.style.setProperty('--main-font-size', `${initialSettings.fontSize || 16}px`);
                 document.documentElement.style.setProperty('--main-font-family', initialSettings.fontFamily || 'Arial, sans-serif');
             }
+            // The strings may have arrived before the font did; re-fit for the real font.
+            fitTranslateLabel();
         }).catch(error => {
             console.error('Failed to load initial settings:', error);
         });
