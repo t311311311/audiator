@@ -110,6 +110,14 @@
             overflow-wrap: break-word; /* For modern browsers */
         }
 
+        /* A recording waiting for or in transcription: blinks like the bar's
+           red "transcribing" barrel. */
+        .original-text.pending {
+            color: var(--record-color);
+            animation: pending-blink 1.1s ease-in-out infinite;
+        }
+        @keyframes pending-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
         /* A copy button beside each text in the history: one click puts that
            text on the clipboard, no selecting needed (selecting still works).
            Hidden while the text is a status or an error. */
@@ -449,10 +457,8 @@
         const langSelect = document.getElementById('lang-select');
 
         // --- State ---
-        let stream;
-        let mediaRecorder;
-        let audioChunks = [];
-        let audioBlob;
+        let mediaRecorder; // the recording in progress, if any
+        let audioBlob;     // the latest recording, for the save buttons
 
         // --- Recording level meter + global hotkey (AUD-40) ---
         // Uses setInterval, not requestAnimationFrame: recording usually runs with
@@ -586,29 +592,43 @@
             return { row, btn };
         }
 
-        async function handleTranscription(blob) {
-            audioBlob = blob;
-            translateBtn.disabled = true;
-            saveAudioBtn.disabled = true;
-            saveAudioTextBtn.disabled = true;
-
+        // A history entry for a recording that has just been stopped. It shows
+        // at once, blinking "Транскрибация…", so several recordings in a row
+        // are visible in order while they wait their turn.
+        function addPendingEntry() {
             const newEntry = document.createElement('div');
             newEntry.className = 'history-entry';
             const date = new Date();
             const timestamp = `${date.toLocaleString('default', { dateStyle: 'long' })}, ${date.toLocaleTimeString()}`;
             newEntry.dataset.isoTimestamp = date.toISOString(); // Store machine-readable timestamp
             const originalTextField = document.createElement('div');
-            originalTextField.className = 'original-text';
+            originalTextField.className = 'original-text pending';
             originalTextField.textContent = S('status.transcribing');
             newEntry.innerHTML = `<div class="entry-header">${timestamp}</div>`;
             const originalCopy = withCopyButton(originalTextField);
             newEntry.appendChild(originalCopy.row);
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
+            return { originalTextField, originalCopy };
+        }
 
-            // Tell the overlay we are working, so it can say so instead of
-            // disappearing while the server thinks.
-            if (window.api.transcribingStarted) window.api.transcribingStarted();
+        // Recordings are transcribed one at a time, in the order they were
+        // made: the transcripts come back in spoken order (the bar offers them
+        // for Ctrl+V oldest first), and the local model is not split between
+        // several recordings at once.
+        let transcribeChain = Promise.resolve();
+        function queueTranscription(blob, jobId) {
+            const pending = addPendingEntry();
+            transcribeChain = transcribeChain
+                .then(() => handleTranscription(blob, jobId, pending))
+                .catch((e) => console.error('transcription queue', e)); // keep the chain going
+        }
+
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy }) {
+            audioBlob = blob;
+            translateBtn.disabled = true;
+            saveAudioBtn.disabled = true;
+            saveAudioTextBtn.disabled = true;
 
             try {
                 // Идёт через аутентифицирующий гейтвей: main-процесс подставит
@@ -617,24 +637,21 @@
                 if (!result.success) {
                     throw new Error(result.error || 'Transcription failed');
                 }
+                originalTextField.classList.remove('pending');
                 originalTextField.textContent = result.text || S('status.noText');
                 // Marked rather than detected by its wording, which now depends on the language.
                 if (!result.text) originalTextField.dataset.state = 'empty';
                 originalCopy.btn.hidden = !result.text;
 
-                // Put the transcript straight on the clipboard so it can be pasted
-                // with Ctrl+V without reopening the window.
-                if (result.text && window.api.copyToClipboard) {
-                    window.api.copyToClipboard(result.text);
-                    showToast(S('toast.copied'));
-                } else if (window.api.transcribingFailed) {
-                    // Nothing recognised: clear the overlay's "transcribing" state,
-                    // otherwise the bar would sit there saying it is still working.
-                    window.api.transcribingFailed();
-                }
+                // Hand the transcript to the queue: on the clipboard at once when
+                // this window is in front, otherwise when its barrel's turn comes.
+                // An empty one just takes its barrel away.
+                const handed = await window.api.transcribed(jobId, result.text || '');
+                if (handed && handed.copied && document.hasFocus()) showToast(S('toast.copied'));
 
             } catch (error) {
                 console.error('Transcription error:', error);
+                originalTextField.classList.remove('pending');
                 // Detailed logging of error information
                 const errorMessage = `${S('error.transcribe')}: ${error.message}`;
                 originalTextField.textContent = errorMessage;
@@ -649,9 +666,9 @@
                 if (window.api && typeof window.api.logError === 'function') {
                     window.api.logError('Transcription error', error);
                 }
-                // Clear the overlay's "transcribing" state so the bar does not
-                // hang on that message after a failure.
-                if (window.api.transcribingFailed) window.api.transcribingFailed();
+                // Take the barrel away, or the bar would sit there saying it is
+                // still transcribing.
+                if (window.api.transcribeFailed) window.api.transcribeFailed(jobId);
             } finally {
                 translateBtn.disabled = false;
                 saveAudioBtn.disabled = false;
@@ -807,73 +824,48 @@
             appMenu.classList.add('hidden');
         });
         
+        // Each recording keeps its own stream and audio, and carries one id to
+        // the main process from start to transcript (the bar's barrels). Stop
+        // and record again can come faster than the previous recording finishes
+        // closing, so nothing here is shared between recordings.
+        let jobCounter = 0;
         recordBtn.addEventListener('click', async () => {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const recorder = new MediaRecorder(stream);
+                const chunks = [];
+                const jobId = ++jobCounter;
+                mediaRecorder = recorder;
 
-                mediaRecorder = new MediaRecorder(stream);
-                
-                mediaRecorder.ondataavailable = (event) => {
-                    audioChunks.push(event.data);
+                recorder.ondataavailable = (event) => { chunks.push(event.data); };
+                recorder.onstop = () => {
+                    stream.getTracks().forEach(track => track.stop());
+                    if (window.api.recordingStopped) window.api.recordingStopped(jobId);
+                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId);
                 };
 
-                                mediaRecorder.onstop = () => {
+                saveAudioBtn.disabled = true;
+                saveAudioTextBtn.disabled = true;
+                translateBtn.disabled = true;
+                recordBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
 
-                                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                recorder.start();
+                startLevelMeter(stream);
+                if (window.api.recordingStarted) window.api.recordingStarted(jobId);
+            } catch (err) {
+                console.error("Error accessing microphone:", err);
+            }
+        });
 
-                                    handleTranscription(blob);
-                                    stopLevelMeter();
-                                    if (window.api.recordingStopped) window.api.recordingStopped();
-
-                                    if (stream) {
-
-                                        stream.getTracks().forEach(track => track.stop());
-
-                                    }
-
-                                };
-
-                                audioChunks = [];
-
-                                saveAudioBtn.disabled = true;
-
-                                saveAudioTextBtn.disabled = true;
-
-                                translateBtn.disabled = true;
-
-                                recordBtn.classList.add('hidden');
-
-                                stopBtn.classList.remove('hidden');
-
-                                mediaRecorder.start();
-                                startLevelMeter(stream);
-                                if (window.api.recordingStarted) window.api.recordingStarted();
-
-                            } catch (err) {
-
-                                console.error("Error accessing microphone:", err);
-
-                            }
-
-                        });
-
-                        
-
-                        stopBtn.addEventListener('click', () => {
-
-                            if (mediaRecorder && mediaRecorder.state === 'recording') {
-
-                                mediaRecorder.stop();
-
-                            }
-
-                            
-
-                            stopBtn.classList.add('hidden');
-
-                            recordBtn.classList.remove('hidden');
-
-                        });
+        stopBtn.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+            stopLevelMeter(); // here, not in onstop: a new recording may already be metering
+            stopBtn.classList.add('hidden');
+            recordBtn.classList.remove('hidden');
+        });
 
         // --- Scroll Button Event Listeners ---
         scrollUpBtn.addEventListener('click', () => {
