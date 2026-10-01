@@ -110,6 +110,19 @@
             overflow-wrap: break-word; /* For modern browsers */
         }
 
+        /* A copy button beside each text in the history: one click puts that
+           text on the clipboard, no selecting needed (selecting still works).
+           Hidden while the text is a status or an error. */
+        .text-row { display: flex; align-items: flex-start; gap: 6px; }
+        .text-row > .original-text, .text-row > .translated-text { flex: 1 1 auto; min-width: 0; }
+        .entry-copy {
+            flex: 0 0 auto; background: none; border: none; padding: 0 2px;
+            cursor: pointer; font-size: 14px; line-height: 1.4;
+            color: var(--text-color); opacity: 0.45;
+        }
+        .entry-copy:hover { opacity: 1; }
+        .entry-copy[hidden] { display: none; }
+
         .scroll-buttons {
             position: fixed; /* Positioned relative to main-content */
             bottom: 160px;    /* Increased from 120px to accommodate translate bar */
@@ -548,6 +561,31 @@
             }
         }
 
+        // Put a history text in a row with its own copy button. The button is
+        // shown by the caller once the text is real (not a status or an error).
+        function withCopyButton(textEl) {
+            const row = document.createElement('div');
+            row.className = 'text-row';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'entry-copy';
+            btn.dataset.i18nTitle = 'title.copy'; // relabelled on a language change
+            btn.title = S('title.copy');
+            btn.textContent = '\u{1F4CB}'; // clipboard
+            btn.hidden = true;
+            btn.addEventListener('click', () => {
+                const text = textEl.innerText.trim();
+                if (!text) return;
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast(S('toast.copied'));
+                    btn.textContent = '✓'; // brief tick as confirmation
+                    setTimeout(() => { btn.textContent = '\u{1F4CB}'; }, 1000);
+                }).catch(err => console.error('Failed to copy text:', err));
+            });
+            row.append(textEl, btn);
+            return { row, btn };
+        }
+
         async function handleTranscription(blob) {
             audioBlob = blob;
             translateBtn.disabled = true;
@@ -563,7 +601,8 @@
             originalTextField.className = 'original-text';
             originalTextField.textContent = S('status.transcribing');
             newEntry.innerHTML = `<div class="entry-header">${timestamp}</div>`;
-            newEntry.appendChild(originalTextField);
+            const originalCopy = withCopyButton(originalTextField);
+            newEntry.appendChild(originalCopy.row);
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
 
@@ -581,6 +620,7 @@
                 originalTextField.textContent = result.text || S('status.noText');
                 // Marked rather than detected by its wording, which now depends on the language.
                 if (!result.text) originalTextField.dataset.state = 'empty';
+                originalCopy.btn.hidden = !result.text;
 
                 // Put the transcript straight on the clipboard so it can be pasted
                 // with Ctrl+V without reopening the window.
@@ -703,9 +743,11 @@
             if (!translatedDiv) {
                 translatedDiv = document.createElement('div');
                 translatedDiv.className = 'translated-text';
-                latestEntry.appendChild(translatedDiv);
+                latestEntry.appendChild(withCopyButton(translatedDiv).row);
             }
-            
+            const translatedCopyBtn = translatedDiv.parentElement.querySelector('.entry-copy');
+            translatedCopyBtn.hidden = true; // until the new translation arrives
+
             translatedDiv.textContent = S('status.translating');
             translateBar.classList.add('hidden');
             updateScrollButtons(); // Update scroll buttons position after hiding translate bar
@@ -716,6 +758,7 @@
                     throw new Error(result.error || S('error.translate'));
                 }
                 translatedDiv.textContent = result.translatedText || S('error.translate');
+                translatedCopyBtn.hidden = !result.translatedText;
 
             } catch (error) {
                 console.error('Translation error:', error);
