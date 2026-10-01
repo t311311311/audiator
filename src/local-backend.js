@@ -5,14 +5,14 @@
 // constant source of "connect ECONNREFUSED 127.0.0.1:3000". The app now brings
 // up whatever is not already listening and shuts it down again on quit.
 //
-// Packaged builds skip all of this: there the services live on a server.
+// Packaged builds skip all of this. The speech engine is not started here:
+// it runs on the user's computer in every build, see engine.js.
 const { spawn } = require('child_process');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
 
 const SERVICES = [
-  { name: 'whisper', port: 8000, script: 'local_whisper.py' },
   { name: 'auth-gateway', port: 3000, script: 'main.py' },
   { name: 'libretranslate', port: 5000, exe: 'libretranslate.exe',
     args: ['--host', '127.0.0.1', '--port', '5000'] },
@@ -81,7 +81,6 @@ async function startLocalBackend(rootDir) {
     children.push(child);
   }
 
-  // Whisper loads its model first, so the gateway can take a while to answer.
   const ready = await waitForPort(3000, 45000);
   console.log(ready ? '[backend] gateway is up' : '[backend] gateway did not start in time');
   return ready;
@@ -95,4 +94,4 @@ function stopLocalBackend() {
   children.length = 0;
 }
 
-module.exports = { startLocalBackend, stopLocalBackend, portOpen };
+module.exports = { startLocalBackend, stopLocalBackend, portOpen, waitForPort };

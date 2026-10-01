@@ -1,9 +1,10 @@
 const auth = require('./auth');
+const engine = require('./engine');
 
 // === КОНФИГУРАЦИЯ ===
-// Транскрибация и перевод идут через аутентифицирующий гейтвей на auth-сервере:
-// он проверяет токен подписки и уже сам проксирует во внутренние Whisper /
-// LibreTranslate (AUD-8). Клиент больше не обращается к ним напрямую.
+// Перевод идёт через аутентифицирующий гейтвей на auth-сервере: он проверяет
+// токен подписки и сам проксирует во внутренний LibreTranslate (AUD-8).
+// Транскрибация — напрямую в локальный движок, см. transcribe().
 const GATEWAY_URL = process.env.AUDIATOR_GATEWAY_URL || 'http://127.0.0.1:3000';
 
 /**
@@ -40,33 +41,33 @@ async function raiseGatewayError(response) {
 }
 
 /**
- * Транскрибация аудио
+ * Транскрибация аудио — на этом компьютере, в локальном движке (engine.js),
+ * а не через гейтвей: голос никуда не уходит. Учёт минут переедет в
+ * приложение вместе с новыми аккаунтами (docs/PRODUCT-PLAN.md, шаг 4).
  * @param {Buffer|Uint8Array} audioBuffer - Аудиоданные (Blob не проходит через IPC)
  * @param {string} language - Код языка (опционально)
  * @returns {Promise<{text: string, language?: string}>}
  */
 async function transcribe(audioBuffer, language = '') {
+  const base = await engine.whenReady();
+  if (!base) {
+    throw new Error('Speech engine is not running');
+  }
+
   const formData = new FormData();
   formData.append('audio_file', new Blob([audioBuffer], { type: 'audio/webm' }), 'recording.webm');
 
-  const url = new URL(`${GATEWAY_URL}/asr`);
-  url.searchParams.set('encode', 'true');
+  const url = new URL(`${base}/asr`);
   url.searchParams.set('task', 'transcribe');
   url.searchParams.set('output', 'json');
   if (language) {
     url.searchParams.set('language', language);
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    body: formData,
-    headers: authHeaders()
-  });
-
+  const response = await fetch(url.toString(), { method: 'POST', body: formData });
   if (!response.ok) {
-    await raiseGatewayError(response);
+    throw new Error(`${response.status} - ${await response.text()}`);
   }
-
   return await response.json();
 }
 

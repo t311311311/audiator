@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Local drop-in for the Whisper ASR web service (development only).
+"""The speech engine: a small local web service around faster-whisper.
 
-Exposes a ``/asr`` endpoint compatible with what the gateway proxies to, backed
-by faster-whisper, so the whole stack can run on a laptop without Docker. In
-production the containerised whisper service is used instead; this shim only
-exists so development does not require Docker or a remote server.
+Runs on the user's own computer — the app sends audio here and the voice never
+leaves the machine. Exposes ``/asr`` in the shape of the whisper-asr-webservice
+(text + segments + language). The installed app ships it frozen into
+whisper-server.exe (``npm run build:engine``) and starts it itself
+(src/engine.js); development runs this script from the .venv.
 
 Run:  python local_whisper.py   (listens on 127.0.0.1:8000)
-Env:  WHISPER_MODEL (default 'small'), WHISPER_PORT (default 8000)
+Env:  WHISPER_MODEL (default 'small'), WHISPER_PORT (default 8000),
+      WHISPER_MODELS_DIR (default: the Hugging Face cache)
 """
 import os
 import tempfile
@@ -17,10 +19,13 @@ from faster_whisper import WhisperModel
 
 MODEL_NAME = os.environ.get("WHISPER_MODEL", "small")
 PORT = int(os.environ.get("WHISPER_PORT", "8000"))
+# Where models are kept. The installed app points this at the user's app data;
+# unset, faster-whisper uses the default Hugging Face cache.
+MODELS_DIR = os.environ.get("WHISPER_MODELS_DIR") or None
 
 app = FastAPI(title="Local Whisper Shim")
 # int8 keeps it fast and light on CPU; the model downloads once and is cached.
-_model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8")
+_model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8", download_root=MODELS_DIR)
 
 
 @app.get("/")

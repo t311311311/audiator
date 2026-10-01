@@ -339,9 +339,19 @@ app.on('ready', async () => {
     }
   }
   
-  // Development runs talk to services on this machine; start whatever is not
-  // already up, so `npm start` is all that is needed. Packaged builds use the
-  // remote server and skip this entirely.
+  // Speech recognition runs on this computer in every build. Not awaited:
+  // the model loads in the background while the windows come up, and a
+  // transcription waits for it (engine.whenReady). A packaged build keeps its
+  // models in the user's app data.
+  require('./engine').startEngine({
+    packaged: app.isPackaged,
+    rootDir: path.join(__dirname, '..'),
+    modelsDir: app.isPackaged ? path.join(app.getPath('userData'), 'models') : null,
+  });
+
+  // Development runs talk to the auth gateway and LibreTranslate on this
+  // machine too; start whatever is not already up, so `npm start` is all that
+  // is needed.
   if (!app.isPackaged) {
     const { startLocalBackend } = require('./local-backend');
     await startLocalBackend(path.join(__dirname, '..'));
@@ -758,6 +768,7 @@ app.on('ready', async () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopPasteWatch(); // a live hook would keep the process alive
+  require('./engine').stopEngine();
   if (!app.isPackaged) {
     require('./local-backend').stopLocalBackend();
   }
