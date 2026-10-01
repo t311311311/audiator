@@ -19,8 +19,8 @@
     ],
     "extraResources": [
       {
-        "from": "build/engine/whisper-server",
-        "to": "whisper-server"
+        "from": "build/engine/Audiator Engine",
+        "to": "engine"
       }
     ],
     "win": {

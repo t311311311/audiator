@@ -1,6 +1,6 @@
 // Builds the speech engine into a stand-alone program for the installer.
 //
-//   npm run build:engine          build build/engine/whisper-server/whisper-server.exe
+//   npm run build:engine          build "build/engine/Audiator Engine/Audiator Engine.exe"
 //   node scripts/build-engine.js --check   only check that it has been built
 //
 // Freezes auth-server/local_whisper.py (faster-whisper behind a small web
@@ -9,13 +9,17 @@
 // installer (package.json → build.extraResources) and src/engine.js starts it.
 // The model is not included: it is downloaded on the user's computer.
 //
+// Named "Audiator Engine", with the app's icon and version details, so in
+// Task Manager it is plainly part of Audiator (which shows the description).
+//
 // Needs PyInstaller in the project's .venv:  .venv\Scripts\python.exe -m pip install pyinstaller
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const OUT = path.join(ROOT, 'build', 'engine', 'whisper-server', 'whisper-server.exe');
+const NAME = 'Audiator Engine';
+const OUT = path.join(ROOT, 'build', 'engine', NAME, `${NAME}.exe`);
 
 if (process.argv.includes('--check')) {
   if (!fs.existsSync(OUT)) {
@@ -32,9 +36,33 @@ if (!fs.existsSync(pyinstaller)) {
   process.exit(1);
 }
 
+// Windows version details: Task Manager lists the process by its description.
+const version = require(path.join(ROOT, 'package.json')).version;
+const v = [...version.split('.').map(Number), 0, 0, 0].slice(0, 4).join(', ');
+const versionFile = path.join(ROOT, 'build', 'pyi', 'engine-version.txt');
+fs.mkdirSync(path.dirname(versionFile), { recursive: true });
+fs.writeFileSync(versionFile, `VSVersionInfo(
+  ffi=FixedFileInfo(filevers=(${v}), prodvers=(${v}), mask=0x3f, flags=0x0,
+                    OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', 'Audiator'),
+      StringStruct('FileDescription', '${NAME}'),
+      StringStruct('FileVersion', '${version}'),
+      StringStruct('InternalName', '${NAME}'),
+      StringStruct('OriginalFilename', '${NAME}.exe'),
+      StringStruct('ProductName', 'Audiator'),
+      StringStruct('ProductVersion', '${version}')])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+`);
+
 const args = [
   '--noconfirm', '--clean', '--onedir', '--console',
-  '--name', 'whisper-server',
+  '--name', NAME,
+  '--icon', path.join(ROOT, 'src', 'icon.ico'),
+  '--version-file', versionFile,
   '--distpath', 'build/engine', '--workpath', 'build/pyi', '--specpath', 'build/pyi',
   '--collect-data', 'faster_whisper',     // the voice-activity model (silero VAD)
   '--collect-binaries', 'ctranslate2',    // the inference DLLs

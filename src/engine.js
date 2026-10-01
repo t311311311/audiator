@@ -1,8 +1,8 @@
 // The speech-recognition engine: faster-whisper behind a small local web
 // service (auth-server/local_whisper.py) running on the user's own computer.
 //
-// Packaged builds ship it frozen into whisper-server.exe (PyInstaller, see
-// scripts/build-engine.js) under resources/whisper-server and start it here;
+// Packaged builds ship it frozen into "Audiator Engine.exe" (PyInstaller, see
+// scripts/build-engine.js) under resources/engine and start it here;
 // development runs the same script from the project's .venv. Either way the
 // app sends audio straight to it — the voice never leaves the computer, and
 // no server is needed to transcribe.
@@ -15,6 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const { portOpen, waitForPort } = require('./local-backend');
 
+const ENGINE_EXE = 'Audiator Engine.exe';
 const DEV_PORT = 8000;               // the port a hand-started service uses
 const READY_TIMEOUT_MS = 15 * 60e3;  // a first run downloads the model first
 
@@ -38,12 +39,12 @@ function freePort() {
 function locate({ packaged, rootDir }) {
   const frozen = (exe) => ({ command: exe, args: [], cwd: path.dirname(exe) });
   if (packaged) {
-    const exe = path.join(process.resourcesPath, 'whisper-server', 'whisper-server.exe');
+    const exe = path.join(process.resourcesPath, 'engine', ENGINE_EXE);
     return fs.existsSync(exe) ? frozen(exe) : null;
   }
   // Development: the live script, or the frozen build to try it before
   // packaging (AUDIATOR_ENGINE=built, after `npm run build:engine`).
-  const built = path.join(rootDir, 'build', 'engine', 'whisper-server', 'whisper-server.exe');
+  const built = path.join(rootDir, 'build', 'engine', 'Audiator Engine', ENGINE_EXE);
   if (process.env.AUDIATOR_ENGINE === 'built' && fs.existsSync(built)) return frozen(built);
   const python = path.join(rootDir, '.venv', 'Scripts', 'python.exe');
   if (!fs.existsSync(python)) return null;
