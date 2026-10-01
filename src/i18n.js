@@ -124,7 +124,7 @@ const STRINGS = {
     'history.header': '--- История ---',
     'history.original': 'Оригинал',
     'history.translation': 'Перевод',
-    'status.transcribing': 'Расшифровка…',
+    'status.transcribing': 'Транскрибация…',
     'status.translating': 'Перевод…',
     'status.noText': 'Речь не распознана.',
     'error.transcribe': 'Не удалось расшифровать',

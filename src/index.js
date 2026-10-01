@@ -34,21 +34,26 @@ let mainWindow = null;
 let settingsWindow = null;
 let overlayWindow = null;
 
-// --- Recording overlay: a compact always-on-top level meter shown while recording ---
-// It stands in for the main window: visible only while recording AND the main
-// window is hidden. Clicking it brings the main window back.
-// Overlay states, in the order they happen: recording -> transcribing -> ready.
-let isRecording = false;
-let transcribing = false; // waiting for the transcript
-let showingDone = false;  // showing "Готово! Ctrl+V" until the user acts on it
+// --- Recording overlay ("barrels") -------------------------------------------
+// A compact always-on-top bar at the bottom of the screen that stands in for
+// the main window while it is out of sight. It shows one barrel per recording
+// the user has not dealt with yet (see record-queue.js): recording (level
+// meter) -> transcribing -> "Ctrl+V". Clicking it brings the main window back.
+const { RecordQueue } = require('./record-queue');
+const queue = new RecordQueue();
+// Sizes in step with recorder-overlay.html: a numbered barrel is wider so the
+// number fits beside its two lines of text.
+const BARREL_W = 96, BARREL_W_NUMBERED = 112, MORE_W = 34, BARREL_GAP = 6, BAR_H = 40;
+let offeredId = null;       // the job whose text is on the clipboard right now
+let holdClipboardUntil = 0; // after a paste, leave the clipboard alone for a moment
 
 // --- Paste detection -------------------------------------------------------
 // Windows never tells an application that the user pasted, so the only way to
-// dismiss the "Готово! Ctrl+V" reminder on the paste itself is a system-wide
-// key hook. It is deliberately started only while that reminder is on screen
-// and stopped the moment it clears, so the app is not watching the keyboard
-// during normal use. If the native module is missing the app carries on without
-// paste detection.
+// move the queue on at the paste itself is a system-wide key hook. It is
+// deliberately started only while a "Ctrl+V" barrel is on screen and stopped
+// the moment none is, so the app is not watching the keyboard during normal
+// use. If the native module is missing the app carries on without paste
+// detection.
 let uiohook = null;
 let hookRunning = false;
 try {
@@ -77,31 +82,24 @@ const stopPasteWatch = () => {
   }
 };
 
-// The one place that takes the reminder down, so the hook is always stopped
-// with it no matter how the user dismissed it: pasting, clicking the bar,
-// opening the window, or starting another recording.
-const clearDoneReminder = () => {
-  if (!showingDone) return;
-  showingDone = false;
-  stopPasteWatch();
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('overlay-reset');
-  }
-};
-
 if (uiohook) {
   uiohook.uIOhook.on('keydown', (e) => {
-    if (!showingDone) return; // only ever acted on while the reminder is up
+    if (!queue.active) return; // only ever acted on while a "Ctrl+V" barrel is up
     if (e.keycode === uiohook.UiohookKey.V && (e.ctrlKey || e.metaKey)) {
-      console.log('[overlay] paste detected -> dismissing reminder');
-      clearDoneReminder();
-      if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+      console.log('[overlay] paste detected -> next barrel');
+      queue.pasted();
+      offeredId = null;
+      // The other application is still carrying out this paste: putting the
+      // next text on the clipboard straight away could get that pasted instead.
+      holdClipboardUntil = Date.now() + 300;
+      refreshOverlay();                  // the pasted barrel goes at once
+      setTimeout(refreshOverlay, 320);   // the next text goes on the clipboard
     }
   });
 }
 
 const createOverlay = () => {
-  const width = 96, height = 40;
+  const width = BARREL_W, height = BAR_H; // resized to fit the barrels as they come and go
   const area = screen.getPrimaryDisplay().workAreaSize;
   overlayWindow = new BrowserWindow({
     width, height,
@@ -133,6 +131,7 @@ const createOverlay = () => {
   // from capture entirely (older Windows would show a black box instead).
   overlayWindow.setContentProtection(true);
   overlayWindow.loadFile(path.join(__dirname, 'recorder-overlay.html'));
+  overlayWindow.webContents.on('did-finish-load', () => refreshOverlay());
   overlayWindow.on('closed', () => { overlayWindow = null; });
 
   // Primary path for "user tapped the bar". The overlay is always shown with
@@ -142,7 +141,6 @@ const createOverlay = () => {
   overlayWindow.on('focus', () => {
     if (!overlayWindow.isVisible()) return; // ignore focus while hidden
     console.log('[overlay] focused (clicked) -> revealing main window');
-    clearDoneReminder(); // acted on
     overlayWindow.hide();
     revealMainWindow();
   });
@@ -155,9 +153,8 @@ const createOverlay = () => {
 // permanently pinning the window there.
 const revealMainWindow = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  // Opening the window is the user acting on the "Готово! Ctrl+V" reminder,
-  // whichever route they took (bar, tray icon, tray menu).
-  clearDoneReminder();
+  // Opening the window (bar, tray icon, tray menu) also deals with the
+  // finished transcripts: refreshOverlay() drops them once it has focus.
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.setAlwaysOnTop(true);
   mainWindow.show();
@@ -181,15 +178,45 @@ const mainInView = () => {
   return !!focused && focused !== overlayWindow;
 };
 
-// The overlay and the main window are two views of the same state: show the
-// overlay only while recording with the main window out of sight.
-const syncOverlay = () => {
+// Bring the clipboard, the paste watch and the bar in line with the queue.
+// The overlay and the main window are two views of the same state: the bar
+// shows only while the queue has something in it and the main window is out
+// of sight. Coming back to the window deals with every finished transcript
+// (it is right there in the history), or it would pop up again the next time
+// the user leaves.
+const refreshOverlay = () => {
+  const inView = mainInView();
+  if (inView) queue.dropDone();
+
+  const active = queue.active;
+  if (active && active.id !== offeredId && Date.now() >= holdClipboardUntil) {
+    clipboard.writeText(active.text);
+    offeredId = active.id;
+  }
+  if (active && !inView) startPasteWatch(); else stopPasteWatch();
+
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  const mainVisible = mainInView();
-  // Coming back to the window is acting on "Готово! Ctrl+V" (the transcript is
-  // there): drop it, or it would pop up again the next time the user leaves.
-  if (mainVisible) clearDoneReminder();
-  if ((isRecording || transcribing || showingDone) && !mainVisible) {
+  const items = queue.view();
+  const numbered = queue.jobs.length > 1; // a lone barrel looks exactly as before
+  if (items.length) {
+    const barrelW = numbered ? BARREL_W_NUMBERED : BARREL_W;
+    const width = items.reduce((w, it) => w + (it.more ? MORE_W : barrelW), 0) +
+                  BARREL_GAP * (items.length - 1);
+    if (overlayWindow.getSize()[0] !== width) {
+      const area = screen.getPrimaryDisplay().workAreaSize;
+      overlayWindow.setBounds({
+        x: Math.round((area.width - width) / 2), y: area.height - BAR_H - 16,
+        width, height: BAR_H,
+      });
+    }
+    overlayWindow.webContents.send('overlay-state', {
+      items,
+      numbered,
+      busy: [tr('ov.busy1'), tr('ov.busy2')],
+      done: [tr('ov.done1'), tr('ov.done2')],
+    });
+  }
+  if (items.length && !inView) {
     if (!overlayWindow.isVisible()) overlayWindow.showInactive();
   } else if (overlayWindow.isVisible()) {
     overlayWindow.hide();
@@ -340,53 +367,30 @@ app.on('ready', async () => {
     console.error('Failed to register hotkey Ctrl+Space (already taken by another app)');
   }
 
-  // Recording overlay lifecycle, driven by the renderer that owns the mic stream.
-  ipcMain.on('recording-started', () => {
-    isRecording = true;
-    transcribing = false;
-    clearDoneReminder();
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('overlay-reset'); // back to the equaliser
+  // The recording queue, driven by the renderer that owns the microphone.
+  // Every recording carries one id from the start to its transcript.
+  ipcMain.on('recording-started', (event, id) => { queue.start(id); refreshOverlay(); });
+  ipcMain.on('recording-stopped', (event, id) => { queue.stop(id); refreshOverlay(); });
+  ipcMain.on('transcribe-failed', (event, id) => { queue.remove(id); refreshOverlay(); });
+  // A transcript is ready. Copied from the main process: navigator.clipboard
+  // needs a focused document, and recording usually finishes with the window
+  // out of sight. Looking at the window, the user gets it on the clipboard at
+  // once (the history shows it). Otherwise it waits its turn in the queue and
+  // goes on the clipboard when the barrels before it have been pasted — there
+  // is deliberately no timer, a "Ctrl+V" barrel stays until it is acted on.
+  // Answers whether the text is on the clipboard now, so the page only
+  // confirms what actually happened.
+  ipcMain.handle('transcribed', (event, { id, text }) => {
+    if (!text) { queue.remove(id); refreshOverlay(); return { copied: false }; }
+    if (mainInView()) {
+      clipboard.writeText(text);
+      queue.remove(id);
+      refreshOverlay();
+      return { copied: true };
     }
-    syncOverlay();
-  });
-  ipcMain.on('recording-stopped', () => { isRecording = false; syncOverlay(); });
-
-  // Transcription can take a while; keep the bar up saying so instead of
-  // vanishing and reappearing.
-  ipcMain.on('transcribing-started', () => {
-    transcribing = true;
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('overlay-busy', [tr('ov.busy1'), tr('ov.busy2')]);
-    }
-    syncOverlay();
-  });
-  ipcMain.on('transcribing-failed', () => {
-    transcribing = false;
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('overlay-reset');
-    }
-    syncOverlay();
-  });
-  // Copy from the main process: navigator.clipboard needs a focused document,
-  // and recording usually finishes with this window hidden in the tray.
-  ipcMain.on('copy-to-clipboard', (event, text) => {
-    if (!text) return;
-    clipboard.writeText(text);
-    transcribing = false;
-    // With the window out of sight the in-app toast would go unseen, so confirm
-    // in the overlay instead — otherwise the hotkey flow gives no feedback at all.
-    if (!mainInView() && overlayWindow && !overlayWindow.isDestroyed()) {
-      // Stays up until the user acts on it: clicking the bar (which opens the
-      // window) or starting another recording clears it. There is deliberately
-      // no timer — the reminder is only useful while the text is unpasted, and
-      // Windows gives no way to detect that a paste happened.
-      showingDone = true;
-      overlayWindow.webContents.send('overlay-done', [tr('ov.done1'), tr('ov.done2')]);
-      overlayWindow.showInactive();
-      startPasteWatch(); // watch for Ctrl+V only while this reminder is up
-    }
-    syncOverlay();
+    queue.done(id, text);
+    refreshOverlay();
+    return { copied: offeredId === id };
   });
   ipcMain.on('rec-level', (event, level) => {
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
@@ -396,7 +400,6 @@ app.on('ready', async () => {
   // Clicking the overlay swaps it back for the main window (recording continues).
   ipcMain.on('overlay-clicked', () => {
     console.log('[overlay] clicked -> revealing main window');
-    clearDoneReminder();
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
     revealMainWindow();
   });
@@ -408,7 +411,7 @@ app.on('ready', async () => {
   let syncTimer = null;
   const scheduleSync = () => {
     clearTimeout(syncTimer);
-    syncTimer = setTimeout(syncOverlay, 100);
+    syncTimer = setTimeout(refreshOverlay, 100);
   };
   ['hide', 'minimize', 'show', 'restore'].forEach((evt) => mainWindow.on(evt, scheduleSync));
   app.on('browser-window-focus', scheduleSync);

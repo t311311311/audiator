@@ -7,10 +7,27 @@
       margin: 0; height: 100%; background: transparent; overflow: hidden;
       -webkit-user-select: none; cursor: pointer;
     }
+    /* One barrel per recording not yet dealt with, oldest on the left. The
+       main process sizes the window to fit them; a lone barrel looks exactly
+       like the single bar did before. */
+    .row { display: flex; gap: 6px; height: 100%; }
     .bar {
-      display: flex; align-items: center; gap: 6px; height: 100%; box-sizing: border-box;
-      padding: 0 8px; background: #23262e; border-radius: 20px;
+      flex: 0 0 96px; display: flex; align-items: center; gap: 6px; height: 100%;
+      box-sizing: border-box; padding: 0 8px; background: #23262e; border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+    /* Numbered barrels (more than one in the queue) are a little wider, so the
+       number fits beside the two lines of text. Keep in step with index.js. */
+    .numbered .bar { flex-basis: 112px; padding-left: 6px; }
+    .num {
+      flex: 0 0 auto; width: 14px; height: 14px; border-radius: 7px;
+      background: rgba(255, 255, 255, 0.14); color: #cfd3dc;
+      font: 600 9px/14px 'Segoe UI', Tahoma, sans-serif; text-align: center;
+    }
+    /* "+N": barrels hidden in the middle of a long queue. */
+    .numbered .bar.more, .bar.more {
+      flex: 0 0 34px; justify-content: center; padding: 0;
+      color: #cfd3dc; font: 600 11px 'Segoe UI', Tahoma, sans-serif;
     }
     .mic { flex: 0 0 auto; width: 13px; height: 13px; color: #e06c75; }
     .mic svg { width: 100%; height: 100%; display: block; }
@@ -19,22 +36,20 @@
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
     /* Status text replaces the equaliser between recording and the result.
-       Two short lines keep the bar the same size at only 96px wide. */
+       Two short lines keep the barrel the same size. */
     .status {
-      display: none; flex: 1 1 auto; font-family: 'Segoe UI', Tahoma, sans-serif;
+      flex: 1 1 auto; font-family: 'Segoe UI', Tahoma, sans-serif;
       font-size: 9px; line-height: 1.15; text-align: center; letter-spacing: -0.2px;
     }
     .status b { display: block; font-weight: 600; }
 
     /* Transcription running: red, softly breathing. */
-    body.is-busy .eq, body.is-busy .mic { display: none; }
-    body.is-busy .status { display: block; color: #e06c75; animation: blink 1.1s ease-in-out infinite; }
+    .busy .status { color: #e06c75; animation: blink 1.1s ease-in-out infinite; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
     /* Result ready: green, glowing. */
-    body.is-done .eq, body.is-done .mic { display: none; }
-    body.is-done .status {
-      display: block; color: #98c379;
+    .done .status {
+      color: #98c379;
       text-shadow: 0 0 6px rgba(152, 195, 121, 0.9), 0 0 12px rgba(152, 195, 121, 0.5);
       animation: glow 1.6s ease-in-out infinite;
     }
@@ -53,35 +68,26 @@
   </style>
 </head>
 <body>
-  <div class="bar" id="bar">
-    <div class="mic rec" id="mic">
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
-        <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
-      </svg>
-    </div>
-    <div class="eq" id="eq"></div>
-    <div class="status" id="status"></div>
-  </div>
+  <div class="row" id="row"></div>
 
   <script>
+    const MIC_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+      '<path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>' +
+      '<path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>';
     const BARS = 16;
-    const eq = document.getElementById('eq');
-    const bars = [];
-    for (let i = 0; i < BARS; i++) { const b = document.createElement('i'); eq.appendChild(b); bars.push(b); }
-
+    const MAX_H = 20;   // px, matches .eq height
     // Per-bar weights so the middle reacts more than the edges (equaliser look).
-    const weight = bars.map((_, i) => {
+    const weight = Array.from({ length: BARS }, (_, i) => {
       const d = Math.abs(i - (BARS - 1) / 2) / ((BARS - 1) / 2); // 0 centre .. 1 edge
       return 0.45 + 0.55 * (1 - d * d);
     });
 
+    let bars = [];      // the equaliser of the barrel that is recording, if any
     let level = 0;      // smoothed level 0..1
-    const MAX_H = 20;   // px, matches .eq height
 
     function render() {
       const t = performance.now();
-      for (let i = 0; i < BARS; i++) {
+      for (let i = 0; i < bars.length; i++) {
         // Two detuned waves per bar: the ripple travels along the equaliser
         // instead of every bar wobbling in lockstep.
         const jitter = 0.72 + 0.42 * Math.sin(t / 90 + i * 0.7)
@@ -96,27 +102,61 @@
     }
     requestAnimationFrame(render);
 
-    // The bar walks through three states without changing size:
-    // recording (equaliser) -> transcribing (red) -> ready (green).
-    const statusEl = document.getElementById('status');
-    function setState(cls, line1, line2) {
-      level = 0;
-      document.body.classList.remove('is-busy', 'is-done');
-      if (cls) {
-        statusEl.innerHTML = '';
-        const a = document.createElement('b'); a.textContent = line1;
-        const b = document.createElement('b'); b.textContent = line2;
-        statusEl.append(a, b);
-        document.body.classList.add(cls);
+    function statusLines(lines) {
+      const s = document.createElement('div');
+      s.className = 'status';
+      for (const line of lines) {
+        const b = document.createElement('b');
+        b.textContent = line;
+        s.appendChild(b);
+      }
+      return s;
+    }
+
+    // Redraw the row of barrels. Skipped when nothing changed, so the
+    // blinking and glowing do not restart on every update.
+    const rowEl = document.getElementById('row');
+    let drawn = '';
+    function draw(state) {
+      const key = JSON.stringify([state.items, state.numbered, state.busy, state.done]);
+      if (key === drawn) return;
+      drawn = key;
+      rowEl.textContent = '';
+      document.body.classList.toggle('numbered', !!state.numbered);
+      bars = [];
+      for (const item of state.items) {
+        const bar = document.createElement('div');
+        if (item.more) {
+          bar.className = 'bar more';
+          bar.textContent = '+' + item.more;
+          rowEl.appendChild(bar);
+          continue;
+        }
+        bar.className = 'bar ' + item.state;
+        if (state.numbered) {
+          const num = document.createElement('div');
+          num.className = 'num';
+          num.textContent = item.number;
+          bar.appendChild(num);
+        }
+        if (item.state === 'recording') {
+          const mic = document.createElement('div');
+          mic.className = 'mic rec';
+          mic.innerHTML = MIC_SVG;
+          const eq = document.createElement('div');
+          eq.className = 'eq';
+          for (let i = 0; i < BARS; i++) { const b = document.createElement('i'); eq.appendChild(b); bars.push(b); }
+          bar.append(mic, eq);
+        } else {
+          bar.appendChild(statusLines(item.state === 'done' ? state.done : state.busy));
+        }
+        rowEl.appendChild(bar);
       }
     }
 
     if (window.overlay && window.overlay.onLevel) {
       window.overlay.onLevel((v) => { if (v > level) level = v; }); // fast attack, slow release
-      // The text arrives from the main process in the user's language.
-      window.overlay.onBusy((lines) => setState('is-busy', ...(lines || ['…', ''])));
-      window.overlay.onDone((lines) => setState('is-done', ...(lines || ['✓', 'Ctrl+V'])));
-      window.overlay.onReset(() => setState(null));
+      window.overlay.onState(draw);
     }
 
     // Clicking the bar hands control back to the main window. mousedown as well
@@ -127,9 +167,8 @@
       if (window.overlay && window.overlay.clicked) window.overlay.clicked();
       else console.error('overlay bridge missing - preload did not load');
     }
-    const barEl = document.getElementById('bar');
-    barEl.addEventListener('mousedown', handoff);
-    barEl.addEventListener('click', handoff);
+    rowEl.addEventListener('mousedown', handoff);
+    rowEl.addEventListener('click', handoff);
   </script>
 </body>
 </html>

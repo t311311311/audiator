@@ -59,10 +59,12 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Recording overlay / global hotkey (AUD-40) ---
   onHotkeyToggleRecord: (cb) => ipcRenderer.on('hotkey-toggle-record', () => cb()),
-  recordingStarted: () => ipcRenderer.send('recording-started'),
-  recordingStopped: () => ipcRenderer.send('recording-stopped'),
+  // The recording queue ("barrels"): every recording carries one id from
+  // start to transcript. transcribed() answers { copied } — whether the text
+  // went on the clipboard now or waits its turn in the queue.
+  recordingStarted: (id) => ipcRenderer.send('recording-started', id),
+  recordingStopped: (id) => ipcRenderer.send('recording-stopped', id),
+  transcribed: (id, text) => ipcRenderer.invoke('transcribed', { id, text }),
+  transcribeFailed: (id) => ipcRenderer.send('transcribe-failed', id),
   recLevel: (level) => ipcRenderer.send('rec-level', level),
-  copyToClipboard: (text) => ipcRenderer.send('copy-to-clipboard', text),
-  transcribingStarted: () => ipcRenderer.send('transcribing-started'),
-  transcribingFailed: () => ipcRenderer.send('transcribing-failed'),
 });
