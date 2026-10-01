@@ -61,7 +61,7 @@
       </svg>
     </div>
     <div class="eq" id="eq"></div>
-    <div class="status" id="status"><b>Выполняется</b><b>транскрибация!</b></div>
+    <div class="status" id="status"></div>
   </div>
 
   <script>
@@ -113,8 +113,9 @@
 
     if (window.overlay && window.overlay.onLevel) {
       window.overlay.onLevel((v) => { if (v > level) level = v; }); // fast attack, slow release
-      window.overlay.onBusy(() => setState('is-busy', 'Выполняется', 'транскрибация!'));
-      window.overlay.onDone(() => setState('is-done', 'Готово!', 'Ctrl+V'));
+      // The text arrives from the main process in the user's language.
+      window.overlay.onBusy((lines) => setState('is-busy', ...(lines || ['…', ''])));
+      window.overlay.onDone((lines) => setState('is-done', ...(lines || ['✓', 'Ctrl+V'])));
       window.overlay.onReset(() => setState(null));
     }
 

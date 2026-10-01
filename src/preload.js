@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
   openSettings: () => ipcRenderer.send('open-settings-window'),
   onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', (event, ...args) => callback(...args)),
   getSettings: () => ipcRenderer.invoke('get-current-settings'),
+  getI18n: () => ipcRenderer.invoke('get-i18n'), // { lang, languages, strings }
 
   // --- Window controls ---
   minimize: () => ipcRenderer.send('minimize-app'),

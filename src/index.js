@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShor
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
+const i18n = require('./i18n');
 
 // --- Initialize Settings Store ---
 const store = new Store({
@@ -215,17 +216,25 @@ const createWindow = () => {
   });
 };
 
+// --- Interface language (AUD-33) ---
+// The user's choice wins; until they make one, follow the OS language.
+const currentLang = () => i18n.resolveLanguage(store.get('language'), app.getLocale());
+const tr = (key) => i18n.t(currentLang(), key);
+
+// The tray menu is built once, so it has to be rebuilt when the language changes.
+const buildTrayMenu = () => {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: tr('tray.show'), click: () => { revealMainWindow(); }},
+    { label: tr('tray.quit'), click: () => { app.isQuitting = true; app.quit(); }},
+  ]));
+};
+
 const createTray = () => {
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon);
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show App', click: () => { revealMainWindow(); }},
-    { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); }},
-  ]);
-
   tray.setToolTip('Audiator');
-  tray.setContextMenu(contextMenu);
+  buildTrayMenu();
   tray.on('click', () => {
     mainWindow.isVisible() ? mainWindow.hide() : revealMainWindow();
   });
@@ -246,7 +255,7 @@ const showActivationWindow = () => {
     resizable: false,
     parent: mainWindow,
     modal: true,
-    title: 'Активация Audiator',
+    title: tr('act.windowTitle'),
     backgroundColor: '#282c34', // avoids a white flash before the page paints
     autoHideMenuBar: true,
     webPreferences: {
@@ -330,7 +339,7 @@ app.on('ready', async () => {
   ipcMain.on('transcribing-started', () => {
     transcribing = true;
     if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('overlay-busy');
+      overlayWindow.webContents.send('overlay-busy', [tr('ov.busy1'), tr('ov.busy2')]);
     }
     syncOverlay();
   });
@@ -357,7 +366,7 @@ app.on('ready', async () => {
       // no timer — the reminder is only useful while the text is unpasted, and
       // Windows gives no way to detect that a paste happened.
       showingDone = true;
-      overlayWindow.webContents.send('overlay-done');
+      overlayWindow.webContents.send('overlay-done', [tr('ov.done1'), tr('ov.done2')]);
       overlayWindow.showInactive();
       startPasteWatch(); // watch for Ctrl+V only while this reminder is up
     }
@@ -417,6 +426,15 @@ app.on('ready', async () => {
   });
 
   // Handle requests to get app version
+  // Every window asks for its strings here (they cannot require i18n.js
+  // themselves under contextIsolation).
+  // An explicit language lets the settings window preview a choice before it
+  // is saved; otherwise the saved (or OS-derived) language is used.
+  ipcMain.handle('get-i18n', (event, lang) => {
+    const use = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
+    return { lang: use, languages: i18n.LANGUAGES, strings: i18n.stringsFor(use) };
+  });
+
   ipcMain.handle('get-app-version', () => {
     return app.getVersion();
   });
@@ -437,7 +455,7 @@ app.on('ready', async () => {
 
     settingsWindow = new BrowserWindow({
       width: 450,
-      height: 380, // Increased height
+      height: 430, // room for the language row added in AUD-33
       resizable: false,
       minimizable: false, // Prevent minimizing
       maximizable: false, // Prevent maximizing
@@ -515,7 +533,8 @@ app.on('ready', async () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.setOpacity(store.get('opacity')); // keep the overlay in step
     }
-    broadcastSettings(); // Broadcast final saved settings to all windows
+    buildTrayMenu(); // the tray menu is static, so relabel it for a new language
+    broadcastSettings(); // windows re-read their strings on this event
     if (settingsWindow) {
       settingsWindow.close();
     }
@@ -559,9 +578,9 @@ app.on('ready', async () => {
   ipcMain.on('save-audio', (event, { audio, timestamp }) => {
     const defaultName = `ad_${formatTimestampForFilename(timestamp)}.webm`;
     dialog.showSaveDialog({
-      title: 'Save Recorded Audio',
+      title: tr('dlg.saveAudio'),
       defaultPath: defaultName,
-      filters: [{ name: 'WebM Audio', extensions: ['webm'] }]
+      filters: [{ name: tr('dlg.filterAudio'), extensions: ['webm'] }]
     }).then(result => {
       if (!result.canceled && result.filePath) {
         fs.writeFile(result.filePath, audio, (err) => {
@@ -575,9 +594,9 @@ app.on('ready', async () => {
   ipcMain.on('save-text', (event, { text, timestamp }) => {
     const defaultName = `history_${formatTimestampForFilename(timestamp)}.txt`;
     dialog.showSaveDialog({
-      title: 'Save Transcription History',
+      title: tr('dlg.saveHistory'),
       defaultPath: defaultName,
-      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+      filters: [{ name: tr('dlg.filterText'), extensions: ['txt'] }]
     }).then(result => {
       if (!result.canceled && result.filePath) {
         fs.writeFile(result.filePath, text, (err) => {
@@ -593,9 +612,9 @@ app.on('ready', async () => {
     const formattedTimestamp = formatTimestampForFilename(timestamp);
     const defaultName = `ad_${formattedTimestamp}.webm`;
     dialog.showSaveDialog({
-      title: 'Save Audio and Text',
+      title: tr('dlg.saveAudioText'),
       defaultPath: defaultName,
-      filters: [{ name: 'WebM Audio', extensions: ['webm'] }]
+      filters: [{ name: tr('dlg.filterAudio'), extensions: ['webm'] }]
     }).then(result => {
       if (!result.canceled && result.filePath) {
         const dir = path.dirname(result.filePath);
