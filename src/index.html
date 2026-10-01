@@ -110,6 +110,28 @@
             overflow-wrap: break-word; /* For modern browsers */
         }
 
+        /* Speech model downloading / loading / failed: a strip under the title
+           bar; the history moves down while it is there. */
+        .engine-banner {
+            position: fixed; top: 32px; left: 0; right: 0; z-index: 99;
+            padding: 6px 12px 7px; font-size: 12px;
+            background: var(--primary-color); border-bottom: 1px solid var(--border-color);
+        }
+        .engine-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        /* One line; a long error is cut with "…" and shown whole on hover. */
+        #engine-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .engine-retry {
+            flex: 0 0 auto; background: none; color: var(--text-color); cursor: pointer;
+            border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 8px; font-size: 12px;
+        }
+        .engine-progress {
+            margin-top: 5px; height: 4px; border-radius: 2px; overflow: hidden;
+            background: var(--border-color);
+        }
+        .engine-progress i { display: block; height: 100%; width: 0; background: var(--accent-color); transition: width 0.3s; }
+        .engine-banner.loading .engine-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
+        .engine-banner.error .engine-progress { display: none; }
+
         /* A recording waiting for or in transcription: blinks like the bar's
            red "transcribing" barrel. */
         .original-text.pending {
@@ -331,6 +353,14 @@
         </div>
     </div>
     
+    <div id="engine-banner" class="engine-banner hidden">
+        <div class="engine-line">
+            <span id="engine-text"></span>
+            <button type="button" id="engine-retry" class="engine-retry hidden" data-i18n="engine.retry">Повторить</button>
+        </div>
+        <div class="engine-progress"><i id="engine-bar"></i></div>
+    </div>
+
     <div id="app-menu" class="dropdown-menu hidden">
         <div class="dropdown-menu-item" id="settings-btn" data-i18n="menu.settings">Настройки</div>
         <div class="dropdown-menu-item" id="save-all-btn" data-i18n="menu.saveAll">Сохранить весь текст</div>
@@ -415,6 +445,7 @@
                     if (s !== undefined) el.title = s;
                 });
                 fitTranslateLabel();
+                renderEngine(lastEngine); // its text is built in code, not marked up
             }).catch((e) => console.error('i18n load failed', e));
         }
 
@@ -475,6 +506,50 @@
             el.classList.add('show');
             clearTimeout(_toastTimer);
             _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+        }
+
+        // --- Speech model download / load (first run, or a new quality) ---
+        // A strip under the title bar while the model is downloading (with the
+        // size so far) or loading, or if the download failed (with Retry).
+        // Hidden once a model is ready. Recordings made meanwhile wait their
+        // turn and are transcribed as soon as the model is there.
+        let lastEngine = null;
+        const qualityName = (m) => ({
+            base: S('quality.fast'), small: S('quality.standard'), 'large-v3-turbo': S('quality.accurate'),
+        })[m] || m;
+        function renderEngine(s) {
+            lastEngine = s;
+            const banner = document.getElementById('engine-banner');
+            const text = document.getElementById('engine-text');
+            const bar = document.getElementById('engine-bar');
+            const retry = document.getElementById('engine-retry');
+            let show = true;
+            banner.classList.remove('loading', 'error');
+            retry.classList.add('hidden');
+            if (s && s.state === 'downloading') {
+                const mb = (b) => Math.round(b / 1e6);
+                text.textContent = `${S('engine.downloading')} (${qualityName(s.job)}): ` +
+                                   `${mb(s.done)} / ${mb(s.total)} ${S('unit.mb')}`;
+                bar.style.width = (s.total ? (100 * s.done / s.total) : 0) + '%';
+            } else if (s && s.state === 'loading') {
+                banner.classList.add('loading');
+                text.textContent = S('engine.loading');
+            } else if (s && s.state === 'error') {
+                banner.classList.add('error');
+                text.textContent = s.error ? `${S('engine.error')}: ${s.error}` : S('engine.error');
+                retry.classList.remove('hidden');
+            } else {
+                show = false;
+            }
+            text.title = text.textContent;
+            banner.classList.toggle('hidden', !show);
+            // Move the history down by exactly the strip's height while it is shown.
+            document.getElementById('main-content').style.paddingTop = show ? (32 + banner.offsetHeight) + 'px' : '';
+        }
+        if (window.api.onEngineStatus) {
+            window.api.onEngineStatus(renderEngine);
+            window.api.getEngineStatus().then(renderEngine).catch(() => {});
+            document.getElementById('engine-retry').addEventListener('click', () => window.api.engineRetry());
         }
 
         function startLevelMeter(mediaStream) {

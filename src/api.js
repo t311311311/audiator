@@ -49,10 +49,8 @@ async function raiseGatewayError(response) {
  * @returns {Promise<{text: string, language?: string}>}
  */
 async function transcribe(audioBuffer, language = '') {
-  const base = await engine.whenReady();
-  if (!base) {
-    throw new Error('Speech engine is not running');
-  }
+  // Waits while the model downloads or loads (the main window shows progress).
+  const base = await engine.whenModelReady();
 
   const formData = new FormData();
   formData.append('audio_file', new Blob([audioBuffer], { type: 'audio/webm' }), 'recording.webm');

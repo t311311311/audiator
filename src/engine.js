@@ -54,10 +54,10 @@ function locate({ packaged, rootDir }) {
 /**
  * Start the engine unless one already answers. Development keeps the fixed
  * port 8000, so a service started by hand is reused; a packaged build takes
- * any free port. Models are kept in modelsDir when given (packaged: the
- * user's app data), otherwise in the default Hugging Face cache.
+ * any free port. Downloaded models go to modelsDir (the user's app data);
+ * `model` is loaded straight away if it is already on this computer.
  */
-function startEngine({ packaged, rootDir, modelsDir = null, model = 'small' }) {
+function startEngine({ packaged, rootDir, modelsDir, model = 'small' }) {
   ready = (async () => {
     const port = packaged ? await freePort() : DEV_PORT;
     const url = `http://127.0.0.1:${port}`;
@@ -76,7 +76,7 @@ function startEngine({ packaged, rootDir, modelsDir = null, model = 'small' }) {
       WHISPER_MODEL: model,
       PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8', // readable Russian in the logs
     };
-    if (modelsDir) env.WHISPER_MODELS_DIR = modelsDir;
+    env.WHISPER_MODELS_DIR = modelsDir;
     console.log(`[engine] starting ${path.basename(where.command)} on ${port}`);
     child = spawn(where.command, where.args, {
       cwd: where.cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -97,11 +97,103 @@ function whenReady() {
   return ready || Promise.resolve(null);
 }
 
+// --- The model ----------------------------------------------------------------
+// The engine downloads and loads models itself (see local_whisper.py); the app
+// says which one to use and watches its progress, passing every change on to
+// the windows (a progress bar in the main window, the list in Settings).
+
+let status = null;        // the engine's last /status
+let wanted = null;        // the model the user chose
+let poller = null;
+const listeners = new Set();
+
+const busy = (s) => !!s && (s.job || s.state === 'downloading' || s.state === 'loading');
+
+function setStatus(s) {
+  status = s;
+  for (const cb of listeners) cb(s);
+}
+
+/** Call cb with every status change: { model, state, done, total, error, job, models }. */
+function onStatus(cb) { listeners.add(cb); }
+
+/** The last known status (null until the engine has answered). */
+function currentStatus() { return status; }
+
+async function fetchStatus() {
+  const base = await whenReady();
+  if (!base) {
+    setStatus({ model: null, state: 'error', error: 'Speech engine is not running', job: null, models: {} });
+    return status;
+  }
+  const r = await fetch(`${base}/status`);
+  if (r.status === 404) {
+    // An older engine started by hand (development): one fixed model, always
+    // loaded, no downloads.
+    setStatus({ model: 'fixed', state: 'ready', error: null, job: null, models: {} });
+    return status;
+  }
+  setStatus(await r.json());
+  return status;
+}
+
+// Poll while the engine is busy, so the progress bar moves. When it settles on
+// a model other than the one the user chose since (a choice made while another
+// download was running), ask for that one next.
+function watch() {
+  if (poller) return;
+  poller = setInterval(async () => {
+    try {
+      const s = await fetchStatus();
+      if (busy(s)) return;
+      clearInterval(poller); poller = null;
+      if (wanted && s.model !== wanted && s.state !== 'error') useModel(wanted);
+    } catch (e) {
+      console.error('[engine] status', e.message);
+    }
+  }, 500);
+}
+
+/** Switch to a model: the engine downloads it if needed, then loads it. */
+async function useModel(name) {
+  wanted = name;
+  const base = await whenReady();
+  if (!base) return fetchStatus();
+  try {
+    const r = await fetch(`${base}/use?name=${encodeURIComponent(name)}`, { method: 'POST' });
+    if (r.status !== 409) setStatus(await r.json()); // 409: busy with another, picked up by watch()
+  } catch (e) {
+    console.error('[engine] use', e.message);
+  }
+  watch();
+  return status;
+}
+
+/**
+ * The engine's URL once a model is loaded, for transcribing. Waits through a
+ * download or load (a recording made meanwhile is transcribed once it is
+ * done); throws if there is no model and none on the way.
+ */
+async function whenModelReady() {
+  const base = await whenReady();
+  if (!base) throw new Error('Speech engine is not running');
+  for (;;) {
+    const s = await fetchStatus();
+    if (s.model) return base;        // a model serves even while another downloads
+    if (!busy(s)) throw new Error(s.error || 'Speech model is not ready');
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
 /** Stop the engine this app started; one started by hand is left alone. */
 function stopEngine() {
+  if (poller) { clearInterval(poller); poller = null; }
   if (!child) return;
   try { child.kill(); } catch (e) { /* already gone */ }
   child = null;
 }
 
-module.exports = { startEngine, whenReady, stopEngine };
+module.exports = {
+  startEngine, whenReady, stopEngine,
+  useModel, whenModelReady, onStatus, currentStatus, fetchStatus,
+};

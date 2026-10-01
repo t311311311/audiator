@@ -65,6 +65,16 @@
         #font-size-slider {
             margin-right: 10px;
         }
+        /* A setting with an explanation under its control. */
+        .setting.with-hint { align-items: flex-start; }
+        .setting.with-hint label { padding-top: 6px; }
+        .setting-control { flex-grow: 1; display: flex; flex-direction: column; }
+        .setting-hint {
+            margin-top: 6px;
+            font-size: 0.8em;
+            opacity: 0.75;
+            line-height: 1.35;
+        }
         .settings-actions {
             display: flex;
             justify-content: flex-end;
@@ -138,6 +148,16 @@
             <div class="setting">
                 <label for="opacity-slider" data-i18n="settings.opacity">Прозрачность</label>
                 <input type="range" id="opacity-slider" min="0.2" max="1.0" step="0.05">
+            </div>
+
+            <!-- The speech model. A model not yet on this computer is downloaded
+                 after Save; the main window shows the progress. -->
+            <div class="setting with-hint">
+                <label for="quality-select" data-i18n="settings.quality">Качество распознавания</label>
+                <div class="setting-control">
+                    <select id="quality-select"></select>
+                    <div class="setting-hint" id="quality-hint"></div>
+                </div>
             </div>
 
 
@@ -226,6 +246,7 @@
                     fontSizeSlider.value = settings.fontSize || 16;
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
                     applyTheme(settings.theme); // Apply theme to settings window itself
+                    renderQuality();
                 });
 
                 window.settingsApi.send('get-settings');
@@ -265,10 +286,61 @@
 
                 languageSelect.addEventListener('change', (e) => {
                     currentSettings.language = e.target.value;
-                    applyI18n(e.target.value); // preview here; other windows follow on Save
+                    applyI18n(e.target.value).then(renderQuality); // preview here; other windows follow on Save
                 });
 
-                applyI18n();
+                applyI18n().then(renderQuality);
+
+                // --- Recognition quality (the speech model) ---
+                // Each option shows its download size and a tick once it is on
+                // this computer; the line below says what the choice means.
+                const qualitySelect = document.getElementById('quality-select');
+                const qualityHint = document.getElementById('quality-hint');
+                const QUALITY = ['base', 'small', 'large-v3-turbo'];
+                let engineStatus = null;
+
+                const qualityName = (m) => ({
+                    base: strings['quality.fast'],
+                    small: strings['quality.standard'],
+                    'large-v3-turbo': strings['quality.accurate'],
+                })[m] || m;
+                const qualityHintText = (m) => ({
+                    base: strings['quality.hintFast'],
+                    small: strings['quality.hintStandard'],
+                    'large-v3-turbo': strings['quality.hintAccurate'],
+                })[m] || '';
+                function formatSize(bytes) {
+                    const lang = document.documentElement.lang;
+                    if (bytes >= 1e9) {
+                        return (bytes / 1e9).toLocaleString(lang, { maximumFractionDigits: 1 }) + ' ' + strings['unit.gb'];
+                    }
+                    return Math.round(bytes / 1e6) + ' ' + strings['unit.mb'];
+                }
+
+                function renderQuality() {
+                    const models = (engineStatus && engineStatus.models) || {};
+                    const chosen = currentSettings.whisperModel || 'small';
+                    qualitySelect.textContent = '';
+                    for (const m of QUALITY) {
+                        const info = models[m] || {};
+                        let label = qualityName(m);
+                        if (info.size) label += ' — ' + formatSize(info.size);
+                        if (info.installed) label += ' ✓';
+                        qualitySelect.add(new Option(label, m));
+                    }
+                    qualitySelect.value = chosen;
+                    const info = models[chosen];
+                    let hint = qualityHintText(chosen);
+                    if (info) hint += ' ' + (info.installed ? strings['quality.installed'] : strings['quality.toDownload']);
+                    qualityHint.textContent = hint;
+                }
+
+                qualitySelect.addEventListener('change', (e) => {
+                    currentSettings.whisperModel = e.target.value; // applied on Save
+                    renderQuality();
+                });
+                window.settingsApi.getEngineStatus().then((s) => { engineStatus = s; renderQuality(); });
+                window.settingsApi.onEngineStatus((s) => { engineStatus = s; renderQuality(); });
 
                 // Load and display app version
                 window.settingsApi.getAppVersion().then(version => {
