@@ -128,6 +128,10 @@ const createOverlay = () => {
     },
   });
   overlayWindow.setOpacity(store.get('opacity', 0.8)); // same translucency as the main window
+  // Keep the bar out of screen sharing and screen recording: the user sees it,
+  // viewers and recordings do not. On Windows 10 2004+ this excludes the window
+  // from capture entirely (older Windows would show a black box instead).
+  overlayWindow.setContentProtection(true);
   overlayWindow.loadFile(path.join(__dirname, 'recorder-overlay.html'));
   overlayWindow.on('closed', () => { overlayWindow = null; });
 
@@ -165,12 +169,26 @@ const revealMainWindow = () => {
   }, 200);
 };
 
+// Whether the user is actually looking at the app: the main window is shown,
+// not minimised, and one of our windows has focus. isVisible() alone is not
+// enough — a window left open behind another application still counts as
+// visible, and that hid the bar whenever the user just switched apps while
+// recording.
+const mainInView = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  const focused = BrowserWindow.getFocusedWindow();
+  return !!focused && focused !== overlayWindow;
+};
+
 // The overlay and the main window are two views of the same state: show the
 // overlay only while recording with the main window out of sight.
 const syncOverlay = () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
-                      mainWindow.isVisible() && !mainWindow.isMinimized();
+  const mainVisible = mainInView();
+  // Coming back to the window is acting on "Готово! Ctrl+V" (the transcript is
+  // there): drop it, or it would pop up again the next time the user leaves.
+  if (mainVisible) clearDoneReminder();
   if ((isRecording || transcribing || showingDone) && !mainVisible) {
     if (!overlayWindow.isVisible()) overlayWindow.showInactive();
   } else if (overlayWindow.isVisible()) {
@@ -312,11 +330,11 @@ app.on('ready', async () => {
   createOverlay();
 
   // Global hotkey (works even when the app is in the tray/background): toggle recording.
-  // Starting from the hotkey means the user is working elsewhere, so get the
-  // window out of the way and let the overlay report progress instead.
+  // It only toggles recording and leaves the window where it is: it used to
+  // hide the window, which the user did not want. The overlay already shows
+  // whenever the window is out of sight or behind another application.
   if (!globalShortcut.register('CommandOrControl+Space', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (!isRecording && mainWindow.isVisible()) mainWindow.hide();
     mainWindow.webContents.send('hotkey-toggle-record');
   })) {
     console.error('Failed to register hotkey Ctrl+Space (already taken by another app)');
@@ -356,11 +374,9 @@ app.on('ready', async () => {
     if (!text) return;
     clipboard.writeText(text);
     transcribing = false;
-    // With the window hidden the in-app toast would go unseen, so confirm in
-    // the overlay instead — otherwise the hotkey flow gives no feedback at all.
-    const mainVisible = mainWindow && !mainWindow.isDestroyed() &&
-                        mainWindow.isVisible() && !mainWindow.isMinimized();
-    if (!mainVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+    // With the window out of sight the in-app toast would go unseen, so confirm
+    // in the overlay instead — otherwise the hotkey flow gives no feedback at all.
+    if (!mainInView() && overlayWindow && !overlayWindow.isDestroyed()) {
       // Stays up until the user acts on it: clicking the bar (which opens the
       // window) or starting another recording clears it. There is deliberately
       // no timer — the reminder is only useful while the text is unpasted, and
@@ -384,10 +400,19 @@ app.on('ready', async () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
     revealMainWindow();
   });
-  // Hiding/minimising the window while recording hands over to the overlay.
-  ['hide', 'minimize', 'show', 'restore', 'focus'].forEach((evt) => {
-    mainWindow.on(evt, () => setTimeout(syncOverlay, 0));
-  });
+  // Hiding/minimising the window while recording hands over to the overlay,
+  // and so does switching to another application. Focus moving between our own
+  // windows (main -> settings), or arriving just after a restore, passes
+  // through a moment with no focused window, so wait a beat before deciding,
+  // or the bar would flash.
+  let syncTimer = null;
+  const scheduleSync = () => {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncOverlay, 100);
+  };
+  ['hide', 'minimize', 'show', 'restore'].forEach((evt) => mainWindow.on(evt, scheduleSync));
+  app.on('browser-window-focus', scheduleSync);
+  app.on('browser-window-blur', scheduleSync);
 
   // Show activation window if not authenticated
   if (!authStatus.authenticated) {
