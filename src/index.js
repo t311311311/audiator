@@ -775,13 +775,20 @@ app.on('ready', async () => {
   ipcMain.handle('translate', async (event, { text, targetLang, sourceLang }) => {
     try {
       const result = await api.translate(text, targetLang, sourceLang);
-      return { success: true, translatedText: result.translatedText, detectedLanguage: result.detectedLanguage };
+      return { success: true, translatedText: result.translatedText };
     } catch (e) {
       console.error('Translation failed:', e.message);
-      if (e.authRequired) showActivationWindow();
-      return { success: false, error: e.message, authRequired: !!e.authRequired };
+      // missing: the language (source or target) to install first.
+      return { success: false, error: e.message, missing: e.missing || null };
     }
   });
+
+  // Translation languages on demand: the catalog, and installing (with
+  // progress in the engine status), stopping and deleting a language.
+  ipcMain.handle('translate-catalog', () => engine.translateCatalog().catch(() => []));
+  ipcMain.on('translate-install', (event, code) => engine.installLanguage(code));
+  ipcMain.on('translate-cancel', () => engine.cancelLanguage());
+  ipcMain.handle('translate-delete', (event, code) => engine.deleteLanguage(code));
 
   // Get supported languages
   ipcMain.handle('get-supported-languages', async () => {

@@ -12,10 +12,10 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 
+// Translation now runs in the engine too (translator.py), so LibreTranslate is
+// no longer started.
 const SERVICES = [
   { name: 'auth-gateway', port: 3000, script: 'main.py' },
-  { name: 'libretranslate', port: 5000, exe: 'libretranslate.exe',
-    args: ['--host', '127.0.0.1', '--port', '5000'] },
 ];
 
 const children = [];

@@ -21,6 +21,8 @@ Endpoints:
   POST /delete  remove a downloaded model (not the one in use)
   POST /asr     transcribe audio — the whisper-asr-webservice shape
                 (text + segments + language)
+  POST /translate, GET /translate/catalog, POST /translate/install|cancel|delete
+                translation on demand (translator.py); its state is in /status
 
 Run:  python local_whisper.py   (listens on 127.0.0.1:8000)
 Env:  WHISPER_PORT (default 8000)
@@ -37,6 +39,9 @@ import threading
 import requests
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from faster_whisper import WhisperModel
+from pydantic import BaseModel
+
+import translator
 
 PORT = int(os.environ.get("WHISPER_PORT", "8000"))
 START_MODEL = os.environ.get("WHISPER_MODEL") or None
@@ -197,6 +202,7 @@ def status():
         s = dict(_state, job=_job)
     s["models"] = {n: {"installed": _local_dir(n) is not None, "size": m["size"]}
                    for n, m in MODELS.items()}
+    s["translate"] = translator.status()
     return s
 
 
@@ -230,6 +236,55 @@ def delete(name: str = Query(...)):
     for folder in (os.path.join(MODELS_DIR, name), os.path.join(MODELS_DIR, name + ".part"),
                    os.path.join(HF_CACHE, "models--" + MODELS[name]["repo"].replace("/", "--"))):
         shutil.rmtree(folder, ignore_errors=True)
+    return status()
+
+
+# --- Translation (translator.py) ---------------------------------------------
+
+class TranslateRequest(BaseModel):
+    q: str
+    source: str
+    target: str
+
+
+@app.post("/translate")
+def translate(req: TranslateRequest):
+    """Translate text between installed languages (through English if needed).
+    409 names the language that has to be installed first."""
+    try:
+        return {"translatedText": translator.translate(req.q, req.source, req.target)}
+    except LookupError as e:
+        raise HTTPException(409, {"missing": str(e.args[0])})
+
+
+@app.get("/translate/catalog")
+def translate_catalog():
+    return translator.catalog()
+
+
+@app.post("/translate/install")
+def translate_install(code: str = Query(...)):
+    if code not in translator.CATALOG:
+        raise HTTPException(400, f"unknown language {code}")
+    if not translator.start_install(code):
+        raise HTTPException(409, "another language is being installed")
+    return status()
+
+
+@app.post("/translate/cancel")
+def translate_cancel():
+    translator.cancel()
+    return status()
+
+
+@app.post("/translate/delete")
+def translate_delete(code: str = Query(...)):
+    try:
+        translator.delete(code)
+    except KeyError:
+        raise HTTPException(400, f"unknown language {code}")
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
     return status()
 
 

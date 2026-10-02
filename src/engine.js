@@ -108,7 +108,10 @@ let declined = false;     // the user stopped the download and has no model yet
 let poller = null;
 const listeners = new Set();
 
-const busy = (s) => !!s && (s.job || s.state === 'downloading' || s.state === 'loading');
+// The speech model is downloading or loading.
+const modelBusy = (s) => !!s && (s.job || s.state === 'downloading' || s.state === 'loading');
+// ...or a translation language is being installed: either keeps the poller on.
+const busy = (s) => modelBusy(s) || !!(s && s.translate && s.translate.job);
 
 // Every status the windows see also says whether the user turned the download
 // down, so the main window can offer to download instead of looking stuck.
@@ -184,7 +187,7 @@ async function cancelDownload() {
   const r = await fetch(`${base}/cancel`, { method: 'POST' });
   setStatus(await r.json());
   // The engine stops at its next chunk; wait for it to settle.
-  for (let i = 0; i < 50 && busy(status); i++) {
+  for (let i = 0; i < 50 && modelBusy(status); i++) {
     await new Promise((res) => setTimeout(res, 200));
     await fetchStatus();
   }
@@ -214,9 +217,65 @@ async function whenModelReady() {
   for (;;) {
     const s = await fetchStatus();
     if (s.model) return base;        // a model serves even while another downloads
-    if (!busy(s)) throw new Error(s.error || 'Speech model is not ready');
+    if (!modelBusy(s)) throw new Error(s.error || 'Speech model is not ready');
     await new Promise((r) => setTimeout(r, 1000));
   }
+}
+
+// --- Translation on demand (translator.py in the engine) ---------------------
+// Languages are installed one at a time, as pairs with English; their state
+// arrives with every status (status.translate) like the model's.
+
+async function call(pathAndQuery, options) {
+  const base = await whenReady();
+  if (!base) throw new Error('Speech engine is not running');
+  return fetch(base + pathAndQuery, options);
+}
+
+/**
+ * Translate text on this computer. Throws an error with .missing set to the
+ * language code to install first, when source or target is not installed.
+ */
+async function translateText(q, source, target) {
+  const r = await call('/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q, source, target }),
+  });
+  if (r.status === 409) {
+    const body = await r.json();
+    const err = new Error('Translation language is not installed');
+    err.missing = body.detail && body.detail.missing;
+    throw err;
+  }
+  if (!r.ok) throw new Error(`${r.status} - ${await r.text()}`);
+  return (await r.json()).translatedText;
+}
+
+let catalog = null;
+/** Every language on offer: [{ code, name, size }] (fixed, so fetched once). */
+async function translateCatalog() {
+  if (!catalog) catalog = await (await call('/translate/catalog')).json();
+  return catalog;
+}
+
+async function installLanguage(code) {
+  const r = await call(`/translate/install?code=${encodeURIComponent(code)}`, { method: 'POST' });
+  if (r.ok) setStatus(await r.json());
+  watch();
+  return status;
+}
+
+async function cancelLanguage() {
+  setStatus(await (await call('/translate/cancel', { method: 'POST' })).json());
+  watch();
+  return status;
+}
+
+async function deleteLanguage(code) {
+  const r = await call(`/translate/delete?code=${encodeURIComponent(code)}`, { method: 'POST' });
+  if (r.ok) setStatus(await r.json());
+  return status;
 }
 
 /** Stop the engine this app started; one started by hand is left alone. */
@@ -230,4 +289,5 @@ function stopEngine() {
 module.exports = {
   startEngine, whenReady, stopEngine,
   useModel, cancelDownload, deleteModel, whenModelReady, onStatus, currentStatus, fetchStatus,
+  translateText, translateCatalog, installLanguage, cancelLanguage, deleteLanguage,
 };

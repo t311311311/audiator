@@ -140,6 +140,46 @@
         .engine-banner.loading .engine-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
         .engine-banner.error .engine-progress-row { display: none; }
 
+        /* Translation panel (on-demand languages). */
+        .translate-panel {
+            display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto;
+            padding: 8px 15px 10px; border-top: 1px solid var(--accent-color); font-size: 13px;
+        }
+        .translate-panel.hidden { display: none; }
+        .tp-title { font-size: 0.9em; opacity: 0.8; }
+        .tp-list { display: flex; flex-direction: column; gap: 3px; }
+        .tp-list:empty { display: none; }
+        .tp-row {
+            display: flex; align-items: center; gap: 8px; padding: 2px 6px;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
+        }
+        .tp-lang:hover { border-color: var(--accent-color); }
+        .tp-name {
+            flex: 1 1 auto; min-width: 0; padding: 3px 0; text-align: left; font-size: 14px;
+            background: none; border: none; color: var(--text-color); cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        span.tp-name { cursor: default; }
+        .tp-size { font-size: 12px; opacity: 0.7; white-space: nowrap; }
+        .tp-icon {
+            flex: 0 0 auto; width: 18px; height: 18px; padding: 0; display: inline-flex;
+            align-items: center; justify-content: center; font-size: 12px;
+            background: none; border: none; color: var(--text-color); cursor: pointer; opacity: 0.7;
+        }
+        span.tp-icon { cursor: default; }
+        .tp-icon svg { width: 16px; height: 16px; }
+        button.tp-delete:hover, button.tp-cancel:hover { opacity: 1; color: #e06c75; }
+        button.tp-download:hover { opacity: 1; color: var(--accent-color); }
+        .tp-progress { flex: 1 1 auto; height: 4px; border-radius: 2px; overflow: hidden; background: var(--border-color); }
+        .tp-progress i { display: block; height: 100%; width: 0; background: var(--accent-color); transition: width 0.3s; }
+        .tp-installing .tp-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
+        .tp-note { font-size: 12px; color: var(--record-color); }
+        .tp-empty { font-size: 12px; opacity: 0.6; padding: 2px 6px; }
+        .tp-search {
+            padding: 5px 8px; font-size: 13px; border-radius: 4px;
+            background: var(--secondary-color); color: var(--text-color); border: 1px solid var(--border-color);
+        }
+
         /* A recording waiting for or in transcription: blinks like the bar's
            red "transcribing" barrel. */
         .original-text.pending {
@@ -402,18 +442,16 @@
 
     <div id="toast"></div>
 
-    <div id="translate-bar" class="controls hidden" style="padding-top: 10px; border-top: 1px solid var(--accent-color);">
-        <label for="lang-select" style="font-size: 0.9em;" data-i18n="translate.to">Перевести на:</label>
-        <select id="lang-select" style="flex-grow: 1; background: var(--primary-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 5px;">
-            <option value="en">English</option>
-            <option value="zh">中文</option>
-            <option value="es">Español</option>
-            <option value="de">Deutsch</option>
-            <option value="fr">Français</option>
-            <option value="ja">日本語</option>
-            <option value="ru">Русский</option>
-        </select>
-        <button class="control-button" id="translate-go-btn" data-i18n="btn.go">Go</button>
+    <!-- Translation: the languages on this computer (click one to translate the
+         latest text into it; a cross deletes it), and a search to add more —
+         each download shows its size, can be stopped, and lands in the list. -->
+    <div id="translate-bar" class="translate-panel hidden">
+        <div class="tp-title" data-i18n="translate.to">Перевести на:</div>
+        <div id="tp-installed" class="tp-list"></div>
+        <div id="tp-job" class="tp-list"></div>
+        <div id="tp-note" class="tp-note hidden"></div>
+        <input id="tp-search" class="tp-search" type="text" autocomplete="off" spellcheck="false">
+        <div id="tp-results" class="tp-list"></div>
     </div>
 
     <div class="controls">
@@ -495,8 +533,6 @@
         const clearAllBtn = document.getElementById('clear-all-btn');
         const historyContainer = document.querySelector('.history-container');
         const translateBar = document.getElementById('translate-bar');
-        const translateGoBtn = document.getElementById('translate-go-btn');
-        const langSelect = document.getElementById('lang-select');
 
         // --- State ---
         let mediaRecorder; // the recording in progress, if any
@@ -530,6 +566,10 @@
         })[m] || m;
         function renderEngine(s) {
             lastEngine = s;
+            if (s && s.translate && typeof renderTranslatePanel === 'function') {
+                tpState = s.translate;
+                renderTranslatePanel();
+            }
             const banner = document.getElementById('engine-banner');
             const text = document.getElementById('engine-text');
             const bar = document.getElementById('engine-bar');
@@ -633,8 +673,8 @@
             const isTranslateBarVisible = !translateBar.classList.contains('hidden');
             // Adjust bottom position based on translate bar visibility
             if (isTranslateBarVisible) {
-                // If translate bar is visible, position buttons higher
-                document.querySelector('.scroll-buttons').style.bottom = '160px';
+                // If translate bar is visible, position buttons above it
+                document.querySelector('.scroll-buttons').style.bottom = (translateBar.offsetHeight + 84) + 'px';
             } else {
                 // If translate bar is hidden, use original position
                 document.querySelector('.scroll-buttons').style.bottom = '120px';
@@ -733,6 +773,8 @@
                 }
                 originalTextField.classList.remove('pending');
                 originalTextField.textContent = result.text || S('status.noText');
+                // The language Whisper heard: what a translation translates from.
+                if (result.language) originalTextField.closest('.history-entry').dataset.lang = result.language;
                 // Marked rather than detected by its wording, which now depends on the language.
                 if (!result.text) originalTextField.dataset.state = 'empty';
                 originalCopy.btn.hidden = !result.text;
@@ -837,55 +879,219 @@
 
         translateBtn.addEventListener('click', () => {
             translateBar.classList.toggle('hidden');
+            if (!translateBar.classList.contains('hidden')) {
+                tpSearch.placeholder = S('translate.search');
+                tpSearch.value = ''; // a fresh search each time the panel opens
+                renderTranslatePanel();
+            }
             updateScrollButtons(); // Update scroll buttons position after toggling translate bar
         });
 
-        translateGoBtn.addEventListener('click', async () => {
+        // Translate the latest transcript into `target`, from the language it was
+        // spoken in. If either language is not installed, say so in the panel
+        // and offer it there instead.
+        async function translateLatest(target) {
             const latestEntry = historyContainer.querySelector('.history-entry');
             if (!latestEntry) return;
 
             const originalEl = latestEntry.querySelector('.original-text');
             const originalText = originalEl?.innerText;
             // Skip entries that hold an error or 'nothing recognised' rather than speech.
-            if (!originalText || originalEl.dataset.state) return;
+            if (!originalText || originalEl.dataset.state || originalEl.classList.contains('pending')) return;
+            const source = latestEntry.dataset.lang;
+            if (!source) { showTranslateNote(S('translate.noLang')); return; }
 
-            const targetLang = langSelect.value;
             let translatedDiv = latestEntry.querySelector('.translated-text');
+            const hadTranslation = !!translatedDiv;
             if (!translatedDiv) {
                 translatedDiv = document.createElement('div');
                 translatedDiv.className = 'translated-text';
                 latestEntry.appendChild(withCopyButton(translatedDiv).row);
             }
             const translatedCopyBtn = translatedDiv.parentElement.querySelector('.entry-copy');
+            const previous = translatedDiv.textContent;
             translatedCopyBtn.hidden = true; // until the new translation arrives
-
             translatedDiv.textContent = S('status.translating');
-            translateBar.classList.add('hidden');
-            updateScrollButtons(); // Update scroll buttons position after hiding translate bar
 
             try {
-                const result = await window.api.translate(originalText, targetLang, 'auto');
+                const result = await window.api.translate(originalText, target, source);
+                if (!result.success && result.missing) {
+                    // Put things back and ask for the missing language.
+                    if (hadTranslation) { translatedDiv.textContent = previous; translatedCopyBtn.hidden = !previous; }
+                    else translatedDiv.parentElement.remove();
+                    tpNeed = result.missing;
+                    showTranslateNote(`${S('translate.needLanguage')} ${langName(result.missing)}`);
+                    return;
+                }
                 if (!result.success) {
                     throw new Error(result.error || S('error.translate'));
                 }
                 translatedDiv.textContent = result.translatedText || S('error.translate');
                 translatedCopyBtn.hidden = !result.translatedText;
+                tpNeed = null;
+                hideTranslateNote();
+                translateBar.classList.add('hidden');
+                updateScrollButtons(); // Update scroll buttons position after hiding translate bar
 
             } catch (error) {
                 console.error('Translation error:', error);
                 translatedDiv.textContent = `${S('error.translate')}: ${error.message}`;
-
-                // Log detailed error information for debugging
-                if (error.stack) {
-                    console.error('Stack trace:', error.stack);
-                }
 
                 // Send error to main process for logging
                 if (window.api && typeof window.api.logError === 'function') {
                     window.api.logError('Translation error', error);
                 }
             }
-        });
+        }
+
+        // --- Translation panel: languages on demand ---
+        const tpInstalled = document.getElementById('tp-installed');
+        const tpJob = document.getElementById('tp-job');
+        const tpNote = document.getElementById('tp-note');
+        const tpSearch = document.getElementById('tp-search');
+        const tpResults = document.getElementById('tp-results');
+        let tpCatalog = [];     // [{ code, name, size }]: every language on offer
+        let tpState = null;     // the engine's translate status
+        let tpNeed = null;      // a language the last translation needed
+        let tpLastJob = null;   // the language last asked for (to retry)
+
+        // Argos codes that are not plain language tags.
+        const ARGOS_TAG = { pb: 'pt-BR', zt: 'zh-Hant', zh: 'zh-Hans' };
+        function langName(code, inLanguage) {
+            try {
+                const tag = ARGOS_TAG[code] || code;
+                const n = new Intl.DisplayNames([inLanguage || document.documentElement.lang || 'en'], { type: 'language' }).of(tag);
+                return n ? n.charAt(0).toUpperCase() + n.slice(1) : code;
+            } catch (e) { return code; }
+        }
+        const sizeOf = (code) => (tpCatalog.find((c) => c.code === code) || {}).size || 0;
+        const mbText = (bytes) => Math.round(bytes / 1e6) + ' ' + S('unit.mb');
+        function el(tag, cls, text) {
+            const e = document.createElement(tag);
+            if (cls) e.className = cls;
+            if (text !== undefined) e.textContent = text;
+            return e;
+        }
+        const DOWNLOAD_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97"/><path d="M12 11v9"/><path d="m9 17 3 3 3-3"/></svg>';
+
+        function showTranslateNote(text) { tpNote.textContent = text; tpNote.classList.remove('hidden'); renderTranslatePanel(); }
+        function hideTranslateNote() { tpNote.classList.add('hidden'); }
+
+        function installLanguage(code) {
+            tpLastJob = code;
+            window.api.translateInstall(code);
+        }
+        function deleteLanguage(code) {
+            const what = `${langName(code)} (${mbText(sizeOf(code))})`;
+            if (!confirm(`${S('translate.confirmDelete')} ${what}?`)) return;
+            window.api.translateDelete(code).then((s) => renderEngine(s));
+        }
+
+        // A row offering a language that is not installed: its size and a
+        // download button.
+        function offerRow(code) {
+            const row = el('div', 'tp-row');
+            row.append(el('span', 'tp-name', langName(code)), el('span', 'tp-size', mbText(sizeOf(code))));
+            const dl = el('button', 'tp-icon tp-download');
+            dl.type = 'button';
+            dl.title = S('engine.download');
+            dl.innerHTML = DOWNLOAD_SVG;
+            dl.addEventListener('click', () => installLanguage(code));
+            row.appendChild(dl);
+            return row;
+        }
+
+        function renderTranslatePanel() {
+            const t = tpState || { installed: ['en'], job: null, state: 'idle' };
+            const installed = (t.installed || ['en']).slice().sort((a, b) =>
+                a === 'en' ? -1 : b === 'en' ? 1 : langName(a).localeCompare(langName(b)));
+
+            // Languages on this computer: click one to translate into it.
+            tpInstalled.textContent = '';
+            for (const code of installed) {
+                const row = el('div', 'tp-row tp-lang');
+                const name = el('button', 'tp-name', langName(code));
+                name.type = 'button';
+                name.title = S('translate.clickToTranslate');
+                name.addEventListener('click', () => translateLatest(code));
+                row.appendChild(name);
+                if (code === 'en') {
+                    row.append(el('span', 'tp-size', S('translate.builtIn')), el('span', 'tp-icon'));
+                } else {
+                    row.appendChild(el('span', 'tp-size', mbText(sizeOf(code))));
+                    const del = el('button', 'tp-icon tp-delete', '\u2715');
+                    del.type = 'button';
+                    del.title = S('quality.delete');
+                    del.addEventListener('click', () => deleteLanguage(code));
+                    row.appendChild(del);
+                }
+                tpInstalled.appendChild(row);
+            }
+
+            // The language being downloaded / installed, or why it failed.
+            tpJob.textContent = '';
+            if (t.job) {
+                const row = el('div', 'tp-row' + (t.state === 'installing' ? ' tp-installing' : ''));
+                row.appendChild(el('span', 'tp-name', langName(t.job)));
+                const bar = el('div', 'tp-progress');
+                const fill = el('i');
+                fill.style.width = t.total ? (100 * t.done / t.total) + '%' : '0';
+                bar.appendChild(fill);
+                row.appendChild(bar);
+                row.appendChild(el('span', 'tp-size', t.state === 'installing'
+                    ? S('translate.installing')
+                    : `${Math.round(t.done / 1e6)} / ${mbText(t.total)}`));
+                if (t.state === 'downloading') {
+                    const stop = el('button', 'tp-icon tp-cancel', '\u2715');
+                    stop.type = 'button';
+                    stop.title = S('engine.cancel');
+                    stop.addEventListener('click', () => window.api.translateCancel());
+                    row.appendChild(stop);
+                } else {
+                    row.appendChild(el('span', 'tp-icon'));
+                }
+                tpJob.appendChild(row);
+            } else if (t.state === 'error') {
+                const row = el('div', 'tp-row');
+                const msg = el('span', 'tp-name', `${S('translate.error')}: ${t.error || ''}`);
+                msg.title = msg.textContent;
+                row.appendChild(msg);
+                if (tpLastJob) {
+                    const again = el('button', 'tp-icon tp-download');
+                    again.type = 'button';
+                    again.title = S('engine.retry');
+                    again.innerHTML = DOWNLOAD_SVG;
+                    again.addEventListener('click', () => installLanguage(tpLastJob));
+                    row.appendChild(again);
+                }
+                tpJob.appendChild(row);
+            }
+
+            // Adding a language: the one a translation asked for, then matches
+            // of the search by name (in the interface language, in its own
+            // language, in English) or code.
+            tpResults.textContent = '';
+            const offered = new Set([...installed, t.job].filter(Boolean));
+            const rows = [];
+            if (tpNeed && !offered.has(tpNeed)) { rows.push(tpNeed); offered.add(tpNeed); }
+            const q = tpSearch.value.trim().toLowerCase();
+            if (q) {
+                const all = tpCatalog.filter((c) => [
+                    langName(c.code), langName(c.code, ARGOS_TAG[c.code] || c.code), c.name, c.code,
+                ].some((n) => String(n).toLowerCase().includes(q)));
+                const matches = all.filter((c) => !offered.has(c.code));
+                matches.sort((a, b) => langName(a.code).localeCompare(langName(b.code)));
+                rows.push(...matches.slice(0, 6).map((c) => c.code));
+                // "Nothing found" only when no language matches at all — not when
+                // the match is already installed or downloading above.
+                if (!all.length && !rows.length) tpResults.appendChild(el('div', 'tp-empty', S('translate.noResults')));
+            }
+            rows.forEach((code) => tpResults.appendChild(offerRow(code)));
+            if (tpNeed && installed.includes(tpNeed)) { tpNeed = null; hideTranslateNote(); }
+        }
+
+        tpSearch.addEventListener('input', renderTranslatePanel);
+        window.api.translateCatalog().then((c) => { tpCatalog = c || []; renderTranslatePanel(); });
 
         copyBtn.addEventListener('click', () => {
             const selection = window.getSelection().toString().trim();

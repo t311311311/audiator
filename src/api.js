@@ -2,9 +2,8 @@ const auth = require('./auth');
 const engine = require('./engine');
 
 // === КОНФИГУРАЦИЯ ===
-// Перевод идёт через аутентифицирующий гейтвей на auth-сервере: он проверяет
-// токен подписки и сам проксирует во внутренний LibreTranslate (AUD-8).
-// Транскрибация — напрямую в локальный движок, см. transcribe().
+// Транскрибация и перевод идут в локальный движок на этом компьютере
+// (engine.js); гейтвей на auth-сервере остаётся для входа и проверки сервиса.
 const GATEWAY_URL = process.env.AUDIATOR_GATEWAY_URL || 'http://127.0.0.1:3000';
 
 /**
@@ -70,33 +69,16 @@ async function transcribe(audioBuffer, language = '') {
 }
 
 /**
- * Перевод текста
+ * Перевод текста — на этом компьютере, в локальном движке (Argos Translate),
+ * между установленными языками. Язык текста известен из распознавания.
+ * Если нужный язык не установлен, ошибка несёт его код в .missing.
  * @param {string} text - Текст для перевода
- * @param {string} targetLang - Целевой язык (ru, en, es, de, fr, zh, ja)
- * @param {string} sourceLang - Исходный язык (auto для автоопределения)
- * @returns {Promise<{translatedText: string, detectedLanguage?: string}>}
+ * @param {string} targetLang - Целевой язык (код Argos: ru, en, fr, zh…)
+ * @param {string} sourceLang - Язык текста (как его определило распознавание)
+ * @returns {Promise<{translatedText: string}>}
  */
-async function translate(text, targetLang = 'ru', sourceLang = 'auto') {
-  const response = await fetch(`${GATEWAY_URL}/translate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({
-      q: text,
-      source: sourceLang,
-      target: targetLang,
-      format: 'text'
-    })
-  });
-
-  if (!response.ok) {
-    await raiseGatewayError(response);
-  }
-
-  const result = await response.json();
-  return {
-    translatedText: result.translatedText,
-    detectedLanguage: result.detectedLanguage?.language
-  };
+async function translate(text, targetLang, sourceLang) {
+  return { translatedText: await engine.translateText(text, sourceLang, targetLang) };
 }
 
 /**
