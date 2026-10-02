@@ -59,3 +59,6 @@ auth-server/*.serverbak
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Bundled engine build (PyInstaller): build/engine is packed into the installer
+build/

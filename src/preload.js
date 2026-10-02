@@ -67,4 +67,10 @@ contextBridge.exposeInMainWorld('api', {
   transcribed: (id, text) => ipcRenderer.invoke('transcribed', { id, text }),
   transcribeFailed: (id) => ipcRenderer.send('transcribe-failed', id),
   recLevel: (level) => ipcRenderer.send('rec-level', level),
+
+  // --- Speech engine: model download / load progress ---
+  getEngineStatus: () => ipcRenderer.invoke('get-engine-status'),
+  onEngineStatus: (cb) => ipcRenderer.on('engine-status', (event, s) => cb(s)),
+  engineRetry: () => ipcRenderer.send('engine-retry'),
+  engineCancel: () => ipcRenderer.send('engine-cancel'),
 });

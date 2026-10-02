@@ -11,6 +11,7 @@ const store = new Store({
     opacity: 0.8, // Default to 80% opaque
     fontSize: 16,
     fontFamily: 'Arial',
+    whisperModel: 'small', // recognition quality: base | small | large-v3-turbo
   }
 });
 
@@ -62,9 +63,17 @@ try {
   console.error('uiohook-napi unavailable, paste detection disabled:', e.message);
 }
 
+// Whether Ctrl is held, tracked from the hook's own key events. The event's
+// ctrlKey flag cannot be trusted: right after the hook starts it reports
+// false for the first Ctrl+key (measured: false on the first press after
+// every start, true from the second), so the first paste was missed and the
+// "Ctrl+V" barrel only went away on the second one.
+let ctrlHeld = false;
+
 const startPasteWatch = () => {
   if (!uiohook || hookRunning) return;
   try {
+    ctrlHeld = false;
     uiohook.uIOhook.start();
     hookRunning = true;
   } catch (e) {
@@ -83,9 +92,15 @@ const stopPasteWatch = () => {
 };
 
 if (uiohook) {
+  const { UiohookKey } = uiohook;
+  const CTRL_KEYS = [UiohookKey.Ctrl, UiohookKey.CtrlRight];
+  uiohook.uIOhook.on('keyup', (e) => {
+    if (CTRL_KEYS.includes(e.keycode)) ctrlHeld = false;
+  });
   uiohook.uIOhook.on('keydown', (e) => {
+    if (CTRL_KEYS.includes(e.keycode)) { ctrlHeld = true; return; }
     if (!queue.active) return; // only ever acted on while a "Ctrl+V" barrel is up
-    if (e.keycode === uiohook.UiohookKey.V && (e.ctrlKey || e.metaKey)) {
+    if (e.keycode === UiohookKey.V && (ctrlHeld || e.ctrlKey || e.metaKey)) {
       console.log('[overlay] paste detected -> next barrel');
       queue.pasted();
       offeredId = null;
@@ -339,9 +354,38 @@ app.on('ready', async () => {
     }
   }
   
-  // Development runs talk to services on this machine; start whatever is not
-  // already up, so `npm start` is all that is needed. Packaged builds use the
-  // remote server and skip this entirely.
+  // Speech recognition runs on this computer in every build. Not awaited:
+  // the model loads in the background while the windows come up, and a
+  // transcription waits for it (engine.whenReady). A packaged build keeps its
+  // models in the user's app data.
+  // The model is downloaded on first use; every change of the engine's state
+  // goes to the windows (progress bar in the main window, list in Settings).
+  const engine = require('./engine');
+  engine.startEngine({
+    packaged: app.isPackaged,
+    rootDir: path.join(__dirname, '..'),
+    modelsDir: path.join(app.getPath('userData'), 'models'),
+    model: store.get('whisperModel'),
+  });
+  engine.onStatus((s) => {
+    BrowserWindow.getAllWindows().forEach((w) => {
+      if (!w.isDestroyed()) w.webContents.send('engine-status', s);
+    });
+  });
+  engine.whenReady().then(() => engine.useModel(store.get('whisperModel')));
+  ipcMain.handle('get-engine-status', () => engine.currentStatus() || engine.fetchStatus().catch(() => null));
+  ipcMain.on('engine-retry', () => engine.useModel(store.get('whisperModel')));
+  // The user stopped a download: stay with the model in use (and keep it as
+  // the choice, so the next start does not download again).
+  ipcMain.on('engine-cancel', async () => {
+    const inUse = await engine.cancelDownload();
+    if (inUse) store.set('whisperModel', inUse);
+  });
+  ipcMain.handle('engine-delete', (event, name) => engine.deleteModel(name));
+
+  // Development runs talk to the auth gateway and LibreTranslate on this
+  // machine too; start whatever is not already up, so `npm start` is all that
+  // is needed.
   if (!app.isPackaged) {
     const { startLocalBackend } = require('./local-backend');
     await startLocalBackend(path.join(__dirname, '..'));
@@ -483,7 +527,8 @@ app.on('ready', async () => {
 
     settingsWindow = new BrowserWindow({
       width: 450,
-      height: 430, // room for the language row added in AUD-33
+      height: 615, // inside the frame (useContentSize): language row (AUD-33), quality list
+      useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
       maximizable: false, // Prevent maximizing
@@ -553,8 +598,14 @@ app.on('ready', async () => {
 
   // Saves all pending settings and closes the window
   ipcMain.on('save-all-settings', (event, settingsToSave) => {
+    const previousModel = store.get('whisperModel');
     for (const key in settingsToSave) {
       store.set(key, settingsToSave[key]);
+    }
+    // A new recognition quality: download (if needed) and switch; the old
+    // model keeps transcribing until the new one is ready.
+    if (store.get('whisperModel') !== previousModel) {
+      require('./engine').useModel(store.get('whisperModel'));
     }
     // Apply all saved settings to main window (e.g., opacity)
     mainWindow.setOpacity(store.get('opacity'));
@@ -758,6 +809,7 @@ app.on('ready', async () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopPasteWatch(); // a live hook would keep the process alive
+  require('./engine').stopEngine();
   if (!app.isPackaged) {
     require('./local-backend').stopLocalBackend();
   }

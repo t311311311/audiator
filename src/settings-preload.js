@@ -30,4 +30,8 @@ contextBridge.exposeInMainWorld('settingsApi', {
   },
   // Interface strings for the current language: { lang, languages, strings }
   getI18n: (lang) => ipcRenderer.invoke('get-i18n', lang),
+  // Speech engine: which models are on this computer, and their sizes.
+  getEngineStatus: () => ipcRenderer.invoke('get-engine-status'),
+  onEngineStatus: (cb) => ipcRenderer.on('engine-status', (event, s) => cb(s)),
+  deleteModel: (name) => ipcRenderer.invoke('engine-delete', name),
 });
