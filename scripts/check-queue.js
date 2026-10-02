@@ -100,6 +100,15 @@ check('more than five barrels: first three, "+N", and the last one', () => {
   ]);
 });
 
+check('a recording whose stop never came does not hold back the queue', () => {
+  const q = new RecordQueue();
+  q.start('a');                      // its stop is lost (fast double press)
+  q.start('b'); q.stop('b');
+  assert.strictEqual(states(q), '1:busy', 'the leftover "recording" is gone');
+  q.done('b', 'text');
+  assert.strictEqual(q.active.text, 'text', 'and the next transcript is offered');
+});
+
 let failed = 0;
 for (const [name, fn] of checks) {
   try { fn(); console.log(`ok   ${name}`); }

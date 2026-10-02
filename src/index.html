@@ -153,6 +153,25 @@
         .translate-panel.hidden { display: none; }
         .tp-title { font-size: 0.9em; opacity: 0.8; }
         .tp-list { display: flex; flex-direction: column; gap: 3px; }
+        /* At most three rows of each list in view (the rest scroll inside it),
+           so a long list of languages does not push the text out of sight;
+           favourites come first, so they are the ones in view. */
+        .tp-row { flex: 0 0 auto; box-sizing: border-box; height: 32px; }
+        #tp-installed, #tp-job, #tp-results { max-height: 102px; overflow-y: auto; }
+        .tp-list::-webkit-scrollbar { width: 8px; }
+        .tp-list::-webkit-scrollbar-track { background: #3e4452; }
+        .tp-list::-webkit-scrollbar-thumb { background: #4a5060; }
+        .tp-list::-webkit-scrollbar-thumb:hover { background: #565d6f; }
+        .tp-list::-webkit-scrollbar-button { display: none; }
+        body.light-theme .tp-list::-webkit-scrollbar-track { background: #e7eaf2; }
+        body.light-theme .tp-list::-webkit-scrollbar-thumb { background: #dcdee3; }
+        /* Favourite: a grey star that turns yellow; favourites are listed first. */
+        .tp-star {
+            flex: 0 0 auto; width: 18px; padding: 0; font-size: 14px; line-height: 1;
+            background: none; border: none; color: var(--text-color); cursor: pointer; opacity: 0.35;
+        }
+        .tp-star:hover { opacity: 0.8; }
+        .tp-star.on { color: #e5c07b; opacity: 1; }
         .tp-list:empty { display: none; }
         .tp-row {
             display: flex; align-items: center; gap: 8px; padding: 2px 6px;
@@ -658,6 +677,9 @@
         }
         if (window.api && window.api.onHotkeyToggleRecord) {
             window.api.onHotkeyToggleRecord(() => {
+                // Pressed again while the microphone is still opening: stop as
+                // soon as it is open (a third press takes that back).
+                if (micStarting) { stopWhenStarted = !stopWhenStarted; return; }
                 if (mediaRecorder && mediaRecorder.state === 'recording') stopBtn.click();
                 else recordBtn.click();
             });
@@ -797,9 +819,9 @@
             saveAudioTextBtn.disabled = true;
 
             try {
-                // Идёт через аутентифицирующий гейтвей: main-процесс подставит
-                // токен подписки, поэтому прямого обращения к сервису тут нет.
-                const result = await window.api.transcribe(blob);
+                // Stopped the instant it began: nothing to send, nothing heard.
+                const result = blob.size ? await window.api.transcribe(blob)
+                                         : { success: true, text: '' };
                 if (!result.success) {
                     throw new Error(result.error || 'Transcription failed');
                 }
@@ -1022,6 +1044,15 @@
         let tpCatalog = [];     // [{ code, name, size }]: every language on offer
         let tpState = null;     // the engine's translate status
         let tpNeed = [];        // languages the last translation needed
+        // Favourite languages (a per-computer preference): listed first.
+        let tpFavorites = new Set();
+        try { tpFavorites = new Set(JSON.parse(localStorage.getItem('translateFavorites') || '[]')); } catch (e) {}
+        function toggleFavorite(code) {
+            if (tpFavorites.has(code)) tpFavorites.delete(code); else tpFavorites.add(code);
+            try { localStorage.setItem('translateFavorites', JSON.stringify([...tpFavorites])); } catch (e) {}
+            renderTranslatePanel();
+            tpInstalled.scrollTop = 0; // favourites are at the top: show them
+        }
 
         // Argos codes that are not plain language tags.
         const ARGOS_TAG = { pb: 'pt-BR', zt: 'zh-Hant', zh: 'zh-Hans' };
@@ -1070,13 +1101,21 @@
 
         function renderTranslatePanel() {
             const t = tpState || { installed: ['en'], job: null, state: 'idle' };
+            // Favourites first, then English, then the rest by name.
+            const rank = (c) => (tpFavorites.has(c) ? 0 : c === 'en' ? 1 : 2);
             const installed = (t.installed || ['en']).slice().sort((a, b) =>
-                a === 'en' ? -1 : b === 'en' ? 1 : langName(a).localeCompare(langName(b)));
+                rank(a) - rank(b) || langName(a).localeCompare(langName(b)));
 
             // Languages on this computer: click one to translate into it.
             tpInstalled.textContent = '';
             for (const code of installed) {
                 const row = el('div', 'tp-row tp-lang');
+                const fav = tpFavorites.has(code);
+                const star = el('button', 'tp-star' + (fav ? ' on' : ''), '\u2605');
+                star.type = 'button';
+                star.title = S(fav ? 'translate.unfavorite' : 'translate.favorite');
+                star.addEventListener('click', () => toggleFavorite(code));
+                row.appendChild(star);
                 const name = el('button', 'tp-name', langName(code));
                 name.type = 'button';
                 name.title = S('translate.clickToTranslate');
@@ -1202,8 +1241,17 @@
         // the main process from start to transcript (the bar's barrels). Stop
         // and record again can come faster than the previous recording finishes
         // closing, so nothing here is shared between recordings.
+        // Opening the microphone takes a moment. A second press in that moment
+        // used to start a second recording on top of the first, which then
+        // could never be stopped: a "recording" barrel that never went away
+        // and held back every barrel behind it. Now there is only ever one.
         let jobCounter = 0;
+        let micStarting = false;     // the microphone is being opened
+        let stopWhenStarted = false; // the user asked to stop before it was open
         recordBtn.addEventListener('click', async () => {
+            if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
+            micStarting = true;
+            stopWhenStarted = false;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 const recorder = new MediaRecorder(stream);
@@ -1227,8 +1275,12 @@
                 recorder.start();
                 startLevelMeter(stream);
                 if (window.api.recordingStarted) window.api.recordingStarted(jobId);
+                micStarting = false;
+                if (stopWhenStarted) stopBtn.click();
             } catch (err) {
                 console.error("Error accessing microphone:", err);
+            } finally {
+                micStarting = false;
             }
         });
 

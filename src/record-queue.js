@@ -23,7 +23,11 @@ class RecordQueue {
   find(id) { return this.jobs.find((j) => j.id === id) || null; }
 
   // A new recording. Numbering restarts from 1 whenever the queue has emptied.
+  // There is only ever one recording, so a job still marked as recording is a
+  // leftover whose stop never arrived: drop it, or it would hold back every
+  // barrel behind it for good.
   start(id) {
+    this.jobs = this.jobs.filter((j) => j.state !== 'recording');
     if (this.isEmpty) this.nextNumber = 1;
     const job = { id, number: this.nextNumber++, state: 'recording', text: null };
     this.jobs.push(job);
