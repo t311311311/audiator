@@ -17,6 +17,8 @@ Endpoints:
   GET  /status  the model in use, what the engine is doing, download progress,
                 and which of the offered models are on this computer
   POST /use     switch to a model (download if needed, then load)
+  POST /cancel  stop the download in progress (the partial files are removed)
+  POST /delete  remove a downloaded model (not the one in use)
   POST /asr     transcribe audio — the whisper-asr-webservice shape
                 (text + segments + language)
 
@@ -61,6 +63,11 @@ _lock = threading.Lock()
 _model = None          # the loaded WhisperModel
 _state = {"model": None, "state": "idle", "done": 0, "total": 0, "error": None}
 _job = None            # the model being downloaded / loaded, if any
+_cancel = threading.Event()  # the user stopped the download
+
+
+class _Cancelled(Exception):
+    pass
 
 
 def _set(**kw):
@@ -130,6 +137,8 @@ def _download(name):
             _set(done=done)
             with open(tmp, "ab" if have else "wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
+                    if _cancel.is_set():
+                        raise _Cancelled()
                     f.write(chunk)
                     done += len(chunk)
                     _set(done=done)
@@ -153,6 +162,10 @@ def _use(name):
         with _lock:
             _model = model
             _state.update(model=name, state="ready", error=None)
+    except _Cancelled:
+        # The user does not want it: free the space, carry on as before.
+        shutil.rmtree(os.path.join(MODELS_DIR, name + ".part"), ignore_errors=True)
+        _set(state="ready" if _model else "idle", error=None, done=0, total=0)
     except Exception as e:  # shown to the user, who can retry
         _set(state="error", error=str(e))
     finally:
@@ -168,6 +181,7 @@ def _start(name):
         if _job is not None:
             raise HTTPException(409, f"busy with {_job}")
         _job = name
+        _cancel.clear()
         _state.update(error=None, done=0, total=0)
     threading.Thread(target=_use, args=(name,), daemon=True).start()
 
@@ -191,6 +205,31 @@ def use(name: str = Query(...)):
     if name not in MODELS:
         raise HTTPException(400, f"unknown model {name}")
     _start(name)
+    return status()
+
+
+@app.post("/cancel")
+def cancel():
+    """Stop the download in progress; the partial files are removed and the
+    model in use (if any) stays. Loading, which is quick, is not interrupted."""
+    with _lock:
+        if _job is not None and _state["state"] == "downloading":
+            _cancel.set()
+    return status()
+
+
+@app.post("/delete")
+def delete(name: str = Query(...)):
+    """Remove a downloaded model to free disk space — from our folder and from
+    the Hugging Face cache. Not the one in use, nor one being downloaded."""
+    if name not in MODELS:
+        raise HTTPException(400, f"unknown model {name}")
+    with _lock:
+        if name == _state["model"] or name == _job:
+            raise HTTPException(409, f"{name} is in use")
+    for folder in (os.path.join(MODELS_DIR, name), os.path.join(MODELS_DIR, name + ".part"),
+                   os.path.join(HF_CACHE, "models--" + MODELS[name]["repo"].replace("/", "--"))):
+        shutil.rmtree(folder, ignore_errors=True)
     return status()
 
 

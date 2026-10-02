@@ -104,14 +104,17 @@ function whenReady() {
 
 let status = null;        // the engine's last /status
 let wanted = null;        // the model the user chose
+let declined = false;     // the user stopped the download and has no model yet
 let poller = null;
 const listeners = new Set();
 
 const busy = (s) => !!s && (s.job || s.state === 'downloading' || s.state === 'loading');
 
+// Every status the windows see also says whether the user turned the download
+// down, so the main window can offer to download instead of looking stuck.
 function setStatus(s) {
-  status = s;
-  for (const cb of listeners) cb(s);
+  status = { ...s, declined: declined && !s.model };
+  for (const cb of listeners) cb(status);
 }
 
 /** Call cb with every status change: { model, state, done, total, error, job, models }. */
@@ -157,6 +160,7 @@ function watch() {
 /** Switch to a model: the engine downloads it if needed, then loads it. */
 async function useModel(name) {
   wanted = name;
+  declined = false;
   const base = await whenReady();
   if (!base) return fetchStatus();
   try {
@@ -166,6 +170,36 @@ async function useModel(name) {
     console.error('[engine] use', e.message);
   }
   watch();
+  return status;
+}
+
+/**
+ * Stop the download in progress. The model in use (if any) stays, and becomes
+ * the one wanted again — resolves to its name (null if there is none).
+ */
+async function cancelDownload() {
+  wanted = null; // or watch() would ask for it again the moment the engine settles
+  const base = await whenReady();
+  if (!base) return null;
+  const r = await fetch(`${base}/cancel`, { method: 'POST' });
+  setStatus(await r.json());
+  // The engine stops at its next chunk; wait for it to settle.
+  for (let i = 0; i < 50 && busy(status); i++) {
+    await new Promise((res) => setTimeout(res, 200));
+    await fetchStatus();
+  }
+  wanted = status.model;
+  declined = !status.model;
+  setStatus(status);
+  return status.model;
+}
+
+/** Remove a downloaded model (not the one in use) to free disk space. */
+async function deleteModel(name) {
+  const base = await whenReady();
+  if (!base) return status;
+  const r = await fetch(`${base}/delete?name=${encodeURIComponent(name)}`, { method: 'POST' });
+  if (r.ok) setStatus(await r.json());
   return status;
 }
 
@@ -195,5 +229,5 @@ function stopEngine() {
 
 module.exports = {
   startEngine, whenReady, stopEngine,
-  useModel, whenModelReady, onStatus, currentStatus, fetchStatus,
+  useModel, cancelDownload, deleteModel, whenModelReady, onStatus, currentStatus, fetchStatus,
 };

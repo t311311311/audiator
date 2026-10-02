@@ -361,6 +361,13 @@ app.on('ready', async () => {
   engine.whenReady().then(() => engine.useModel(store.get('whisperModel')));
   ipcMain.handle('get-engine-status', () => engine.currentStatus() || engine.fetchStatus().catch(() => null));
   ipcMain.on('engine-retry', () => engine.useModel(store.get('whisperModel')));
+  // The user stopped a download: stay with the model in use (and keep it as
+  // the choice, so the next start does not download again).
+  ipcMain.on('engine-cancel', async () => {
+    const inUse = await engine.cancelDownload();
+    if (inUse) store.set('whisperModel', inUse);
+  });
+  ipcMain.handle('engine-delete', (event, name) => engine.deleteModel(name));
 
   // Development runs talk to the auth gateway and LibreTranslate on this
   // machine too; start whatever is not already up, so `npm start` is all that
@@ -506,7 +513,8 @@ app.on('ready', async () => {
 
     settingsWindow = new BrowserWindow({
       width: 450,
-      height: 500, // room for the language row (AUD-33) and recognition quality
+      height: 670, // inside the frame (useContentSize): language row (AUD-33), quality list
+      useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
       maximizable: false, // Prevent maximizing

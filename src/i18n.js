@@ -77,6 +77,12 @@ const STRINGS = {
     'engine.loading': 'Loading the speech model…',
     'engine.error': 'Could not download the speech model',
     'engine.retry': 'Retry',
+    'engine.cancel': 'Stop the download',
+    'engine.none': 'The speech model is not downloaded',
+    'engine.download': 'Download',
+    'quality.delete': 'Delete from this computer',
+    'quality.confirmDelete': 'Delete the model',
+    'quality.inUse': 'in use',
 
     // activation
     'act.windowTitle': 'Audiator activation',
@@ -179,6 +185,12 @@ const STRINGS = {
     'engine.loading': 'Загружается модель распознавания…',
     'engine.error': 'Не удалось скачать модель распознавания',
     'engine.retry': 'Повторить',
+    'engine.cancel': 'Остановить скачивание',
+    'engine.none': 'Модель распознавания не скачана',
+    'engine.download': 'Скачать',
+    'quality.delete': 'Удалить с компьютера',
+    'quality.confirmDelete': 'Удалить модель',
+    'quality.inUse': 'используется',
 
     'act.windowTitle': 'Активация Audiator',
     'act.welcome': 'Добро пожаловать в Audiator',
@@ -278,6 +290,12 @@ const STRINGS = {
     'engine.loading': '正在加载语音识别模型…',
     'engine.error': '无法下载语音识别模型',
     'engine.retry': '重试',
+    'engine.cancel': '停止下载',
+    'engine.none': '语音识别模型尚未下载',
+    'engine.download': '下载',
+    'quality.delete': '从此电脑删除',
+    'quality.confirmDelete': '删除模型',
+    'quality.inUse': '使用中',
 
     'act.windowTitle': 'Audiator 激活',
     'act.welcome': '欢迎使用 Audiator',

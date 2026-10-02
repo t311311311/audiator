@@ -65,10 +65,28 @@
         #font-size-slider {
             margin-right: 10px;
         }
-        /* A setting with an explanation under its control. */
-        .setting.with-hint { align-items: flex-start; }
-        .setting.with-hint label { padding-top: 6px; }
-        .setting-control { flex-grow: 1; display: flex; flex-direction: column; }
+        /* Recognition quality: a label above a full-width list of the models,
+           with an explanation under it. */
+        .setting.stacked { flex-direction: column; align-items: stretch; }
+        .setting.stacked > label { margin-bottom: 8px; }
+        .quality-list { display: flex; flex-direction: column; gap: 4px; }
+        .quality-row {
+            margin: 0; /* a <label>: not the spacing of the setting labels */
+            display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: pointer;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
+        }
+        .quality-row.chosen { border-color: var(--accent-color); }
+        .quality-row input { margin: 0; accent-color: var(--accent-color); cursor: pointer; }
+        .quality-name { flex: 1 1 auto; }
+        .quality-size { opacity: 0.75; font-size: 0.9em; white-space: nowrap; }
+        .quality-mark { width: 12px; text-align: center; }
+        .quality-note { font-size: 0.8em; opacity: 0.6; white-space: nowrap; }
+        /* Delete a downloaded model (not the one in use) to free disk space. */
+        .quality-delete {
+            background: none; border: none; padding: 0 2px; cursor: pointer;
+            color: var(--text-color); font-size: 12px; line-height: 1; opacity: 0.6;
+        }
+        .quality-delete:hover { opacity: 1; color: #e06c75; }
         .setting-hint {
             margin-top: 6px;
             font-size: 0.8em;
@@ -152,12 +170,10 @@
 
             <!-- The speech model. A model not yet on this computer is downloaded
                  after Save; the main window shows the progress. -->
-            <div class="setting with-hint">
-                <label for="quality-select" data-i18n="settings.quality">Качество распознавания</label>
-                <div class="setting-control">
-                    <select id="quality-select"></select>
-                    <div class="setting-hint" id="quality-hint"></div>
-                </div>
+            <div class="setting stacked">
+                <label data-i18n="settings.quality">Качество распознавания</label>
+                <div class="quality-list" id="quality-list" role="radiogroup"></div>
+                <div class="setting-hint" id="quality-hint"></div>
             </div>
 
 
@@ -292,9 +308,10 @@
                 applyI18n().then(renderQuality);
 
                 // --- Recognition quality (the speech model) ---
-                // Each option shows its download size and a tick once it is on
-                // this computer; the line below says what the choice means.
-                const qualitySelect = document.getElementById('quality-select');
+                // One row per model: its size, a tick once it is on this
+                // computer, and a cross to delete it again — except the one in
+                // use. The line below says what the chosen one means.
+                const qualityList = document.getElementById('quality-list');
                 const qualityHint = document.getElementById('quality-hint');
                 const QUALITY = ['base', 'small', 'large-v3-turbo'];
                 let engineStatus = null;
@@ -317,28 +334,69 @@
                     return Math.round(bytes / 1e6) + ' ' + strings['unit.mb'];
                 }
 
+                function chooseQuality(m) {
+                    currentSettings.whisperModel = m; // applied on Save
+                    renderQuality();
+                }
+
+                function deleteQuality(m, info) {
+                    const what = qualityName(m) + (info.size ? ` (${formatSize(info.size)})` : '');
+                    if (!confirm(`${strings['quality.confirmDelete']} ${what}?`)) return;
+                    window.settingsApi.deleteModel(m).then((s) => { engineStatus = s; renderQuality(); });
+                }
+
                 function renderQuality() {
                     const models = (engineStatus && engineStatus.models) || {};
+                    const inUse = engineStatus && engineStatus.model;
+                    const job = engineStatus && engineStatus.job;
                     const chosen = currentSettings.whisperModel || 'small';
-                    qualitySelect.textContent = '';
+                    qualityList.textContent = '';
                     for (const m of QUALITY) {
                         const info = models[m] || {};
-                        let label = qualityName(m);
-                        if (info.size) label += ' — ' + formatSize(info.size);
-                        if (info.installed) label += ' ✓';
-                        qualitySelect.add(new Option(label, m));
+                        const row = document.createElement('label');
+                        row.className = 'quality-row' + (m === chosen ? ' chosen' : '');
+                        const radio = document.createElement('input');
+                        radio.type = 'radio';
+                        radio.name = 'quality';
+                        radio.value = m;
+                        radio.checked = m === chosen;
+                        radio.addEventListener('change', () => chooseQuality(m));
+                        const name = document.createElement('span');
+                        name.className = 'quality-name';
+                        name.textContent = qualityName(m);
+                        const size = document.createElement('span');
+                        size.className = 'quality-size';
+                        size.textContent = info.size ? formatSize(info.size) : '';
+                        const mark = document.createElement('span');
+                        mark.className = 'quality-mark';
+                        mark.textContent = info.installed ? '\u2713' : '';
+                        row.append(radio, name, size, mark);
+                        if (m === inUse) {
+                            const note = document.createElement('span');
+                            note.className = 'quality-note';
+                            note.textContent = strings['quality.inUse'];
+                            row.appendChild(note);
+                        } else if (info.installed && m !== job) {
+                            const del = document.createElement('button');
+                            del.type = 'button';
+                            del.className = 'quality-delete';
+                            del.title = strings['quality.delete'];
+                            del.textContent = '\u2715';
+                            del.addEventListener('click', (e) => {
+                                e.preventDefault(); // a click on the cross does not choose the row
+                                e.stopPropagation();
+                                deleteQuality(m, info);
+                            });
+                            row.appendChild(del);
+                        }
+                        qualityList.appendChild(row);
                     }
-                    qualitySelect.value = chosen;
                     const info = models[chosen];
                     let hint = qualityHintText(chosen);
                     if (info) hint += ' ' + (info.installed ? strings['quality.installed'] : strings['quality.toDownload']);
                     qualityHint.textContent = hint;
                 }
 
-                qualitySelect.addEventListener('change', (e) => {
-                    currentSettings.whisperModel = e.target.value; // applied on Save
-                    renderQuality();
-                });
                 window.settingsApi.getEngineStatus().then((s) => { engineStatus = s; renderQuality(); });
                 window.settingsApi.onEngineStatus((s) => { engineStatus = s; renderQuality(); });
 

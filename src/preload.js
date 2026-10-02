@@ -72,4 +72,5 @@ contextBridge.exposeInMainWorld('api', {
   getEngineStatus: () => ipcRenderer.invoke('get-engine-status'),
   onEngineStatus: (cb) => ipcRenderer.on('engine-status', (event, s) => cb(s)),
   engineRetry: () => ipcRenderer.send('engine-retry'),
+  engineCancel: () => ipcRenderer.send('engine-cancel'),
 });

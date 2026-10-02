@@ -124,13 +124,21 @@
             flex: 0 0 auto; background: none; color: var(--text-color); cursor: pointer;
             border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 8px; font-size: 12px;
         }
+        .engine-progress-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
         .engine-progress {
-            margin-top: 5px; height: 4px; border-radius: 2px; overflow: hidden;
+            flex: 1 1 auto; height: 4px; border-radius: 2px; overflow: hidden;
             background: var(--border-color);
         }
+        /* Stop the download: the user may not want it after all. */
+        .engine-cancel {
+            flex: 0 0 auto; background: none; border: none; padding: 0 2px; cursor: pointer;
+            color: var(--text-color); font-size: 13px; line-height: 1; opacity: 0.7;
+        }
+        .engine-cancel:hover { opacity: 1; }
+        .engine-banner.loading .engine-cancel { display: none; }
         .engine-progress i { display: block; height: 100%; width: 0; background: var(--accent-color); transition: width 0.3s; }
         .engine-banner.loading .engine-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
-        .engine-banner.error .engine-progress { display: none; }
+        .engine-banner.error .engine-progress-row { display: none; }
 
         /* A recording waiting for or in transcription: blinks like the bar's
            red "transcribing" barrel. */
@@ -358,7 +366,10 @@
             <span id="engine-text"></span>
             <button type="button" id="engine-retry" class="engine-retry hidden" data-i18n="engine.retry">Повторить</button>
         </div>
-        <div class="engine-progress"><i id="engine-bar"></i></div>
+        <div class="engine-progress-row">
+            <div class="engine-progress"><i id="engine-bar"></i></div>
+            <button type="button" id="engine-cancel" class="engine-cancel" title="Остановить скачивание" data-i18n-title="engine.cancel">&#10005;</button>
+        </div>
     </div>
 
     <div id="app-menu" class="dropdown-menu hidden">
@@ -537,6 +548,13 @@
             } else if (s && s.state === 'error') {
                 banner.classList.add('error');
                 text.textContent = s.error ? `${S('engine.error')}: ${s.error}` : S('engine.error');
+                retry.textContent = S('engine.retry');
+                retry.classList.remove('hidden');
+            } else if (s && s.declined) {
+                // The user stopped the download and there is no model yet.
+                banner.classList.add('error');
+                text.textContent = S('engine.none');
+                retry.textContent = S('engine.download');
                 retry.classList.remove('hidden');
             } else {
                 show = false;
@@ -550,6 +568,7 @@
             window.api.onEngineStatus(renderEngine);
             window.api.getEngineStatus().then(renderEngine).catch(() => {});
             document.getElementById('engine-retry').addEventListener('click', () => window.api.engineRetry());
+            document.getElementById('engine-cancel').addEventListener('click', () => window.api.engineCancel());
         }
 
         function startLevelMeter(mediaStream) {
