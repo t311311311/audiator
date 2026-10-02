@@ -79,7 +79,13 @@
         .quality-row input { margin: 0; accent-color: var(--accent-color); cursor: pointer; }
         .quality-name { flex: 1 1 auto; }
         .quality-size { opacity: 0.75; font-size: 0.9em; white-space: nowrap; }
-        .quality-mark { width: 12px; text-align: center; }
+        .quality-mark { width: 12px; text-align: center; cursor: default; }
+        /* Lights up green on hover, like the "Ctrl+V" barrel; its tooltip says
+           whether the model is in use. */
+        .quality-mark:hover {
+            color: #98c379;
+            text-shadow: 0 0 6px rgba(152, 195, 121, 0.9);
+        }
         .quality-note { font-size: 0.8em; opacity: 0.6; white-space: nowrap; }
         /* Delete a downloaded model (not the one in use) to free disk space. */
         .quality-delete {
@@ -93,8 +99,10 @@
             opacity: 0.75;
             line-height: 1.35;
         }
+        .settings-version { margin-right: auto; font-size: 0.8em; }
         .settings-actions {
             display: flex;
+            align-items: center;
             justify-content: flex-end;
             gap: 10px;
             padding-top: 15px;
@@ -177,12 +185,14 @@
             </div>
 
 
+            <!-- The version sits on the buttons' line, so the window ends right
+                 under them instead of keeping a strip for it at the bottom. -->
             <div class="settings-actions">
+                <div class="settings-version">
+                    <span data-i18n="settings.version">Версия:</span> <span id="app-version"></span>
+                </div>
                 <button class="action-button" id="cancel-settings-btn" data-i18n="settings.cancel">Отмена</button>
                 <button class="action-button" id="save-settings-btn" data-i18n="settings.save">Сохранить</button>
-            </div>
-            <div style="position: absolute; bottom: 15px; left: 25px; font-size: 0.8em; color: var(--text-color);">
-                <span data-i18n="settings.version">Версия:</span> <span id="app-version"></span>
             </div>
 
             <script>
@@ -370,6 +380,12 @@
                         const mark = document.createElement('span');
                         mark.className = 'quality-mark';
                         mark.textContent = info.installed ? '\u2713' : '';
+                        // What hovering says: installed and in use, installed
+                        // but not in use (Save switches to it), or not yet here.
+                        row.title = !info.installed ? strings['quality.tipNotInstalled']
+                                  : m === inUse ? strings['quality.tipInUse']
+                                  : strings['quality.tipInstalled'];
+                        if (info.installed) mark.title = row.title;
                         row.append(radio, name, size, mark);
                         if (m === inUse) {
                             const note = document.createElement('span');

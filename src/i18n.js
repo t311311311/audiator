@@ -83,6 +83,9 @@ const STRINGS = {
     'quality.delete': 'Delete from this computer',
     'quality.confirmDelete': 'Delete the model',
     'quality.inUse': 'in use',
+    'quality.tipInUse': 'Installed, in use',
+    'quality.tipInstalled': 'Installed, not in use. To switch to it, press Save',
+    'quality.tipNotInstalled': 'Press Save to install',
 
     // activation
     'act.windowTitle': 'Audiator activation',
@@ -191,6 +194,9 @@ const STRINGS = {
     'quality.delete': 'Удалить с компьютера',
     'quality.confirmDelete': 'Удалить модель',
     'quality.inUse': 'используется',
+    'quality.tipInUse': 'Установлена, используется',
+    'quality.tipInstalled': 'Установлена, не используется. Чтобы выбрать — нажмите «Сохранить»',
+    'quality.tipNotInstalled': 'Для установки нажмите «Сохранить»',
 
     'act.windowTitle': 'Активация Audiator',
     'act.welcome': 'Добро пожаловать в Audiator',
@@ -296,6 +302,9 @@ const STRINGS = {
     'quality.delete': '从此电脑删除',
     'quality.confirmDelete': '删除模型',
     'quality.inUse': '使用中',
+    'quality.tipInUse': '已安装，正在使用',
+    'quality.tipInstalled': '已安装，未使用。要切换，请点击“保存”',
+    'quality.tipNotInstalled': '点击“保存”进行安装',
 
     'act.windowTitle': 'Audiator 激活',
     'act.welcome': '欢迎使用 Audiator',

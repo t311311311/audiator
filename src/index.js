@@ -527,7 +527,7 @@ app.on('ready', async () => {
 
     settingsWindow = new BrowserWindow({
       width: 450,
-      height: 670, // inside the frame (useContentSize): language row (AUD-33), quality list
+      height: 615, // inside the frame (useContentSize): language row (AUD-33), quality list
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
