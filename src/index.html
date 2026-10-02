@@ -151,7 +151,16 @@
             padding: 8px 15px 10px; border-top: 1px solid var(--accent-color); font-size: 13px;
         }
         .translate-panel.hidden { display: none; }
-        .tp-title { font-size: 0.9em; opacity: 0.8; }
+        .tp-head { display: flex; align-items: center; gap: 8px; }
+        .tp-title { flex: 1 1 auto; min-width: 0; font-size: 0.9em; opacity: 0.8; }
+        .tp-reset {
+            flex: 0 0 auto; padding: 2px 8px; font-size: 12px; cursor: pointer;
+            background: none; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;
+            opacity: 0.8; user-select: none;
+        }
+        .tp-reset:hover { opacity: 1; border-color: var(--accent-color); }
+        /* The Translate button while its panel is open: visibly out of play. */
+        .control-button.locked { opacity: 0.4; pointer-events: none; }
         .tp-list { display: flex; flex-direction: column; gap: 3px; }
         /* At most three rows of each list in view (the rest scroll inside it),
            so a long list of languages does not push the text out of sight;
@@ -484,7 +493,11 @@
          latest text into it; a cross deletes it), and a search to add more —
          each download shows its size, can be stopped, and lands in the list. -->
     <div id="translate-bar" class="translate-panel hidden">
-        <div class="tp-title" id="tp-title">Перевести на:</div>
+        <div class="tp-head">
+            <div class="tp-title" id="tp-title">Перевести на:</div>
+            <button type="button" id="tp-reset" class="tp-reset" data-i18n="translate.reset" data-i18n-title="translate.resetHint" title="Нажатие — снять все отметки. Двойное нажатие — убрать все переводы">Сбросить</button>
+            <button type="button" id="tp-close" class="tp-icon tp-cancel" data-i18n-title="translate.close" title="Закрыть">&#10005;</button>
+        </div>
         <div id="tp-installed" class="tp-list"></div>
         <div id="tp-job" class="tp-list"></div>
         <div id="tp-note" class="tp-note hidden"></div>
@@ -932,14 +945,41 @@
             window.api.saveAudioAndText(audioBlob, textToSave, isoTimestamp);
         });
 
+        // The panel opens from the Translate button, which is then locked (it
+        // looked clickable while it had nothing left to do); the panel closes
+        // with its own cross, Esc, or after a translation went through.
+        function openTranslatePanel() {
+            translateBar.classList.remove('hidden');
+            translateBtn.classList.add('locked');
+            tpSearch.placeholder = S('translate.search');
+            tpSearch.value = ''; // a fresh search each time the panel opens
+            renderTranslatePanel();
+            updateScrollButtons(); // Update scroll buttons position after opening the translate bar
+        }
+        function closeTranslatePanel() {
+            translateBar.classList.add('hidden');
+            translateBtn.classList.remove('locked');
+            updateScrollButtons(); // Update scroll buttons position after hiding translate bar
+        }
         translateBtn.addEventListener('click', () => {
-            translateBar.classList.toggle('hidden');
-            if (!translateBar.classList.contains('hidden')) {
-                tpSearch.placeholder = S('translate.search');
-                tpSearch.value = ''; // a fresh search each time the panel opens
-                renderTranslatePanel();
-            }
-            updateScrollButtons(); // Update scroll buttons position after toggling translate bar
+            if (translateBtn.classList.contains('locked')) return; // e.g. Enter on the focused button
+            openTranslatePanel();
+        });
+        document.getElementById('tp-close').addEventListener('click', closeTranslatePanel);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !translateBar.classList.contains('hidden')) closeTranslatePanel();
+        });
+
+        // Reset: a click unticks every transcript; a double click also removes
+        // every translation from the history.
+        const tpReset = document.getElementById('tp-reset');
+        tpReset.addEventListener('click', () => {
+            historyContainer.querySelectorAll('.entry-check:checked').forEach((c) => { c.checked = false; });
+            updateTranslateTitle();
+        });
+        tpReset.addEventListener('dblclick', () => {
+            historyContainer.querySelectorAll('.translated-text').forEach((t) => t.parentElement.remove());
+            updateScrollButtons();
         });
 
         // The transcripts ticked for translation, newest first (as listed).
@@ -1029,10 +1069,7 @@
             if (noLang) { showTranslateNote(S('translate.noLang')); return; }
             tpNeed = [];
             hideTranslateNote();
-            if (!failed) {
-                translateBar.classList.add('hidden');
-                updateScrollButtons(); // Update scroll buttons position after hiding translate bar
-            }
+            if (!failed) closeTranslatePanel();
         }
 
         // --- Translation panel: languages on demand ---
@@ -1113,7 +1150,7 @@
                 const fav = tpFavorites.has(code);
                 const star = el('button', 'tp-star' + (fav ? ' on' : ''), '\u2605');
                 star.type = 'button';
-                star.title = S(fav ? 'translate.unfavorite' : 'translate.favorite');
+                star.title = fav ? S('translate.unfavorite') : S('translate.favorite');
                 star.addEventListener('click', () => toggleFavorite(code));
                 row.appendChild(star);
                 const name = el('button', 'tp-name', langName(code));
