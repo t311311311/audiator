@@ -63,9 +63,17 @@ try {
   console.error('uiohook-napi unavailable, paste detection disabled:', e.message);
 }
 
+// Whether Ctrl is held, tracked from the hook's own key events. The event's
+// ctrlKey flag cannot be trusted: right after the hook starts it reports
+// false for the first Ctrl+key (measured: false on the first press after
+// every start, true from the second), so the first paste was missed and the
+// "Ctrl+V" barrel only went away on the second one.
+let ctrlHeld = false;
+
 const startPasteWatch = () => {
   if (!uiohook || hookRunning) return;
   try {
+    ctrlHeld = false;
     uiohook.uIOhook.start();
     hookRunning = true;
   } catch (e) {
@@ -84,9 +92,15 @@ const stopPasteWatch = () => {
 };
 
 if (uiohook) {
+  const { UiohookKey } = uiohook;
+  const CTRL_KEYS = [UiohookKey.Ctrl, UiohookKey.CtrlRight];
+  uiohook.uIOhook.on('keyup', (e) => {
+    if (CTRL_KEYS.includes(e.keycode)) ctrlHeld = false;
+  });
   uiohook.uIOhook.on('keydown', (e) => {
+    if (CTRL_KEYS.includes(e.keycode)) { ctrlHeld = true; return; }
     if (!queue.active) return; // only ever acted on while a "Ctrl+V" barrel is up
-    if (e.keycode === uiohook.UiohookKey.V && (e.ctrlKey || e.metaKey)) {
+    if (e.keycode === UiohookKey.V && (ctrlHeld || e.ctrlKey || e.metaKey)) {
       console.log('[overlay] paste detected -> next barrel');
       queue.pasted();
       offeredId = null;
