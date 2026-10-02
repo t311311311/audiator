@@ -523,8 +523,8 @@
                     <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
                 </svg>
             </button>
-            <button class="control-button icon-button" id="save-audio-btn" title="Сохранить аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
-            <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
+            <button class="control-button icon-button" id="save-audio-btn" title="Сохранить последнее аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
+            <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить последнее аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
             <button class="control-button" id="translate-btn" title="Перевести" data-i18n="btn.translate" data-i18n-title="title.translate" disabled>Перевести</button>
         </div>
         <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copy">&#128203;</button> <!-- Clipboard -->
@@ -591,7 +591,6 @@
 
         // --- State ---
         let mediaRecorder; // the recording in progress, if any
-        let audioBlob;     // the latest recording, for the save buttons
 
         // --- Recording level meter + global hotkey (AUD-40) ---
         // Uses setInterval, not requestAnimationFrame: recording usually runs with
@@ -822,17 +821,30 @@
         let transcribeChain = Promise.resolve();
         function queueTranscription(blob, jobId) {
             const pending = addPendingEntry();
+            pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
             transcribeChain = transcribeChain
                 .then(() => handleTranscription(blob, jobId, pending))
                 .catch((e) => console.error('transcription queue', e)); // keep the chain going
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }) {
-            audioBlob = blob;
-            translateBtn.disabled = true;
-            saveAudioBtn.disabled = true;
-            saveAudioTextBtn.disabled = true;
+        // The newest transcript that is finished (not waiting or transcribing):
+        // what "the latest" means for saving, copying and translating. So those
+        // keep working on what is already there while a new recording is made
+        // or transcribed, and move on to it once it is done.
+        function latestDoneEntry() {
+            return [...historyContainer.querySelectorAll('.history-entry')]
+                .find((e) => !e.querySelector('.original-text.pending')) || null;
+        }
+        // Save and translate are usable as soon as there is a finished
+        // transcript, and stay usable through new recordings.
+        function updateActionButtons() {
+            const done = latestDoneEntry();
+            saveAudioBtn.disabled = !(done && done._audio);
+            saveAudioTextBtn.disabled = !(done && done._audio);
+            translateBtn.disabled = !done;
+        }
 
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }) {
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
                 const result = blob.size ? await window.api.transcribe(blob)
@@ -876,9 +888,7 @@
                 // still transcribing.
                 if (window.api.transcribeFailed) window.api.transcribeFailed(jobId);
             } finally {
-                translateBtn.disabled = false;
-                saveAudioBtn.disabled = false;
-                saveAudioTextBtn.disabled = false;
+                updateActionButtons(); // this one is now "the latest"
             }
         }
 
@@ -907,29 +917,29 @@
             if (confirm(S('confirm.clearHistory'))) {
                 historyContainer.innerHTML = '';
                 updateScrollButtons(); // Update scroll buttons visibility
+                updateActionButtons();
             }
             appMenu.classList.add('hidden');
         });
 
         saveAudioBtn.addEventListener('click', () => { 
-            if (audioBlob) { 
-                const latestEntry = historyContainer.querySelector('.history-entry');
-                const isoTimestamp = latestEntry?.dataset.isoTimestamp || new Date().toISOString();
-                window.api.saveAudio(audioBlob, isoTimestamp); 
+            const latestEntry = latestDoneEntry();
+            if (latestEntry && latestEntry._audio) {
+                const isoTimestamp = latestEntry.dataset.isoTimestamp || new Date().toISOString();
+                window.api.saveAudio(latestEntry._audio, isoTimestamp);
             } else {
                 alert(S('alert.noAudio'));
             }
         });
 
         saveAudioTextBtn.addEventListener('click', () => {
-            if (!audioBlob) {
-                alert(S('alert.noAudio'));
-                return;
-            }
-
-            const latestEntry = historyContainer.querySelector('.history-entry');
+            const latestEntry = latestDoneEntry();
             if (!latestEntry) {
                 alert(S('alert.noText'));
+                return;
+            }
+            if (!latestEntry._audio) {
+                alert(S('alert.noAudio'));
                 return;
             }
 
@@ -944,7 +954,7 @@
                 textToSave += `${S('history.translation')}: ${translated}\n`;
             }
 
-            window.api.saveAudioAndText(audioBlob, textToSave, isoTimestamp);
+            window.api.saveAudioAndText(latestEntry._audio, textToSave, isoTimestamp);
         });
 
         // The panel opens from the Translate button, which is then locked (it
@@ -1051,7 +1061,7 @@
         async function translateInto(target) {
             const chosen = checkedEntries();
             const entries = chosen.length ? chosen
-                : [historyContainer.querySelector('.history-entry')].filter(Boolean);
+                : [latestDoneEntry()].filter(Boolean);
             const missing = new Set();
             let noLang = false, failed = false;
             for (const entry of entries) {
@@ -1258,7 +1268,7 @@
             if (selection) {
                 textToCopy = selection;
             } else {
-                const latestEntry = historyContainer.querySelector('.history-entry');
+                const latestEntry = latestDoneEntry();
                 if (latestEntry) {
                     textToCopy = latestEntry.querySelector('.original-text')?.innerText;
                     const translatedText = latestEntry.querySelector('.translated-text')?.innerText;
@@ -1311,9 +1321,6 @@
                     queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId);
                 };
 
-                saveAudioBtn.disabled = true;
-                saveAudioTextBtn.disabled = true;
-                translateBtn.disabled = true;
                 recordBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
 
