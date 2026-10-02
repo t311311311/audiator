@@ -167,6 +167,10 @@
            favourites come first, so they are the ones in view. */
         .tp-row { flex: 0 0 auto; box-sizing: border-box; height: 32px; }
         #tp-installed, #tp-job, #tp-results { max-height: 102px; overflow-y: auto; }
+        /* With downloads or search results showing too, two rows of each. */
+        .translate-panel.compact #tp-installed,
+        .translate-panel.compact #tp-job,
+        .translate-panel.compact #tp-results { max-height: 67px; }
         .tp-list::-webkit-scrollbar { width: 8px; }
         .tp-list::-webkit-scrollbar-track { background: #3e4452; }
         .tp-list::-webkit-scrollbar-thumb { background: #4a5060; }
@@ -723,18 +727,16 @@
             // Show scroll buttons only if content overflows
             const scrollableHeight = mainContent.scrollHeight - mainContent.clientHeight;
 
-            // Check if translate bar is visible
-            const isTranslateBarVisible = !translateBar.classList.contains('hidden');
-            // Adjust bottom position based on translate bar visibility
-            if (isTranslateBarVisible) {
-                // If translate bar is visible, position buttons above it
-                document.querySelector('.scroll-buttons').style.bottom = (translateBar.offsetHeight + 84) + 'px';
-            } else {
-                // If translate bar is hidden, use original position
-                document.querySelector('.scroll-buttons').style.bottom = '120px';
-            }
+            // Keep the buttons inside the history, just above its bottom edge,
+            // whatever sits below it (the translate panel grows and shrinks as
+            // you search): measured from the history itself, not guessed. When
+            // too little of the history shows for both buttons, leave them out.
+            const area = mainContent.getBoundingClientRect();
+            const visible = area.height - 32; // under the fixed title bar
+            document.querySelector('.scroll-buttons').style.bottom =
+                Math.round(window.innerHeight - area.bottom + 16) + 'px';
 
-            if (scrollableHeight > 0) {
+            if (scrollableHeight > 0 && visible >= 110) {
                 // Show both buttons if scrollable
                 scrollUpBtn.style.display = 'flex'; // Use flex to center SVG
                 scrollDownBtn.style.display = 'flex'; // Use flex to center SVG
@@ -1111,7 +1113,7 @@
         const DOWNLOAD_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97"/><path d="M12 11v9"/><path d="m9 17 3 3 3-3"/></svg>';
 
         function showTranslateNote(text) { tpNote.textContent = text; tpNote.classList.remove('hidden'); renderTranslatePanel(); }
-        function hideTranslateNote() { tpNote.classList.add('hidden'); }
+        function hideTranslateNote() { tpNote.classList.add('hidden'); updateScrollButtons(); }
 
         function installLanguage(code) {
             window.api.translateInstall(code);
@@ -1238,6 +1240,12 @@
             rows.forEach((code) => tpResults.appendChild(offerRow(code)));
             // Once every language a translation needed is in, its note goes.
             if (tpNeed.length && tpNeed.every((c) => installed.includes(c))) { tpNeed = []; hideTranslateNote(); }
+            // Three rows per list on their own; two each once downloads or
+            // search results share the panel.
+            translateBar.classList.toggle('compact', tpJob.children.length > 0 || tpResults.children.length > 0);
+            // The panel's height just changed: keep the scroll buttons inside
+            // the history (the ResizeObserver below covers everything else).
+            updateScrollButtons();
         }
 
         tpSearch.addEventListener('input', renderTranslatePanel);
@@ -1340,6 +1348,9 @@
         });
 
         mainContent.addEventListener('scroll', updateScrollButtons);
+        // The history grows and shrinks as the panels below it change (search
+        // results, downloads, notes): keep the scroll buttons inside it.
+        new ResizeObserver(() => updateScrollButtons()).observe(mainContent);
         // Initial check for scroll button visibility
         updateScrollButtons();
 
