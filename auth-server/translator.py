@@ -50,6 +50,8 @@ WHISPER_TO_ARGOS = {"no": "nb"}
 
 _lock = threading.Lock()
 _job = None                       # the language being downloaded, if any
+_queue = []                       # languages waiting their turn, in order asked
+_failed = {}                      # code -> why its download failed (until retried)
 _state = {"state": "idle", "done": 0, "total": 0, "error": None}
 _cancel = threading.Event()
 
@@ -81,7 +83,7 @@ def installed():
 
 def status():
     with _lock:
-        s = dict(_state, job=_job)
+        s = dict(_state, job=_job, queue=list(_queue), failed=dict(_failed))
     s["installed"] = installed()
     return s
 
@@ -131,34 +133,51 @@ def _install(code):
     except _Cancelled:
         _set(state="idle", done=0, total=0, error=None)
     except Exception as e:  # shown to the user, who can retry
-        _set(state="error", error=str(e))
+        with _lock:
+            _failed[code] = str(e)
+        _set(state="idle", done=0, total=0, error=str(e))
     finally:
         shutil.rmtree(downloads, ignore_errors=True)
+        # On to the next language in the queue, if any.
         with _lock:
-            _job = None
+            _job = _queue.pop(0) if _queue else None
+            nxt = _job
+            _cancel.clear()
+        if nxt:
+            threading.Thread(target=_install, args=(nxt,), daemon=True).start()
 
 
 def start_install(code):
-    """Download and install a language in the background. Returns False when
-    another download is running."""
+    """Download and install a language in the background. While another is
+    downloading it joins the queue, so the user can pick several at once and
+    let them come in one after another."""
     global _job
     if code not in CATALOG:
         raise KeyError(code)
     with _lock:
-        if _job == code:
+        _failed.pop(code, None)
+        if _job == code or code in _queue:
             return True
         if _job is not None:
-            return False
+            _queue.append(code)
+            return True
         _job = code
         _cancel.clear()
     threading.Thread(target=_install, args=(code,), daemon=True).start()
     return True
 
 
-def cancel():
+def cancel(code=None):
+    """Stop the download in progress (code None or the current one), or take a
+    waiting language out of the queue. A failed one is just forgotten."""
     with _lock:
-        if _job is not None and _state["state"] == "downloading":
-            _cancel.set()
+        if code is None or code == _job:
+            if _job is not None and _state["state"] == "downloading":
+                _cancel.set()
+        elif code in _queue:
+            _queue.remove(code)
+        else:
+            _failed.pop(code, None)
 
 
 def delete(code):

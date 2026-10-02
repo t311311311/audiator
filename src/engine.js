@@ -266,8 +266,10 @@ async function installLanguage(code) {
   return status;
 }
 
-async function cancelLanguage() {
-  setStatus(await (await call('/translate/cancel', { method: 'POST' })).json());
+/** Stop the current download, or (with a code) take a language out of the queue. */
+async function cancelLanguage(code) {
+  const query = code ? `?code=${encodeURIComponent(code)}` : '';
+  setStatus(await (await call(`/translate/cancel${query}`, { method: 'POST' })).json());
   watch();
   return status;
 }

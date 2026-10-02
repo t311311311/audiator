@@ -272,8 +272,9 @@ def translate_install(code: str = Query(...)):
 
 
 @app.post("/translate/cancel")
-def translate_cancel():
-    translator.cancel()
+def translate_cancel(code: str = Query(None)):
+    """Stop the current download, or (with code) take a language out of the queue."""
+    translator.cancel(code)
     return status()
 
 

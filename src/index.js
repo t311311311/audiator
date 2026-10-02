@@ -787,7 +787,7 @@ app.on('ready', async () => {
   // progress in the engine status), stopping and deleting a language.
   ipcMain.handle('translate-catalog', () => engine.translateCatalog().catch(() => []));
   ipcMain.on('translate-install', (event, code) => engine.installLanguage(code));
-  ipcMain.on('translate-cancel', () => engine.cancelLanguage());
+  ipcMain.on('translate-cancel', (event, code) => engine.cancelLanguage(code));
   ipcMain.handle('translate-delete', (event, code) => engine.deleteLanguage(code));
 
   // Get supported languages
