@@ -86,13 +86,14 @@
             color: #98c379;
             text-shadow: 0 0 6px rgba(152, 195, 121, 0.9);
         }
-        .quality-note { font-size: 0.8em; opacity: 0.6; white-space: nowrap; }
         /* Delete a downloaded model (not the one in use) to free disk space. */
         .quality-delete {
-            background: none; border: none; padding: 0 2px; cursor: pointer;
+            width: 16px; text-align: center;
+            background: none; border: none; padding: 0; cursor: pointer;
             color: var(--text-color); font-size: 12px; line-height: 1; opacity: 0.6;
         }
-        .quality-delete:hover { opacity: 1; color: #e06c75; }
+        button.quality-delete:hover { opacity: 1; color: #e06c75; }
+        span.quality-delete { cursor: inherit; }
         .setting-hint {
             margin-top: 6px;
             font-size: 0.8em;
@@ -387,12 +388,11 @@
                                   : strings['quality.tipInstalled'];
                         if (info.installed) mark.title = row.title;
                         row.append(radio, name, size, mark);
-                        if (m === inUse) {
-                            const note = document.createElement('span');
-                            note.className = 'quality-note';
-                            note.textContent = strings['quality.inUse'];
-                            row.appendChild(note);
-                        } else if (info.installed && m !== job) {
+                        // The last cell is a cross to delete a downloaded model
+                        // that is not in use, or an empty cell of the same width,
+                        // so the sizes and ticks line up on every row. The model
+                        // in use says so in its tooltip.
+                        if (info.installed && m !== inUse && m !== job) {
                             const del = document.createElement('button');
                             del.type = 'button';
                             del.className = 'quality-delete';
@@ -404,6 +404,10 @@
                                 deleteQuality(m, info);
                             });
                             row.appendChild(del);
+                        } else {
+                            const gap = document.createElement('span');
+                            gap.className = 'quality-delete';
+                            row.appendChild(gap);
                         }
                         qualityList.appendChild(row);
                     }
