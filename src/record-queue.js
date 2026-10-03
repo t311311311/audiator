@@ -10,27 +10,34 @@
 // and its barrel says "Ctrl+V". Pasting removes it and the next done job takes
 // its place, so a run of recordings is pasted back in the order it was spoken.
 //
+// A barrel's number is its place in the queue: whatever takes a barrel away
+// (a paste, a visit to the window, an empty recording), the rest count from 1
+// again — the next one to paste is always 1.
+//
 // Pure state, no Electron: the main process drives it and draws the result.
 
 class RecordQueue {
   constructor() {
     this.jobs = [];
-    this.nextNumber = 1;
   }
 
   get isEmpty() { return this.jobs.length === 0; }
 
   find(id) { return this.jobs.find((j) => j.id === id) || null; }
 
-  // A new recording. Numbering restarts from 1 whenever the queue has emptied.
-  // There is only ever one recording, so a job still marked as recording is a
-  // leftover whose stop never arrived: drop it, or it would hold back every
-  // barrel behind it for good.
+  // Number every barrel by its place in the queue.
+  renumber() {
+    this.jobs.forEach((j, i) => { j.number = i + 1; });
+  }
+
+  // A new recording, numbered after the ones still waiting. There is only ever
+  // one recording, so a job still marked as recording is a leftover whose stop
+  // never arrived: drop it, or it would hold back every barrel behind it for good.
   start(id) {
     this.jobs = this.jobs.filter((j) => j.state !== 'recording');
-    if (this.isEmpty) this.nextNumber = 1;
-    const job = { id, number: this.nextNumber++, state: 'recording', text: null };
+    const job = { id, number: 0, state: 'recording', text: null };
     this.jobs.push(job);
+    this.renumber();
     return job;
   }
 
@@ -52,6 +59,7 @@ class RecordQueue {
   remove(id) {
     const i = this.jobs.findIndex((j) => j.id === id);
     if (i >= 0) this.jobs.splice(i, 1);
+    this.renumber();
   }
 
   // The job whose text is on offer: the front one, once it is done.
@@ -63,23 +71,17 @@ class RecordQueue {
   // The user pasted the offered text. Returns the job offered next, if any.
   pasted() {
     if (this.active) this.jobs.shift();
+    this.renumber();
     return this.active;
   }
 
   // The user opened the window, where every transcript is in the history:
-  // nothing is left waiting to be pasted. What is still going on (recording,
-  // transcribing) starts a fresh count from 1, so leaving the window again
-  // shows barrels 1, 2 rather than carrying on from 2, 3. Returns how many
-  // were dropped.
+  // nothing is left waiting to be pasted. Returns how many were dropped.
   dropDone() {
     const before = this.jobs.length;
     this.jobs = this.jobs.filter((j) => j.state !== 'done');
-    const dropped = before - this.jobs.length;
-    if (dropped) {
-      this.jobs.forEach((j, i) => { j.number = i + 1; });
-      this.nextNumber = this.jobs.length + 1;
-    }
-    return dropped;
+    this.renumber();
+    return before - this.jobs.length;
   }
 
   // What the bar shows. Up to `max` barrels as they are; beyond that the first

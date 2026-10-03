@@ -34,7 +34,19 @@ check('paste while the next recording is still running', () => {
   assert.strictEqual(states(q), '1:done 2:recording');
   assert.strictEqual(q.active.text, 'first');
   q.pasted();
-  assert.strictEqual(states(q), '2:recording', 'pasted barrel disappears, recording goes on');
+  assert.strictEqual(states(q), '1:recording', 'pasted barrel disappears, recording goes on as no. 1');
+});
+
+check('numbers are places in the queue: after a paste 2, 3, 4 become 1, 2, 3', () => {
+  const q = new RecordQueue();
+  for (const id of ['a', 'b', 'c']) { q.start(id); q.stop(id); }
+  q.start('d');
+  q.done('a', 'one'); q.done('b', 'two'); q.done('c', 'three');
+  assert.strictEqual(states(q), '1:done 2:done 3:done 4:recording');
+  q.pasted();
+  assert.strictEqual(states(q), '1:done 2:done 3:recording', 'the next one to paste is 1 again');
+  q.remove('c');                     // e.g. it turned out empty
+  assert.strictEqual(states(q), '1:done 2:recording');
 });
 
 check('hurried user: three in a row, pasted back in spoken order', () => {
