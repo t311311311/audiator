@@ -138,6 +138,7 @@ const STRINGS = {
     'ov.busy2': 'please wait…',
     'ov.done1': 'Done!',
     'ov.done2': 'Ctrl+V',
+    'ov.hint': 'Click: open the window. Drag: move the bar',
 
     // tray and file dialogs
     'tray.show': 'Show',
@@ -264,6 +265,7 @@ const STRINGS = {
     'ov.busy2': 'транскрибация!',
     'ov.done1': 'Готово!',
     'ov.done2': 'Ctrl+V',
+    'ov.hint': 'Нажмите — открыть окно. Перетащите — передвинуть',
 
     'tray.show': 'Показать',
     'tray.quit': 'Выход',
@@ -389,6 +391,7 @@ const STRINGS = {
     'ov.busy2': '请稍候…',
     'ov.done1': '完成！',
     'ov.done2': 'Ctrl+V',
+    'ov.hint': '单击：打开窗口。拖动：移动',
 
     'tray.show': '显示',
     'tray.quit': '退出',
