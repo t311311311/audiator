@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Sends the sign-in code by email.
 
-With SMTP configured (a mailbox such as audiator@gmail.com and its app
-password) the code is mailed:
+With SMTP configured (the mailbox audiatorr@gmail.com and its app password)
+the code is mailed:
   SMTP_HOST, SMTP_PORT (465 = SSL, otherwise STARTTLS), SMTP_USER,
   SMTP_PASSWORD, SMTP_FROM (defaults to SMTP_USER)
-Without it — development on this computer — the code is printed in the
-server's console instead, so sign-in can be tried before a mailbox exists.
+Without it the code goes nowhere and sign-in fails ("could not send"): a code
+in a log would let whoever reads the log sign in as anyone. Only on a
+development machine (MAIL_DEV_PRINT=1, which `npm start` sets for the server it
+starts) is the code printed in the server's console instead.
 """
 import os
 import smtplib
@@ -26,13 +28,22 @@ TEXTS = {
 
 
 def configured() -> bool:
-    return bool(os.environ.get("SMTP_HOST"))
+    """A server to send through, and its password if it wants a login (a
+    mailbox written down with its password still empty is not ready)."""
+    return bool(os.environ.get("SMTP_HOST")) and (
+        not os.environ.get("SMTP_USER") or bool(os.environ.get("SMTP_PASSWORD")))
+
+
+def dev_print() -> bool:
+    return os.environ.get("MAIL_DEV_PRINT") == "1"
 
 
 def send_code(email: str, code: str, lang: str = "en") -> None:
     subject, body = TEXTS.get(lang, TEXTS["en"])
     subject, body = subject.format(code=code), body.format(code=code)
     if not configured():
+        if not dev_print():
+            raise RuntimeError("SMTP is not configured (SMTP_HOST, SMTP_USER, SMTP_PASSWORD)")
         print(f"[mail] (no SMTP configured) sign-in code for {email}: {code}", flush=True)
         return
     host = os.environ["SMTP_HOST"]

@@ -20,7 +20,11 @@ TMP_DB = TMP_DIR / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TMP_DB.as_posix()}"
 os.environ["ACCOUNTS_DATABASE_URL"] = f"sqlite:///{(TMP_DIR / 'accounts.db').as_posix()}"
 os.environ["ADMIN_EMAILS"] = "owner@example.com"
-os.environ.pop("SMTP_HOST", None)  # never mail anyone from the tests
+# Never mail anyone from the tests. Set empty rather than removed: main.py loads
+# auth-server/.env, which only fills variables that are not set at all, and
+# that file holds the real mailbox.
+for _k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "MAIL_DEV_PRINT"):
+    os.environ[_k] = ""
 os.environ["AUDIATOR_SECRET_KEY"] = "test-secret-not-the-real-one"
 os.environ["PAYMENTS_ENABLED"] = "0"
 # Nothing listens on port 1. The suite must never reach the real whisper and

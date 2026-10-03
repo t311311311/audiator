@@ -6,32 +6,59 @@
 // app data, so the app starts signed in and works offline: minutes used are
 // counted here and sent to the server when it can be reached. The computer is
 // identified by a hash of its Windows MachineGuid — never the id itself.
+//
+// The token is stored encrypted for this Windows user (DPAPI, through
+// Electron's safeStorage): the file copied to another computer or read by
+// another user signs no one in — there it just means "sign in again".
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
 
 const SERVER = process.env.AUDIATOR_ACCOUNTS_URL || 'http://127.0.0.1:3000';
 const FILE = () => path.join(app.getPath('userData'), 'account.json');
 const DEVICE_SALT = 'audiator-device-v1';
 
-let state = null; // { token, email, profile, pending: { day, seconds } }
+let state = null; // in memory: { token, email, profile, pending: { day, seconds } }
 const listeners = new Set();
 
 function load() {
   if (state) return state;
-  try { state = JSON.parse(fs.readFileSync(FILE(), 'utf8')); } catch (e) { state = {}; }
+  let disk = {};
+  try { disk = JSON.parse(fs.readFileSync(FILE(), 'utf8')); } catch (e) { /* none yet */ }
+  const { tokenEnc, ...rest } = disk;
+  state = rest;
+  if (tokenEnc) {
+    try {
+      state.token = safeStorage.decryptString(Buffer.from(tokenEnc, 'base64'));
+    } catch (e) {
+      console.error('[account] the saved session is not readable here; sign in again');
+      delete state.profile;
+    }
+  } else if (state.token) {
+    writeDisk(); // a session saved before it was encrypted: encrypt it now
+  }
   return state;
 }
 
-function save() {
+/** The file: everything as it is, except the token, which is encrypted. */
+function writeDisk() {
+  const { token, ...disk } = state;
+  if (token) {
+    if (safeStorage.isEncryptionAvailable()) disk.tokenEnc = safeStorage.encryptString(token).toString('base64');
+    else disk.token = token; // no protected storage on this system: as before
+  }
   try {
     fs.mkdirSync(path.dirname(FILE()), { recursive: true });
-    fs.writeFileSync(FILE(), JSON.stringify(state, null, 1));
+    fs.writeFileSync(FILE(), JSON.stringify(disk, null, 1));
   } catch (e) {
     console.error('[account] could not save:', e.message);
   }
+}
+
+function save() {
+  writeDisk();
   for (const cb of listeners) cb(view());
 }
 
@@ -95,7 +122,7 @@ const errorOf = (res) => (res.data && res.data.detail && typeof res.data.detail 
 /** Mail a sign-in code. Resolves { ok } or { ok: false, error, ... }. */
 async function requestCode(email, lang) {
   const res = await request('/api/v2/auth/code', { method: 'POST', body: { email, lang } });
-  return res.ok ? { ok: true, isNew: !!(res.data && res.data.new) } : { ok: false, ...errorOf(res) };
+  return res.ok ? { ok: true } : { ok: false, ...errorOf(res) };
 }
 
 /** Sign in (or up) with the code. Starts a fresh session on success. */

@@ -174,6 +174,10 @@ def request_code(req: CodeRequest, request: Request):
 
     code = f"{secrets.randbelow(10 ** 6):06d}"
     with Session() as s:
+        # Addresses that asked for a code a day ago and never entered it go,
+        # so a flood of made-up addresses does not pile up in the table.
+        s.query(User).filter(User.email_verified.is_(False), User.created_at < _utcnow() - timedelta(days=1),
+                             User.email != email).delete(synchronize_session=False)
         u = s.query(User).filter(User.email == email).one_or_none()
         if u is None:
             admin = email in ADMIN_EMAILS
@@ -187,14 +191,15 @@ def request_code(req: CodeRequest, request: Request):
         u.code_hash = _code_hash(email, code)
         u.code_expires = _utcnow() + CODE_TTL
         u.code_attempts = 0
-        new = not u.email_verified
         s.commit()
     try:
         mailer.send_code(email, code, req.lang)
     except Exception as e:  # noqa: BLE001 — reported to the user as "could not send"
-        print(f"[mail] sending to {email} failed: {e}", flush=True)
+        print(f"[mail] sending to {_mask(email)} failed: {e}", flush=True)  # no full addresses in logs
         raise _err(502, "mail_failed")
-    return {"sent": True, "new": new}
+    # The same answer for a known address and a new one: whether someone has
+    # an account is not for anyone to find out by asking for codes.
+    return {"sent": True}
 
 
 class VerifyRequest(BaseModel):

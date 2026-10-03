@@ -34,7 +34,7 @@ def auth(r):
 
 def test_first_sign_in_creates_the_account(client, mailbox):
     r = client.post("/api/v2/auth/code", json={"email": "Ivan@Mail.RU "})
-    assert r.json() == {"sent": True, "new": True}
+    assert r.json() == {"sent": True}
     assert "ivan@mail.ru" in mailbox and len(mailbox["ivan@mail.ru"]) == 6
     r = client.post("/api/v2/auth/verify", json={"email": "ivan@mail.ru", "code": mailbox["ivan@mail.ru"], "device": DEV_A})
     assert r.status_code == 200
@@ -45,7 +45,9 @@ def test_first_sign_in_creates_the_account(client, mailbox):
         u = s.query(accounts_db.User).one()
         assert u.email_verified and u.email_domain == "mail.ru" and u.code_hash is None
     # second time it is just a sign-in
-    assert client.post("/api/v2/auth/code", json={"email": "ivan@mail.ru"}).json()["new"] is False
+    # second time it is just a sign-in, and the answer is the same: nobody can
+    # find out by asking for a code whether an address has an account
+    assert client.post("/api/v2/auth/code", json={"email": "ivan@mail.ru"}).json() == {"sent": True}
 
 
 def test_wrong_code_counts_tries_and_locks_after_five(client, mailbox):
@@ -162,3 +164,88 @@ def test_the_computer_id_must_be_a_hash(client, mailbox):
     client.post("/api/v2/auth/code", json={"email": "a@b.com"})
     r = client.post("/api/v2/auth/verify", json={"email": "a@b.com", "code": mailbox["a@b.com"], "device": "MY-PC"})
     assert r.status_code == 400 and r.json()["detail"]["error"] == "bad_device"
+
+
+# --- the mail: codes go by mail or nowhere --------------------------------------
+
+def _smtp_env(monkeypatch, **env):
+    for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "MAIL_DEV_PRINT"):
+        monkeypatch.setenv(k, env.get(k, ""))
+
+
+def test_without_a_mailbox_the_code_goes_nowhere(client, monkeypatch, capsys):
+    """A server with no mail set up refuses; the code never reaches a log."""
+    _smtp_env(monkeypatch)
+    r = client.post("/api/v2/auth/code", json={"email": "ivan@mail.ru"})
+    assert r.status_code == 502 and r.json()["detail"]["error"] == "mail_failed"
+    out = capsys.readouterr().out
+    assert "ivan@mail.ru" not in out, "no full address in the log"
+    with accounts_db.Session() as s:
+        code_hash = s.query(accounts_db.User).one().code_hash
+    for code in range(0, 10 ** 6, 1):  # whatever the code was, it is not in the output
+        if accounts._code_hash("ivan@mail.ru", f"{code:06d}") == code_hash:
+            assert f"{code:06d}" not in out
+            break
+
+
+def test_a_password_not_yet_filled_in_is_not_a_mailbox(monkeypatch):
+    _smtp_env(monkeypatch, SMTP_HOST="smtp.gmail.com", SMTP_USER="audiatorr@gmail.com")
+    assert not mailer.configured()
+    monkeypatch.setenv("SMTP_PASSWORD", "app-password")
+    assert mailer.configured()
+
+
+def test_development_prints_the_code(client, monkeypatch, capsys):
+    _smtp_env(monkeypatch, MAIL_DEV_PRINT="1")
+    assert client.post("/api/v2/auth/code", json={"email": "ivan@mail.ru"}).status_code == 200
+    assert "sign-in code for ivan@mail.ru:" in capsys.readouterr().out
+
+
+def test_the_code_is_mailed_through_gmail(client, monkeypatch, capsys):
+    _smtp_env(monkeypatch, SMTP_HOST="smtp.gmail.com", SMTP_PORT="465", SMTP_USER="audiatorr@gmail.com",
+              SMTP_PASSWORD="app-password", SMTP_FROM="Audiator <audiatorr@gmail.com>", MAIL_DEV_PRINT="1")
+    seen = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, context=None, timeout=None):
+            seen["server"] = (host, port)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def login(self, user, password):
+            seen["login"] = (user, password)
+
+        def send_message(self, msg):
+            seen["msg"] = msg
+
+    monkeypatch.setattr(mailer.smtplib, "SMTP_SSL", FakeSMTP)
+    r = client.post("/api/v2/auth/code", json={"email": "ivan@mail.ru", "lang": "ru"})
+    assert r.status_code == 200
+    msg = seen["msg"]
+    assert seen["server"] == ("smtp.gmail.com", 465)
+    assert seen["login"] == ("audiatorr@gmail.com", "app-password")
+    assert msg["To"] == "ivan@mail.ru" and msg["From"] == "Audiator <audiatorr@gmail.com>"
+    code = msg["Subject"].rsplit(" ", 1)[1]
+    assert len(code) == 6 and code.isdigit() and code in msg.get_content()
+    assert code not in capsys.readouterr().out, "mailed, so not printed even on a development machine"
+    # and the mailed code signs in
+    r = client.post("/api/v2/auth/verify", json={"email": "ivan@mail.ru", "code": code, "device": DEV_A})
+    assert r.status_code == 200
+
+
+def test_addresses_never_confirmed_are_cleaned_up(client, mailbox):
+    sign_in(client, mailbox, "kept@mail.ru")                          # a real account, old
+    client.post("/api/v2/auth/code", json={"email": "ghost@mail.ru"})  # asked, never entered
+    client.post("/api/v2/auth/code", json={"email": "fresh@mail.ru"})  # asked just now
+    with accounts_db.Session() as s:
+        for u in s.query(accounts_db.User).filter(accounts_db.User.email != "fresh@mail.ru"):
+            u.created_at = accounts_db._utcnow() - timedelta(days=2)
+        s.commit()
+    client.post("/api/v2/auth/code", json={"email": "someone@mail.ru"})
+    with accounts_db.Session() as s:
+        emails = {u.email for u in s.query(accounts_db.User)}
+    assert emails == {"kept@mail.ru", "fresh@mail.ru", "someone@mail.ru"}
