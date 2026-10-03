@@ -168,6 +168,9 @@
             $('code-step').classList.toggle('hidden', step !== 'code');
             if (step === 'code') $('notice').classList.add('hidden'); // read by now; room for errors
             (step === 'email' ? $('email') : $('code')).focus();
+            // The last email is offered selected: Enter signs in with it again,
+            // typing replaces it (signing out is also how to change accounts).
+            if (step === 'email') $('email').select();
         }
 
         async function sendCode(button) {

@@ -37,5 +37,5 @@ contextBridge.exposeInMainWorld('settingsApi', {
   // The account section: who is signed in, the plan, minutes left today.
   getAccount: () => ipcRenderer.invoke('account-get'),
   onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
-  signOut: (reason) => ipcRenderer.send('account-sign-out', reason), // 'user' | 'switch'
+  signOut: () => ipcRenderer.send('account-sign-out'),
 });

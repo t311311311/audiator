@@ -566,9 +566,9 @@ app.on('ready', async () => {
     }
     return r;
   });
-  // From Settings: sign out, or sign out to sign in as someone else.
-  ipcMain.on('account-sign-out', (event, reason) => {
-    account.signOut(reason === 'switch' ? 'switch' : 'user'); // onChange opens the sign-in window
+  // From Settings: sign out (also the way to another account).
+  ipcMain.on('account-sign-out', () => {
+    account.signOut('user'); // onChange opens the sign-in window
   });
   // A recording was asked for with no minutes left today: show the main
   // window, where the page explains (from the hotkey it is usually hidden).

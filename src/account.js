@@ -158,13 +158,12 @@ async function sendUsage() {
   }
 }
 
-/** reason: 'user' (signed out), 'switch' (to another account), or what the
- *  server said (session_expired, blocked). The sign-in window offers the last
- *  email again, except when the user is switching to another one. */
+/** reason: 'user' (signed out in Settings) or what the server said
+ *  (session_expired, blocked). The sign-in window offers the last email again. */
 function signOut(reason) {
   const s = load();
   state = { fallbackId: s.fallbackId, signedOutReason: reason || null,
-            lastEmail: reason === 'switch' ? null : (s.email || s.lastEmail || null) };
+            lastEmail: s.email || s.lastEmail || null };
   save();
 }
 
