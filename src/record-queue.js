@@ -84,6 +84,12 @@ class RecordQueue {
     return before - this.jobs.length;
   }
 
+  // Signed out: nothing of that account stays on the bar.
+  clear() {
+    this.jobs = [];
+    this.nextNumber = 1;
+  }
+
   // What the bar shows. Up to `max` barrels as they are; beyond that the first
   // few, a "+N" counter for the hidden middle, and the last one — usually the
   // recording in progress, which must stay in sight.

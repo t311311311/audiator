@@ -131,6 +131,15 @@ check('a recording whose stop never came does not hold back the queue', () => {
   assert.strictEqual(q.active.text, 'text', 'and the next transcript is offered');
 });
 
+check('signing out empties the bar and starts the count again', () => {
+  const q = new RecordQueue();
+  q.start('a'); q.stop('a'); q.done('a', 'secret');
+  q.start('b'); q.stop('b'); q.start('c');
+  q.clear();
+  assert.ok(q.isEmpty && !q.active, 'nothing left, nothing on offer');
+  assert.strictEqual(q.start('d').number, 1);
+});
+
 let failed = 0;
 for (const [name, fn] of checks) {
   try { fn(); console.log(`ok   ${name}`); }

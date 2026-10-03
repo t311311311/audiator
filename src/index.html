@@ -629,6 +629,7 @@
             return m % 60 ? `${h} ${S('unit.h')} ${m % 60} ${S('unit.min')}` : `${h} ${S('unit.h')}`;
         }
         function renderAccount(v) {
+            if (v && acct && acct.signedIn && !v.signedIn) clearForSignOut();
             if (v) acct = v;
             const el = document.getElementById('minutes-left');
             const show = !!(acct && acct.signedIn && acct.limited);
@@ -860,9 +861,31 @@
         function queueTranscription(blob, jobId) {
             const pending = addPendingEntry();
             pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
+            const gen = session;
             transcribeChain = transcribeChain
-                .then(() => handleTranscription(blob, jobId, pending))
+                // Recordings made before a sign-out are not transcribed after it.
+                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen) : null))
                 .catch((e) => console.error('transcription queue', e)); // keep the chain going
+        }
+
+        // --- Signing out clears the history ---
+        // Nothing of one account is left for the next: the history (texts,
+        // translations, audio), a recording in progress and transcriptions
+        // still waiting go. The main process empties the bar, and the
+        // clipboard if it holds one of these texts.
+        let session = 0; // bumped at sign-out; work from before it is dropped
+        function clearForSignOut() {
+            session++;
+            const texts = [...historyContainer.querySelectorAll('.original-text, .translated-text')]
+                .map((e) => e.textContent.trim()).filter(Boolean);
+            // Dropped in onstop; a microphone still opening is closed as soon as it opens.
+            if (mediaRecorder && mediaRecorder.state === 'recording') stopBtn.click();
+            historyContainer.innerHTML = '';
+            closeTranslatePanel();
+            updateTranslateTitle();
+            updateActionButtons();
+            updateScrollButtons();
+            window.api.historyCleared(texts);
         }
 
         // The newest transcript that is finished (not waiting or transcribing):
@@ -882,11 +905,12 @@
             translateBtn.disabled = !done;
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }) {
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen) {
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
                 const result = blob.size ? await window.api.transcribe(blob)
                                          : { success: true, text: '' };
+                if (gen !== session) return; // signed out while it was transcribed
                 if (!result.success) {
                     // reason: the account's own refusal (limit, signed out),
                     // already a sentence for the user.
@@ -1355,8 +1379,10 @@
             }
             micStarting = true;
             stopWhenStarted = false;
+            const gen = session; // signed out meanwhile: this recording is dropped
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                if (gen !== session) { stream.getTracks().forEach((t) => t.stop()); return; }
                 const recorder = new MediaRecorder(stream);
                 const chunks = [];
                 const jobId = ++jobCounter;
@@ -1365,6 +1391,7 @@
                 recorder.ondataavailable = (event) => { chunks.push(event.data); };
                 recorder.onstop = () => {
                     stream.getTracks().forEach(track => track.stop());
+                    if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
                     queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId);
                 };

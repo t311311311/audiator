@@ -455,7 +455,8 @@ app.on('ready', async () => {
   // Answers whether the text is on the clipboard now, so the page only
   // confirms what actually happened.
   ipcMain.handle('transcribed', (event, { id, text }) => {
-    if (!text) { queue.remove(id); refreshOverlay(); return { copied: false }; }
+    // Signed out meanwhile: nothing goes on the clipboard or the bar.
+    if (!text || !account.signedIn()) { queue.remove(id); refreshOverlay(); return { copied: false }; }
     if (mainInView()) {
       clipboard.writeText(text);
       queue.remove(id);
@@ -536,9 +537,21 @@ app.on('ready', async () => {
   let lastSent = JSON.stringify(account.view());
   account.onChange((v) => {
     lastSent = JSON.stringify(v);
-    sendAccount(v);
-    if (wasSignedIn && !v.signedIn) showLoginWindow();
+    sendAccount(v); // the main window clears its history on a sign-out
+    if (wasSignedIn && !v.signedIn) {
+      queue.clear(); // no barrels of the old account
+      offeredId = null;
+      refreshOverlay();
+      showLoginWindow();
+    }
     wasSignedIn = v.signedIn;
+  });
+  // The history is gone; if the clipboard still holds one of its texts (put
+  // there for pasting, or copied from the history), it goes too. Anything else
+  // the user copied stays.
+  ipcMain.on('history-cleared', (event, texts) => {
+    const clip = clipboard.readText().trim();
+    if (clip && Array.isArray(texts) && texts.includes(clip)) clipboard.clear();
   });
   // The minutes come back at local midnight without a word from the server:
   // look once a minute whether what the windows show is still right. The
