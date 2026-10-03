@@ -13,6 +13,12 @@ Run with the venv python from the repo root:
   .venv\\Scripts\\python.exe scripts\\admin.py whoami
 
 Tiers: admin = unlimited; paid = subscriber allowance; free = the daily gift.
+
+Accounts by email (step 4, accounts.db):
+  .venv\\Scripts\\python.exe scripts\\admin.py accounts                    # list them
+  .venv\\Scripts\\python.exe scripts\\admin.py unlimited friend@mail.ru on # lifetime unlimited
+  .venv\\Scripts\\python.exe scripts\\admin.py block someone@mail.ru on
+  .venv\\Scripts\\python.exe scripts\\admin.py paid client@firm.com 30     # commercial for 30 days
 """
 import argparse
 import hashlib
@@ -129,10 +135,81 @@ def _current_device_id():
         return None
 
 
+# --- Accounts by email (step 4): accounts.db ------------------------------------
+
+def _account(session, email):
+    import accounts_db
+    u = session.query(accounts_db.User).filter(accounts_db.User.email == email.strip().lower()).one_or_none()
+    if u is None:
+        sys.exit(f"нет аккаунта {email} (он появляется при первом входе в приложение)")
+    return u
+
+
+def cmd_accounts(args):
+    import accounts_db
+    from sqlalchemy import func
+    with accounts_db.Session() as s:
+        rows = s.query(accounts_db.User).order_by(accounts_db.User.created_at).all()
+        devices = dict(s.query(accounts_db.Device.free_user_id, func.count()).group_by(
+            accounts_db.Device.free_user_id).all())
+    if not rows:
+        print("аккаунтов пока нет")
+        return
+    print(f"{'email':34} {'роль':6} {'безлимит':9} {'оплачено до':12} {'статус':8} ПК  последний вход")
+    for u in rows:
+        paid = u.paid_until.strftime("%Y-%m-%d") if u.paid_until else "-"
+        last = u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "-"
+        print(f"{u.email:34} {u.role:6} {'да' if u.unlimited else 'нет':9} {paid:12} {u.status:8} "
+              f"{devices.get(u.id, 0):<3} {last}")
+
+
+def cmd_unlimited(args):
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        u.unlimited = args.state == "on"
+        s.commit()
+    print(f"{args.email}: безлимит навсегда {'включён' if args.state == 'on' else 'выключен'}")
+
+
+def cmd_block(args):
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        u.status = "blocked" if args.state == "on" else "active"
+        s.commit()
+    print(f"{args.email}: {'заблокирован' if args.state == 'on' else 'разблокирован'}")
+
+
+def cmd_paid(args):
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        u.paid_until = accounts_db._utcnow() + timedelta(days=args.days) if args.days > 0 else None
+        s.commit()
+    print(f"{args.email}: коммерческий тариф {'до ' + u.paid_until.strftime('%Y-%m-%d') if u.paid_until else 'снят'}")
+
+
 def main():
     p = argparse.ArgumentParser(description="Управление аккаунтами Audiator")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # Accounts by email (step 4).
+    sub.add_parser("accounts", help="аккаунты по email").set_defaults(func=cmd_accounts)
+    un = sub.add_parser("unlimited", help="безлимит навсегда: on / off")
+    un.add_argument("email")
+    un.add_argument("state", choices=("on", "off"))
+    un.set_defaults(func=cmd_unlimited)
+    bl = sub.add_parser("block", help="заблокировать: on / off")
+    bl.add_argument("email")
+    bl.add_argument("state", choices=("on", "off"))
+    bl.set_defaults(func=cmd_block)
+    pd = sub.add_parser("paid", help="коммерческий тариф на N дней (0 — снять)")
+    pd.add_argument("email")
+    pd.add_argument("days", type=int)
+    pd.set_defaults(func=cmd_paid)
+
+    # The old device-based accounts (until the app has switched over).
     sub.add_parser("list", help="список аккаунтов").set_defaults(func=cmd_list)
 
     c = sub.add_parser("create", help="создать аккаунт")
