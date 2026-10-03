@@ -67,6 +67,13 @@ const args = [
   '--collect-data', 'faster_whisper',     // the voice-activity model (silero VAD)
   '--collect-binaries', 'ctranslate2',    // the inference DLLs
   '--collect-submodules', 'uvicorn',      // uvicorn picks its parts at run time
+  // Translation (translator.py): Argos Translate and the language catalog.
+  '--collect-submodules', 'argostranslate',
+  '--collect-data', 'sacremoses',         // per-language tokenizer rules
+  '--collect-all', 'sentencepiece',       // the tokenizer library and its tables
+  '--collect-submodules', 'minisbd',      // sentence splitting
+  '--add-data', `${path.join(ROOT, 'auth-server', 'translate_catalog.json')}${path.delimiter}.`,
+  '--paths', 'auth-server',               // translator.py sits beside the script
   'auth-server/local_whisper.py',
 ];
 console.log('Building the speech engine (takes a few minutes)…');

@@ -70,6 +70,7 @@
         .main-content {
             padding-top: 32px;
             flex-grow: 1;
+            min-height: 0; /* the history gives way (and scrolls), not the panels below */
             overflow-y: auto;
             position: relative;
         }
@@ -140,6 +141,82 @@
         .engine-banner.loading .engine-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
         .engine-banner.error .engine-progress-row { display: none; }
 
+        /* Translation panel (on-demand languages). */
+        .translate-panel {
+            /* Keeps its height however long the history grows (it used to be
+               squeezed a little more with every new transcript until it
+               vanished); scrolls inside when it has more than fits. */
+            flex: 0 0 auto;
+            display: flex; flex-direction: column; gap: 6px; max-height: min(320px, 55vh); overflow-y: auto;
+            padding: 8px 15px 10px; border-top: 1px solid var(--accent-color); font-size: 13px;
+        }
+        .translate-panel.hidden { display: none; }
+        .tp-head { display: flex; align-items: center; gap: 8px; }
+        .tp-title { flex: 1 1 auto; min-width: 0; font-size: 0.9em; opacity: 0.8; }
+        .tp-reset {
+            flex: 0 0 auto; padding: 2px 8px; font-size: 12px; cursor: pointer;
+            background: none; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;
+            opacity: 0.8; user-select: none;
+        }
+        .tp-reset:hover { opacity: 1; border-color: var(--accent-color); }
+        /* The Translate button while its panel is open: visibly out of play. */
+        .control-button.locked { opacity: 0.4; pointer-events: none; }
+        .tp-list { display: flex; flex-direction: column; gap: 3px; }
+        /* At most three rows of each list in view (the rest scroll inside it),
+           so a long list of languages does not push the text out of sight;
+           favourites come first, so they are the ones in view. */
+        .tp-row { flex: 0 0 auto; box-sizing: border-box; height: 32px; }
+        #tp-installed, #tp-job, #tp-results { max-height: 102px; overflow-y: auto; }
+        /* With downloads or search results showing too, two rows of each. */
+        .translate-panel.compact #tp-installed,
+        .translate-panel.compact #tp-job,
+        .translate-panel.compact #tp-results { max-height: 67px; }
+        .tp-list::-webkit-scrollbar { width: 8px; }
+        .tp-list::-webkit-scrollbar-track { background: #3e4452; }
+        .tp-list::-webkit-scrollbar-thumb { background: #4a5060; }
+        .tp-list::-webkit-scrollbar-thumb:hover { background: #565d6f; }
+        .tp-list::-webkit-scrollbar-button { display: none; }
+        body.light-theme .tp-list::-webkit-scrollbar-track { background: #e7eaf2; }
+        body.light-theme .tp-list::-webkit-scrollbar-thumb { background: #dcdee3; }
+        /* Favourite: a grey star that turns yellow; favourites are listed first. */
+        .tp-star {
+            flex: 0 0 auto; width: 18px; padding: 0; font-size: 14px; line-height: 1;
+            background: none; border: none; color: var(--text-color); cursor: pointer; opacity: 0.35;
+        }
+        .tp-star:hover { opacity: 0.8; }
+        .tp-star.on { color: #e5c07b; opacity: 1; }
+        .tp-list:empty { display: none; }
+        .tp-row {
+            display: flex; align-items: center; gap: 8px; padding: 2px 6px;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
+        }
+        .tp-lang:hover { border-color: var(--accent-color); }
+        .tp-name {
+            flex: 1 1 auto; min-width: 0; padding: 3px 0; text-align: left; font-size: 14px;
+            background: none; border: none; color: var(--text-color); cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        span.tp-name { cursor: default; }
+        .tp-size { font-size: 12px; opacity: 0.7; white-space: nowrap; }
+        .tp-icon {
+            flex: 0 0 auto; width: 18px; height: 18px; padding: 0; display: inline-flex;
+            align-items: center; justify-content: center; font-size: 12px;
+            background: none; border: none; color: var(--text-color); cursor: pointer; opacity: 0.7;
+        }
+        span.tp-icon { cursor: default; }
+        .tp-icon svg { width: 16px; height: 16px; }
+        button.tp-delete:hover, button.tp-cancel:hover { opacity: 1; color: #e06c75; }
+        button.tp-download:hover { opacity: 1; color: var(--accent-color); }
+        .tp-progress { flex: 1 1 auto; height: 4px; border-radius: 2px; overflow: hidden; background: var(--border-color); }
+        .tp-progress i { display: block; height: 100%; width: 0; background: var(--accent-color); transition: width 0.3s; }
+        .tp-installing .tp-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
+        .tp-note { font-size: 12px; color: var(--record-color); }
+        .tp-empty { font-size: 12px; opacity: 0.6; padding: 2px 6px; }
+        .tp-search {
+            padding: 5px 8px; font-size: 13px; border-radius: 4px;
+            background: var(--secondary-color); color: var(--text-color); border: 1px solid var(--border-color);
+        }
+
         /* A recording waiting for or in transcription: blinks like the bar's
            red "transcribing" barrel. */
         .original-text.pending {
@@ -159,6 +236,11 @@
             color: var(--text-color); opacity: 0.45;
         }
         .entry-copy:hover { opacity: 1; }
+        /* The copy button, and under it (on a transcript) a box to pick it for
+           translation. */
+        .entry-actions { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .entry-check { margin: 0; cursor: pointer; accent-color: var(--accent-color); }
+        .entry-check[hidden] { display: none; }
         .entry-copy[hidden] { display: none; }
 
         .scroll-buttons {
@@ -203,6 +285,7 @@
         }
 
         .controls {
+            flex-shrink: 0; /* never squeezed by a long history */
             position: relative; /* Needed for absolute positioning of the canvas */
             padding: 10px 15px;
             border-top: 1px solid var(--border-color);
@@ -311,40 +394,48 @@
             background-color: var(--primary-color);
         }
 
-        /* Стили для полосы прокрутки */
-        .main-content::-webkit-scrollbar {
+        /* Стили для полосы прокрутки — одинаковые у истории и у панели перевода */
+        .main-content::-webkit-scrollbar,
+        .translate-panel::-webkit-scrollbar {
             width: 12px;
         }
 
-        .main-content::-webkit-scrollbar-track {
+        .main-content::-webkit-scrollbar-track,
+        .translate-panel::-webkit-scrollbar-track {
             background: #3e4452;
             border-radius: 0;
         }
 
-        .main-content::-webkit-scrollbar-thumb {
+        .main-content::-webkit-scrollbar-thumb,
+        .translate-panel::-webkit-scrollbar-thumb {
             background: #4a5060;
             border-radius: 0;
         }
 
-        .main-content::-webkit-scrollbar-thumb:hover {
+        .main-content::-webkit-scrollbar-thumb:hover,
+        .translate-panel::-webkit-scrollbar-thumb:hover {
             background: #565d6f;
         }
 
         /* Убираем стрелки прокрутки */
-        .main-content::-webkit-scrollbar-button {
+        .main-content::-webkit-scrollbar-button,
+        .translate-panel::-webkit-scrollbar-button {
             display: none;
         }
 
         /* Стили для светлой темы */
-        body.light-theme .main-content::-webkit-scrollbar-track {
+        body.light-theme .main-content::-webkit-scrollbar-track,
+        body.light-theme .translate-panel::-webkit-scrollbar-track {
             background: #e7eaf2;
         }
 
-        body.light-theme .main-content::-webkit-scrollbar-thumb {
+        body.light-theme .main-content::-webkit-scrollbar-thumb,
+        body.light-theme .translate-panel::-webkit-scrollbar-thumb {
             background: #dcdee3;
         }
 
-        body.light-theme .main-content::-webkit-scrollbar-thumb:hover {
+        body.light-theme .main-content::-webkit-scrollbar-thumb:hover,
+        body.light-theme .translate-panel::-webkit-scrollbar-thumb:hover {
             background: #c5c7cc;
         }
 
@@ -402,18 +493,20 @@
 
     <div id="toast"></div>
 
-    <div id="translate-bar" class="controls hidden" style="padding-top: 10px; border-top: 1px solid var(--accent-color);">
-        <label for="lang-select" style="font-size: 0.9em;" data-i18n="translate.to">Перевести на:</label>
-        <select id="lang-select" style="flex-grow: 1; background: var(--primary-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 5px;">
-            <option value="en">English</option>
-            <option value="zh">中文</option>
-            <option value="es">Español</option>
-            <option value="de">Deutsch</option>
-            <option value="fr">Français</option>
-            <option value="ja">日本語</option>
-            <option value="ru">Русский</option>
-        </select>
-        <button class="control-button" id="translate-go-btn" data-i18n="btn.go">Go</button>
+    <!-- Translation: the languages on this computer (click one to translate the
+         latest text into it; a cross deletes it), and a search to add more —
+         each download shows its size, can be stopped, and lands in the list. -->
+    <div id="translate-bar" class="translate-panel hidden">
+        <div class="tp-head">
+            <div class="tp-title" id="tp-title">Перевести на:</div>
+            <button type="button" id="tp-reset" class="tp-reset" data-i18n="translate.reset" data-i18n-title="translate.resetHint" title="Нажатие — снять все отметки. Двойное нажатие — убрать все переводы">Сбросить</button>
+            <button type="button" id="tp-close" class="tp-icon tp-cancel" data-i18n-title="translate.close" title="Закрыть">&#10005;</button>
+        </div>
+        <div id="tp-installed" class="tp-list"></div>
+        <div id="tp-job" class="tp-list"></div>
+        <div id="tp-note" class="tp-note hidden"></div>
+        <input id="tp-search" class="tp-search" type="text" autocomplete="off" spellcheck="false">
+        <div id="tp-results" class="tp-list"></div>
     </div>
 
     <div class="controls">
@@ -430,8 +523,8 @@
                     <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
                 </svg>
             </button>
-            <button class="control-button icon-button" id="save-audio-btn" title="Сохранить аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
-            <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
+            <button class="control-button icon-button" id="save-audio-btn" title="Сохранить последнее аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
+            <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить последнее аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
             <button class="control-button" id="translate-btn" title="Перевести" data-i18n="btn.translate" data-i18n-title="title.translate" disabled>Перевести</button>
         </div>
         <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copy">&#128203;</button> <!-- Clipboard -->
@@ -495,12 +588,9 @@
         const clearAllBtn = document.getElementById('clear-all-btn');
         const historyContainer = document.querySelector('.history-container');
         const translateBar = document.getElementById('translate-bar');
-        const translateGoBtn = document.getElementById('translate-go-btn');
-        const langSelect = document.getElementById('lang-select');
 
         // --- State ---
         let mediaRecorder; // the recording in progress, if any
-        let audioBlob;     // the latest recording, for the save buttons
 
         // --- Recording level meter + global hotkey (AUD-40) ---
         // Uses setInterval, not requestAnimationFrame: recording usually runs with
@@ -530,6 +620,10 @@
         })[m] || m;
         function renderEngine(s) {
             lastEngine = s;
+            if (s && s.translate && typeof renderTranslatePanel === 'function') {
+                tpState = s.translate;
+                renderTranslatePanel();
+            }
             const banner = document.getElementById('engine-banner');
             const text = document.getElementById('engine-text');
             const bar = document.getElementById('engine-bar');
@@ -599,6 +693,9 @@
         }
         if (window.api && window.api.onHotkeyToggleRecord) {
             window.api.onHotkeyToggleRecord(() => {
+                // Pressed again while the microphone is still opening: stop as
+                // soon as it is open (a third press takes that back).
+                if (micStarting) { stopWhenStarted = !stopWhenStarted; return; }
                 if (mediaRecorder && mediaRecorder.state === 'recording') stopBtn.click();
                 else recordBtn.click();
             });
@@ -629,18 +726,16 @@
             // Show scroll buttons only if content overflows
             const scrollableHeight = mainContent.scrollHeight - mainContent.clientHeight;
 
-            // Check if translate bar is visible
-            const isTranslateBarVisible = !translateBar.classList.contains('hidden');
-            // Adjust bottom position based on translate bar visibility
-            if (isTranslateBarVisible) {
-                // If translate bar is visible, position buttons higher
-                document.querySelector('.scroll-buttons').style.bottom = '160px';
-            } else {
-                // If translate bar is hidden, use original position
-                document.querySelector('.scroll-buttons').style.bottom = '120px';
-            }
+            // Keep the buttons inside the history, just above its bottom edge,
+            // whatever sits below it (the translate panel grows and shrinks as
+            // you search): measured from the history itself, not guessed. When
+            // too little of the history shows for both buttons, leave them out.
+            const area = mainContent.getBoundingClientRect();
+            const visible = area.height - 32; // under the fixed title bar
+            document.querySelector('.scroll-buttons').style.bottom =
+                Math.round(window.innerHeight - area.bottom + 16) + 'px';
 
-            if (scrollableHeight > 0) {
+            if (scrollableHeight > 0 && visible >= 110) {
                 // Show both buttons if scrollable
                 scrollUpBtn.style.display = 'flex'; // Use flex to center SVG
                 scrollDownBtn.style.display = 'flex'; // Use flex to center SVG
@@ -682,8 +777,11 @@
                     setTimeout(() => { btn.textContent = '\u{1F4CB}'; }, 1000);
                 }).catch(err => console.error('Failed to copy text:', err));
             });
-            row.append(textEl, btn);
-            return { row, btn };
+            const actions = document.createElement('div');
+            actions.className = 'entry-actions';
+            actions.appendChild(btn);
+            row.append(textEl, actions);
+            return { row, btn, actions };
         }
 
         // A history entry for a recording that has just been stopped. It shows
@@ -700,10 +798,20 @@
             originalTextField.textContent = S('status.transcribing');
             newEntry.innerHTML = `<div class="entry-header">${timestamp}</div>`;
             const originalCopy = withCopyButton(originalTextField);
+            // Under the copy button: a box to pick this text for translation
+            // (several can be picked and translated in one go).
+            const check = document.createElement('input');
+            check.type = 'checkbox';
+            check.className = 'entry-check';
+            check.dataset.i18nTitle = 'translate.select'; // relabelled on a language change
+            check.title = S('translate.select');
+            check.hidden = true; // until the text is there
+            check.addEventListener('change', updateTranslateTitle);
+            originalCopy.actions.appendChild(check);
             newEntry.appendChild(originalCopy.row);
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
-            return { originalTextField, originalCopy };
+            return { originalTextField, originalCopy, check };
         }
 
         // Recordings are transcribed one at a time, in the order they were
@@ -713,29 +821,45 @@
         let transcribeChain = Promise.resolve();
         function queueTranscription(blob, jobId) {
             const pending = addPendingEntry();
+            pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
             transcribeChain = transcribeChain
                 .then(() => handleTranscription(blob, jobId, pending))
                 .catch((e) => console.error('transcription queue', e)); // keep the chain going
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy }) {
-            audioBlob = blob;
-            translateBtn.disabled = true;
-            saveAudioBtn.disabled = true;
-            saveAudioTextBtn.disabled = true;
+        // The newest transcript that is finished (not waiting or transcribing):
+        // what "the latest" means for saving, copying and translating. So those
+        // keep working on what is already there while a new recording is made
+        // or transcribed, and move on to it once it is done.
+        function latestDoneEntry() {
+            return [...historyContainer.querySelectorAll('.history-entry')]
+                .find((e) => !e.querySelector('.original-text.pending')) || null;
+        }
+        // Save and translate are usable as soon as there is a finished
+        // transcript, and stay usable through new recordings.
+        function updateActionButtons() {
+            const done = latestDoneEntry();
+            saveAudioBtn.disabled = !(done && done._audio);
+            saveAudioTextBtn.disabled = !(done && done._audio);
+            translateBtn.disabled = !done;
+        }
 
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }) {
             try {
-                // Идёт через аутентифицирующий гейтвей: main-процесс подставит
-                // токен подписки, поэтому прямого обращения к сервису тут нет.
-                const result = await window.api.transcribe(blob);
+                // Stopped the instant it began: nothing to send, nothing heard.
+                const result = blob.size ? await window.api.transcribe(blob)
+                                         : { success: true, text: '' };
                 if (!result.success) {
                     throw new Error(result.error || 'Transcription failed');
                 }
                 originalTextField.classList.remove('pending');
                 originalTextField.textContent = result.text || S('status.noText');
+                // The language Whisper heard: what a translation translates from.
+                if (result.language) originalTextField.closest('.history-entry').dataset.lang = result.language;
                 // Marked rather than detected by its wording, which now depends on the language.
                 if (!result.text) originalTextField.dataset.state = 'empty';
                 originalCopy.btn.hidden = !result.text;
+                check.hidden = !result.text;
 
                 // Hand the transcript to the queue: on the clipboard at once when
                 // this window is in front, otherwise when its barrel's turn comes.
@@ -764,9 +888,7 @@
                 // still transcribing.
                 if (window.api.transcribeFailed) window.api.transcribeFailed(jobId);
             } finally {
-                translateBtn.disabled = false;
-                saveAudioBtn.disabled = false;
-                saveAudioTextBtn.disabled = false;
+                updateActionButtons(); // this one is now "the latest"
             }
         }
 
@@ -795,29 +917,29 @@
             if (confirm(S('confirm.clearHistory'))) {
                 historyContainer.innerHTML = '';
                 updateScrollButtons(); // Update scroll buttons visibility
+                updateActionButtons();
             }
             appMenu.classList.add('hidden');
         });
 
         saveAudioBtn.addEventListener('click', () => { 
-            if (audioBlob) { 
-                const latestEntry = historyContainer.querySelector('.history-entry');
-                const isoTimestamp = latestEntry?.dataset.isoTimestamp || new Date().toISOString();
-                window.api.saveAudio(audioBlob, isoTimestamp); 
+            const latestEntry = latestDoneEntry();
+            if (latestEntry && latestEntry._audio) {
+                const isoTimestamp = latestEntry.dataset.isoTimestamp || new Date().toISOString();
+                window.api.saveAudio(latestEntry._audio, isoTimestamp);
             } else {
                 alert(S('alert.noAudio'));
             }
         });
 
         saveAudioTextBtn.addEventListener('click', () => {
-            if (!audioBlob) {
-                alert(S('alert.noAudio'));
-                return;
-            }
-
-            const latestEntry = historyContainer.querySelector('.history-entry');
+            const latestEntry = latestDoneEntry();
             if (!latestEntry) {
                 alert(S('alert.noText'));
+                return;
+            }
+            if (!latestEntry._audio) {
+                alert(S('alert.noAudio'));
                 return;
             }
 
@@ -832,60 +954,315 @@
                 textToSave += `${S('history.translation')}: ${translated}\n`;
             }
 
-            window.api.saveAudioAndText(audioBlob, textToSave, isoTimestamp);
+            window.api.saveAudioAndText(latestEntry._audio, textToSave, isoTimestamp);
         });
 
+        // The panel opens from the Translate button, which is then locked (it
+        // looked clickable while it had nothing left to do); the panel closes
+        // with its own cross, Esc, or after a translation went through.
+        function openTranslatePanel() {
+            translateBar.classList.remove('hidden');
+            translateBtn.classList.add('locked');
+            tpSearch.placeholder = S('translate.search');
+            tpSearch.value = ''; // a fresh search each time the panel opens
+            renderTranslatePanel();
+            updateScrollButtons(); // Update scroll buttons position after opening the translate bar
+        }
+        function closeTranslatePanel() {
+            translateBar.classList.add('hidden');
+            translateBtn.classList.remove('locked');
+            updateScrollButtons(); // Update scroll buttons position after hiding translate bar
+        }
         translateBtn.addEventListener('click', () => {
-            translateBar.classList.toggle('hidden');
-            updateScrollButtons(); // Update scroll buttons position after toggling translate bar
+            if (translateBtn.classList.contains('locked')) return; // e.g. Enter on the focused button
+            openTranslatePanel();
+        });
+        document.getElementById('tp-close').addEventListener('click', closeTranslatePanel);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !translateBar.classList.contains('hidden')) closeTranslatePanel();
         });
 
-        translateGoBtn.addEventListener('click', async () => {
-            const latestEntry = historyContainer.querySelector('.history-entry');
-            if (!latestEntry) return;
+        // Reset: a click unticks every transcript; a double click also removes
+        // every translation from the history.
+        const tpReset = document.getElementById('tp-reset');
+        tpReset.addEventListener('click', () => {
+            historyContainer.querySelectorAll('.entry-check:checked').forEach((c) => { c.checked = false; });
+            updateTranslateTitle();
+        });
+        tpReset.addEventListener('dblclick', () => {
+            historyContainer.querySelectorAll('.translated-text').forEach((t) => t.parentElement.remove());
+            updateScrollButtons();
+        });
 
-            const originalEl = latestEntry.querySelector('.original-text');
+        // The transcripts ticked for translation, newest first (as listed).
+        function checkedEntries() {
+            return [...historyContainer.querySelectorAll('.entry-check:checked')]
+                .map((c) => c.closest('.history-entry'));
+        }
+        // "Перевести на:" or "Перевести отмеченные (3) на:".
+        function updateTranslateTitle() {
+            const n = checkedEntries().length;
+            document.getElementById('tp-title').textContent =
+                n ? S('translate.toChecked').replace('{n}', n) : S('translate.to');
+        }
+
+        // Translate one transcript into `target`, from the language it was
+        // spoken in. Returns 'ok', 'error', 'skip' (nothing to translate),
+        // { noLang: true }, or { missing: code } when a language has to be
+        // installed first (the entry is then left as it was).
+        async function translateEntry(entry, target) {
+            const originalEl = entry.querySelector('.original-text');
             const originalText = originalEl?.innerText;
             // Skip entries that hold an error or 'nothing recognised' rather than speech.
-            if (!originalText || originalEl.dataset.state) return;
+            if (!originalText || originalEl.dataset.state || originalEl.classList.contains('pending')) return 'skip';
+            const source = entry.dataset.lang;
+            if (!source) return { noLang: true };
 
-            const targetLang = langSelect.value;
-            let translatedDiv = latestEntry.querySelector('.translated-text');
+            let translatedDiv = entry.querySelector('.translated-text');
+            const hadTranslation = !!translatedDiv;
             if (!translatedDiv) {
                 translatedDiv = document.createElement('div');
                 translatedDiv.className = 'translated-text';
-                latestEntry.appendChild(withCopyButton(translatedDiv).row);
+                entry.appendChild(withCopyButton(translatedDiv).row);
             }
             const translatedCopyBtn = translatedDiv.parentElement.querySelector('.entry-copy');
+            const previous = translatedDiv.textContent;
             translatedCopyBtn.hidden = true; // until the new translation arrives
-
             translatedDiv.textContent = S('status.translating');
-            translateBar.classList.add('hidden');
-            updateScrollButtons(); // Update scroll buttons position after hiding translate bar
 
             try {
-                const result = await window.api.translate(originalText, targetLang, 'auto');
+                const result = await window.api.translate(originalText, target, source);
+                if (!result.success && result.missing) {
+                    // Put things back; the panel asks for the missing language.
+                    if (hadTranslation) { translatedDiv.textContent = previous; translatedCopyBtn.hidden = !previous; }
+                    else translatedDiv.parentElement.remove();
+                    return { missing: result.missing };
+                }
                 if (!result.success) {
                     throw new Error(result.error || S('error.translate'));
                 }
                 translatedDiv.textContent = result.translatedText || S('error.translate');
                 translatedCopyBtn.hidden = !result.translatedText;
-
+                return 'ok';
             } catch (error) {
                 console.error('Translation error:', error);
                 translatedDiv.textContent = `${S('error.translate')}: ${error.message}`;
-
-                // Log detailed error information for debugging
-                if (error.stack) {
-                    console.error('Stack trace:', error.stack);
-                }
-
-                // Send error to main process for logging
                 if (window.api && typeof window.api.logError === 'function') {
                     window.api.logError('Translation error', error);
                 }
+                return 'error';
             }
-        });
+        }
+
+        // Translate the ticked transcripts — or, with none ticked, the latest —
+        // into `target`, one after another. Those done are unticked; if some
+        // need a language that is not installed, the panel stays open and
+        // offers it, and their ticks stay for another go once it is in.
+        async function translateInto(target) {
+            const chosen = checkedEntries();
+            const entries = chosen.length ? chosen
+                : [latestDoneEntry()].filter(Boolean);
+            const missing = new Set();
+            let noLang = false, failed = false;
+            for (const entry of entries) {
+                const r = await translateEntry(entry, target);
+                if (r && r.missing) { missing.add(r.missing); continue; }
+                if (r && r.noLang) { noLang = true; continue; }
+                if (r === 'error') failed = true;
+                const box = entry.querySelector('.entry-check');
+                if (box) box.checked = false;
+            }
+            updateTranslateTitle();
+            if (missing.size) {
+                tpNeed = [...missing];
+                showTranslateNote(`${S('translate.needLanguage')} ${tpNeed.map((c) => langName(c)).join(', ')}`);
+                return;
+            }
+            if (noLang) { showTranslateNote(S('translate.noLang')); return; }
+            tpNeed = [];
+            hideTranslateNote();
+            if (!failed) closeTranslatePanel();
+        }
+
+        // --- Translation panel: languages on demand ---
+        const tpInstalled = document.getElementById('tp-installed');
+        const tpJob = document.getElementById('tp-job');
+        const tpNote = document.getElementById('tp-note');
+        const tpSearch = document.getElementById('tp-search');
+        const tpResults = document.getElementById('tp-results');
+        let tpCatalog = [];     // [{ code, name, size }]: every language on offer
+        let tpState = null;     // the engine's translate status
+        let tpNeed = [];        // languages the last translation needed
+        // Favourite languages (a per-computer preference): listed first.
+        let tpFavorites = new Set();
+        try { tpFavorites = new Set(JSON.parse(localStorage.getItem('translateFavorites') || '[]')); } catch (e) {}
+        function toggleFavorite(code) {
+            if (tpFavorites.has(code)) tpFavorites.delete(code); else tpFavorites.add(code);
+            try { localStorage.setItem('translateFavorites', JSON.stringify([...tpFavorites])); } catch (e) {}
+            renderTranslatePanel();
+            tpInstalled.scrollTop = 0; // favourites are at the top: show them
+        }
+
+        // Argos codes that are not plain language tags.
+        const ARGOS_TAG = { pb: 'pt-BR', zt: 'zh-Hant', zh: 'zh-Hans' };
+        function langName(code, inLanguage) {
+            try {
+                const tag = ARGOS_TAG[code] || code;
+                const n = new Intl.DisplayNames([inLanguage || document.documentElement.lang || 'en'], { type: 'language' }).of(tag);
+                return n ? n.charAt(0).toUpperCase() + n.slice(1) : code;
+            } catch (e) { return code; }
+        }
+        const sizeOf = (code) => (tpCatalog.find((c) => c.code === code) || {}).size || 0;
+        const mbText = (bytes) => Math.round(bytes / 1e6) + ' ' + S('unit.mb');
+        function el(tag, cls, text) {
+            const e = document.createElement(tag);
+            if (cls) e.className = cls;
+            if (text !== undefined) e.textContent = text;
+            return e;
+        }
+        const DOWNLOAD_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97"/><path d="M12 11v9"/><path d="m9 17 3 3 3-3"/></svg>';
+
+        function showTranslateNote(text) { tpNote.textContent = text; tpNote.classList.remove('hidden'); renderTranslatePanel(); }
+        function hideTranslateNote() { tpNote.classList.add('hidden'); updateScrollButtons(); }
+
+        function installLanguage(code) {
+            window.api.translateInstall(code);
+        }
+        function deleteLanguage(code) {
+            const what = `${langName(code)} (${mbText(sizeOf(code))})`;
+            if (!confirm(`${S('translate.confirmDelete')} ${what}?`)) return;
+            window.api.translateDelete(code).then((s) => renderEngine(s));
+        }
+
+        // A row offering a language that is not installed: its size and a
+        // download button.
+        function offerRow(code) {
+            const row = el('div', 'tp-row');
+            row.append(el('span', 'tp-name', langName(code)), el('span', 'tp-size', mbText(sizeOf(code))));
+            const dl = el('button', 'tp-icon tp-download');
+            dl.type = 'button';
+            dl.title = S('engine.download');
+            dl.innerHTML = DOWNLOAD_SVG;
+            dl.addEventListener('click', () => installLanguage(code));
+            row.appendChild(dl);
+            return row;
+        }
+
+        function renderTranslatePanel() {
+            const t = tpState || { installed: ['en'], job: null, state: 'idle' };
+            // Favourites first, in the order they were starred (the first star
+            // on top); then English; then the rest by name.
+            const starOrder = [...tpFavorites];
+            const rank = (c) => (tpFavorites.has(c) ? 0 : c === 'en' ? 1 : 2);
+            const installed = (t.installed || ['en']).slice().sort((a, b) =>
+                rank(a) - rank(b) ||
+                (rank(a) === 0 ? starOrder.indexOf(a) - starOrder.indexOf(b) : langName(a).localeCompare(langName(b))));
+
+            // Languages on this computer: click one to translate into it.
+            tpInstalled.textContent = '';
+            for (const code of installed) {
+                const row = el('div', 'tp-row tp-lang');
+                const fav = tpFavorites.has(code);
+                const star = el('button', 'tp-star' + (fav ? ' on' : ''), '\u2605');
+                star.type = 'button';
+                star.title = fav ? S('translate.unfavorite') : S('translate.favorite');
+                star.addEventListener('click', () => toggleFavorite(code));
+                row.appendChild(star);
+                const name = el('button', 'tp-name', langName(code));
+                name.type = 'button';
+                name.title = S('translate.clickToTranslate');
+                name.addEventListener('click', () => translateInto(code));
+                row.appendChild(name);
+                if (code === 'en') {
+                    row.append(el('span', 'tp-size', S('translate.builtIn')), el('span', 'tp-icon'));
+                } else {
+                    row.appendChild(el('span', 'tp-size', mbText(sizeOf(code))));
+                    const del = el('button', 'tp-icon tp-delete', '\u2715');
+                    del.type = 'button';
+                    del.title = S('quality.delete');
+                    del.addEventListener('click', () => deleteLanguage(code));
+                    row.appendChild(del);
+                }
+                tpInstalled.appendChild(row);
+            }
+
+            // Downloads: the language in progress (bar, size, stop), those
+            // waiting behind it (each can be taken out of the queue), and any
+            // that failed (retry, or dismiss).
+            updateTranslateTitle();
+            tpJob.textContent = '';
+            const iconButton = (cls, text, title, onClick) => {
+                const b = el('button', 'tp-icon ' + cls, text);
+                b.type = 'button';
+                b.title = title;
+                b.addEventListener('click', onClick);
+                return b;
+            };
+            if (t.job) {
+                const row = el('div', 'tp-row' + (t.state === 'installing' ? ' tp-installing' : ''));
+                row.appendChild(el('span', 'tp-name', langName(t.job)));
+                const bar = el('div', 'tp-progress');
+                const fill = el('i');
+                fill.style.width = t.total ? (100 * t.done / t.total) + '%' : '0';
+                bar.appendChild(fill);
+                row.appendChild(bar);
+                row.appendChild(el('span', 'tp-size', t.state === 'installing'
+                    ? S('translate.installing')
+                    : `${Math.round(t.done / 1e6)} / ${mbText(t.total)}`));
+                row.appendChild(t.state === 'downloading'
+                    ? iconButton('tp-cancel', '\u2715', S('engine.cancel'), () => window.api.translateCancel(t.job))
+                    : el('span', 'tp-icon'));
+                tpJob.appendChild(row);
+            }
+            for (const code of t.queue || []) {
+                const row = el('div', 'tp-row');
+                row.append(el('span', 'tp-name', langName(code)),
+                           el('span', 'tp-size', `${S('translate.queued')} \u00b7 ${mbText(sizeOf(code))}`),
+                           iconButton('tp-cancel', '\u2715', S('translate.unqueue'), () => window.api.translateCancel(code)));
+                tpJob.appendChild(row);
+            }
+            for (const [code, why] of Object.entries(t.failed || {})) {
+                const row = el('div', 'tp-row');
+                const msg = el('span', 'tp-name', `${langName(code)}: ${S('translate.error')}`);
+                msg.title = why;
+                const again = iconButton('tp-download', '', S('engine.retry'), () => installLanguage(code));
+                again.innerHTML = DOWNLOAD_SVG;
+                row.append(msg, again, iconButton('tp-cancel', '\u2715', S('translate.dismiss'), () => window.api.translateCancel(code)));
+                tpJob.appendChild(row);
+            }
+
+            // Adding a language: the one a translation asked for, then matches
+            // of the search by name (in the interface language, in its own
+            // language, in English) or code.
+            tpResults.textContent = '';
+            const offered = new Set([...installed, t.job, ...(t.queue || []), ...Object.keys(t.failed || {})].filter(Boolean));
+            const rows = [];
+            for (const code of tpNeed) if (!offered.has(code)) { rows.push(code); offered.add(code); }
+            const q = tpSearch.value.trim().toLowerCase();
+            if (q) {
+                const all = tpCatalog.filter((c) => [
+                    langName(c.code), langName(c.code, ARGOS_TAG[c.code] || c.code), c.name, c.code,
+                ].some((n) => String(n).toLowerCase().includes(q)));
+                const matches = all.filter((c) => !offered.has(c.code));
+                matches.sort((a, b) => langName(a.code).localeCompare(langName(b.code)));
+                rows.push(...matches.slice(0, 6).map((c) => c.code));
+                // "Nothing found" only when no language matches at all — not when
+                // the match is already installed or downloading above.
+                if (!all.length && !rows.length) tpResults.appendChild(el('div', 'tp-empty', S('translate.noResults')));
+            }
+            rows.forEach((code) => tpResults.appendChild(offerRow(code)));
+            // Once every language a translation needed is in, its note goes.
+            if (tpNeed.length && tpNeed.every((c) => installed.includes(c))) { tpNeed = []; hideTranslateNote(); }
+            // Three rows per list on their own; two each once downloads or
+            // search results share the panel.
+            translateBar.classList.toggle('compact', tpJob.children.length > 0 || tpResults.children.length > 0);
+            // The panel's height just changed: keep the scroll buttons inside
+            // the history (the ResizeObserver below covers everything else).
+            updateScrollButtons();
+        }
+
+        tpSearch.addEventListener('input', renderTranslatePanel);
+        window.api.translateCatalog().then((c) => { tpCatalog = c || []; renderTranslatePanel(); });
 
         copyBtn.addEventListener('click', () => {
             const selection = window.getSelection().toString().trim();
@@ -894,7 +1271,7 @@
             if (selection) {
                 textToCopy = selection;
             } else {
-                const latestEntry = historyContainer.querySelector('.history-entry');
+                const latestEntry = latestDoneEntry();
                 if (latestEntry) {
                     textToCopy = latestEntry.querySelector('.original-text')?.innerText;
                     const translatedText = latestEntry.querySelector('.translated-text')?.innerText;
@@ -922,8 +1299,17 @@
         // the main process from start to transcript (the bar's barrels). Stop
         // and record again can come faster than the previous recording finishes
         // closing, so nothing here is shared between recordings.
+        // Opening the microphone takes a moment. A second press in that moment
+        // used to start a second recording on top of the first, which then
+        // could never be stopped: a "recording" barrel that never went away
+        // and held back every barrel behind it. Now there is only ever one.
         let jobCounter = 0;
+        let micStarting = false;     // the microphone is being opened
+        let stopWhenStarted = false; // the user asked to stop before it was open
         recordBtn.addEventListener('click', async () => {
+            if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
+            micStarting = true;
+            stopWhenStarted = false;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 const recorder = new MediaRecorder(stream);
@@ -938,17 +1324,18 @@
                     queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId);
                 };
 
-                saveAudioBtn.disabled = true;
-                saveAudioTextBtn.disabled = true;
-                translateBtn.disabled = true;
                 recordBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
 
                 recorder.start();
                 startLevelMeter(stream);
                 if (window.api.recordingStarted) window.api.recordingStarted(jobId);
+                micStarting = false;
+                if (stopWhenStarted) stopBtn.click();
             } catch (err) {
                 console.error("Error accessing microphone:", err);
+            } finally {
+                micStarting = false;
             }
         });
 
@@ -971,6 +1358,9 @@
         });
 
         mainContent.addEventListener('scroll', updateScrollButtons);
+        // The history grows and shrinks as the panels below it change (search
+        // results, downloads, notes): keep the scroll buttons inside it.
+        new ResizeObserver(() => updateScrollButtons()).observe(mainContent);
         // Initial check for scroll button visibility
         updateScrollButtons();
 

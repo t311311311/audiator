@@ -34,7 +34,19 @@ check('paste while the next recording is still running', () => {
   assert.strictEqual(states(q), '1:done 2:recording');
   assert.strictEqual(q.active.text, 'first');
   q.pasted();
-  assert.strictEqual(states(q), '2:recording', 'pasted barrel disappears, recording goes on');
+  assert.strictEqual(states(q), '1:recording', 'pasted barrel disappears, recording goes on as no. 1');
+});
+
+check('numbers are places in the queue: after a paste 2, 3, 4 become 1, 2, 3', () => {
+  const q = new RecordQueue();
+  for (const id of ['a', 'b', 'c']) { q.start(id); q.stop(id); }
+  q.start('d');
+  q.done('a', 'one'); q.done('b', 'two'); q.done('c', 'three');
+  assert.strictEqual(states(q), '1:done 2:done 3:done 4:recording');
+  q.pasted();
+  assert.strictEqual(states(q), '1:done 2:done 3:recording', 'the next one to paste is 1 again');
+  q.remove('c');                     // e.g. it turned out empty
+  assert.strictEqual(states(q), '1:done 2:recording');
 });
 
 check('hurried user: three in a row, pasted back in spoken order', () => {
@@ -72,13 +84,15 @@ check('silence or an error removes the barrel and the next one moves up', () => 
   assert.strictEqual(q.active.text, 'two');
 });
 
-check('opening the window drops what is ready, keeps what is still going', () => {
+check('opening the window drops what is ready and renumbers what is still going', () => {
   const q = new RecordQueue();
   q.start('a'); q.stop('a'); q.done('a', 'one');
   q.start('b'); q.stop('b');
   q.start('c');
   assert.strictEqual(q.dropDone(), 1);
-  assert.strictEqual(states(q), '2:busy 3:recording');
+  assert.strictEqual(states(q), '1:busy 2:recording', 'leaving the window shows 1, 2 — not 2, 3');
+  q.stop('c');
+  assert.strictEqual(q.start('d').number, 3, 'and the count carries on from there');
 });
 
 check('numbering restarts once the queue is empty', () => {
@@ -98,6 +112,15 @@ check('more than five barrels: first three, "+N", and the last one', () => {
     { more: 3 },
     { number: 7, state: 'recording' },
   ]);
+});
+
+check('a recording whose stop never came does not hold back the queue', () => {
+  const q = new RecordQueue();
+  q.start('a');                      // its stop is lost (fast double press)
+  q.start('b'); q.stop('b');
+  assert.strictEqual(states(q), '1:busy', 'the leftover "recording" is gone');
+  q.done('b', 'text');
+  assert.strictEqual(q.active.text, 'text', 'and the next transcript is offered');
 });
 
 let failed = 0;

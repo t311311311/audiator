@@ -73,4 +73,10 @@ contextBridge.exposeInMainWorld('api', {
   onEngineStatus: (cb) => ipcRenderer.on('engine-status', (event, s) => cb(s)),
   engineRetry: () => ipcRenderer.send('engine-retry'),
   engineCancel: () => ipcRenderer.send('engine-cancel'),
+
+  // --- Translation languages on demand ---
+  translateCatalog: () => ipcRenderer.invoke('translate-catalog'), // [{ code, name, size }]
+  translateInstall: (code) => ipcRenderer.send('translate-install', code),
+  translateCancel: (code) => ipcRenderer.send('translate-cancel', code), // no code: the current download
+  translateDelete: (code) => ipcRenderer.invoke('translate-delete', code),
 });

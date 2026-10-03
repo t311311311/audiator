@@ -10,23 +10,34 @@
 // and its barrel says "Ctrl+V". Pasting removes it and the next done job takes
 // its place, so a run of recordings is pasted back in the order it was spoken.
 //
+// A barrel's number is its place in the queue: whatever takes a barrel away
+// (a paste, a visit to the window, an empty recording), the rest count from 1
+// again — the next one to paste is always 1.
+//
 // Pure state, no Electron: the main process drives it and draws the result.
 
 class RecordQueue {
   constructor() {
     this.jobs = [];
-    this.nextNumber = 1;
   }
 
   get isEmpty() { return this.jobs.length === 0; }
 
   find(id) { return this.jobs.find((j) => j.id === id) || null; }
 
-  // A new recording. Numbering restarts from 1 whenever the queue has emptied.
+  // Number every barrel by its place in the queue.
+  renumber() {
+    this.jobs.forEach((j, i) => { j.number = i + 1; });
+  }
+
+  // A new recording, numbered after the ones still waiting. There is only ever
+  // one recording, so a job still marked as recording is a leftover whose stop
+  // never arrived: drop it, or it would hold back every barrel behind it for good.
   start(id) {
-    if (this.isEmpty) this.nextNumber = 1;
-    const job = { id, number: this.nextNumber++, state: 'recording', text: null };
+    this.jobs = this.jobs.filter((j) => j.state !== 'recording');
+    const job = { id, number: 0, state: 'recording', text: null };
     this.jobs.push(job);
+    this.renumber();
     return job;
   }
 
@@ -48,6 +59,7 @@ class RecordQueue {
   remove(id) {
     const i = this.jobs.findIndex((j) => j.id === id);
     if (i >= 0) this.jobs.splice(i, 1);
+    this.renumber();
   }
 
   // The job whose text is on offer: the front one, once it is done.
@@ -59,6 +71,7 @@ class RecordQueue {
   // The user pasted the offered text. Returns the job offered next, if any.
   pasted() {
     if (this.active) this.jobs.shift();
+    this.renumber();
     return this.active;
   }
 
@@ -67,6 +80,7 @@ class RecordQueue {
   dropDone() {
     const before = this.jobs.length;
     this.jobs = this.jobs.filter((j) => j.state !== 'done');
+    this.renumber();
     return before - this.jobs.length;
   }
 

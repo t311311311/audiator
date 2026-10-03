@@ -186,11 +186,17 @@ const revealMainWindow = () => {
 // enough — a window left open behind another application still counts as
 // visible, and that hid the bar whenever the user just switched apps while
 // recording.
+// Focus is also tracked from the window events themselves (see the
+// browser-window-focus/blur handlers): the user found barrels on screen while
+// looking at the window, so "in view" no longer rests on one query alone.
+let ownFocus = null; // the window of ours that last gained focus, null after a blur
+let overlayShown = false; // last show/hide decision (logged when it changes)
+
 const mainInView = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
-  const focused = BrowserWindow.getFocusedWindow();
-  return !!focused && focused !== overlayWindow;
+  const focused = BrowserWindow.getFocusedWindow() || ownFocus;
+  return !!focused && !focused.isDestroyed() && focused !== overlayWindow;
 };
 
 // Bring the clipboard, the paste watch and the bar in line with the queue.
@@ -231,10 +237,19 @@ const refreshOverlay = () => {
       done: [tr('ov.done1'), tr('ov.done2')],
     });
   }
-  if (items.length && !inView) {
+  const show = items.length > 0 && !inView;
+  if (show !== overlayShown) {
+    // Logged so a bar seen at the wrong moment can be traced from the terminal.
+    const f = BrowserWindow.getFocusedWindow();
+    console.log(`[overlay] ${show ? 'show' : 'hide'}: barrels=${items.length} inView=${inView} ` +
+      `focused=${f === mainWindow ? 'main' : f === overlayWindow ? 'overlay' : f ? 'other-own' : 'none'} ` +
+      `tracked=${ownFocus === mainWindow ? 'main' : ownFocus ? 'other-own' : 'none'}`);
+    overlayShown = show;
+  }
+  if (show) {
     if (!overlayWindow.isVisible()) overlayWindow.showInactive();
-  } else if (overlayWindow.isVisible()) {
-    overlayWindow.hide();
+  } else {
+    overlayWindow.hide(); // always: harmless when hidden, sure when it is not
   }
 };
 
@@ -361,18 +376,37 @@ app.on('ready', async () => {
   // The model is downloaded on first use; every change of the engine's state
   // goes to the windows (progress bar in the main window, list in Settings).
   const engine = require('./engine');
+  // The engine starts on the model that last worked (whisperModelActive), so a
+  // newly chosen one still downloading — even across a restart — does not
+  // leave the app without speech recognition; the switch follows once the new
+  // model is in.
   engine.startEngine({
     packaged: app.isPackaged,
     rootDir: path.join(__dirname, '..'),
     modelsDir: path.join(app.getPath('userData'), 'models'),
-    model: store.get('whisperModel'),
+    model: store.get('whisperModelActive') || store.get('whisperModel'),
   });
   engine.onStatus((s) => {
+    if (s && s.model && s.model !== 'fixed' && s.model !== store.get('whisperModelActive')) {
+      store.set('whisperModelActive', s.model);
+    }
     BrowserWindow.getAllWindows().forEach((w) => {
       if (!w.isDestroyed()) w.webContents.send('engine-status', s);
     });
   });
-  engine.whenReady().then(() => engine.useModel(store.get('whisperModel')));
+  engine.whenReady().then(async () => {
+    const wanted = store.get('whisperModel');
+    const s = await engine.fetchStatus().catch(() => null);
+    const models = (s && s.models) || {};
+    // Nothing loaded and the chosen model is not here yet (no model has
+    // worked before, or the one that did was deleted): start on one that is
+    // on this computer; the chosen one then downloads behind it.
+    if (s && !s.model && !s.job && models[wanted] && !models[wanted].installed) {
+      const here = ['small', 'base', 'large-v3-turbo'].find((m) => models[m] && models[m].installed);
+      if (here) await engine.useModel(here);
+    }
+    engine.useModel(wanted);
+  });
   ipcMain.handle('get-engine-status', () => engine.currentStatus() || engine.fetchStatus().catch(() => null));
   ipcMain.on('engine-retry', () => engine.useModel(store.get('whisperModel')));
   // The user stopped a download: stay with the model in use (and keep it as
@@ -458,8 +492,14 @@ app.on('ready', async () => {
     syncTimer = setTimeout(refreshOverlay, 100);
   };
   ['hide', 'minimize', 'show', 'restore'].forEach((evt) => mainWindow.on(evt, scheduleSync));
-  app.on('browser-window-focus', scheduleSync);
-  app.on('browser-window-blur', scheduleSync);
+  app.on('browser-window-focus', (event, win) => {
+    if (win !== overlayWindow) ownFocus = win;
+    scheduleSync();
+  });
+  app.on('browser-window-blur', (event, win) => {
+    if (win === ownFocus) ownFocus = null;
+    scheduleSync();
+  });
 
   // Show activation window if not authenticated
   if (!authStatus.authenticated) {
@@ -775,13 +815,20 @@ app.on('ready', async () => {
   ipcMain.handle('translate', async (event, { text, targetLang, sourceLang }) => {
     try {
       const result = await api.translate(text, targetLang, sourceLang);
-      return { success: true, translatedText: result.translatedText, detectedLanguage: result.detectedLanguage };
+      return { success: true, translatedText: result.translatedText };
     } catch (e) {
       console.error('Translation failed:', e.message);
-      if (e.authRequired) showActivationWindow();
-      return { success: false, error: e.message, authRequired: !!e.authRequired };
+      // missing: the language (source or target) to install first.
+      return { success: false, error: e.message, missing: e.missing || null };
     }
   });
+
+  // Translation languages on demand: the catalog, and installing (with
+  // progress in the engine status), stopping and deleting a language.
+  ipcMain.handle('translate-catalog', () => engine.translateCatalog().catch(() => []));
+  ipcMain.on('translate-install', (event, code) => engine.installLanguage(code));
+  ipcMain.on('translate-cancel', (event, code) => engine.cancelLanguage(code));
+  ipcMain.handle('translate-delete', (event, code) => engine.deleteLanguage(code));
 
   // Get supported languages
   ipcMain.handle('get-supported-languages', async () => {
