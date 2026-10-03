@@ -1150,10 +1150,13 @@
 
         function renderTranslatePanel() {
             const t = tpState || { installed: ['en'], job: null, state: 'idle' };
-            // Favourites first, then English, then the rest by name.
+            // Favourites first, in the order they were starred (the first star
+            // on top); then English; then the rest by name.
+            const starOrder = [...tpFavorites];
             const rank = (c) => (tpFavorites.has(c) ? 0 : c === 'en' ? 1 : 2);
             const installed = (t.installed || ['en']).slice().sort((a, b) =>
-                rank(a) - rank(b) || langName(a).localeCompare(langName(b)));
+                rank(a) - rank(b) ||
+                (rank(a) === 0 ? starOrder.indexOf(a) - starOrder.indexOf(b) : langName(a).localeCompare(langName(b))));
 
             // Languages on this computer: click one to translate into it.
             tpInstalled.textContent = '';

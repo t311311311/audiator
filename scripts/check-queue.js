@@ -72,13 +72,15 @@ check('silence or an error removes the barrel and the next one moves up', () => 
   assert.strictEqual(q.active.text, 'two');
 });
 
-check('opening the window drops what is ready, keeps what is still going', () => {
+check('opening the window drops what is ready and renumbers what is still going', () => {
   const q = new RecordQueue();
   q.start('a'); q.stop('a'); q.done('a', 'one');
   q.start('b'); q.stop('b');
   q.start('c');
   assert.strictEqual(q.dropDone(), 1);
-  assert.strictEqual(states(q), '2:busy 3:recording');
+  assert.strictEqual(states(q), '1:busy 2:recording', 'leaving the window shows 1, 2 — not 2, 3');
+  q.stop('c');
+  assert.strictEqual(q.start('d').number, 3, 'and the count carries on from there');
 });
 
 check('numbering restarts once the queue is empty', () => {

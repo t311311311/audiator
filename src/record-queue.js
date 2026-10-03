@@ -67,11 +67,19 @@ class RecordQueue {
   }
 
   // The user opened the window, where every transcript is in the history:
-  // nothing is left waiting to be pasted. Returns how many were dropped.
+  // nothing is left waiting to be pasted. What is still going on (recording,
+  // transcribing) starts a fresh count from 1, so leaving the window again
+  // shows barrels 1, 2 rather than carrying on from 2, 3. Returns how many
+  // were dropped.
   dropDone() {
     const before = this.jobs.length;
     this.jobs = this.jobs.filter((j) => j.state !== 'done');
-    return before - this.jobs.length;
+    const dropped = before - this.jobs.length;
+    if (dropped) {
+      this.jobs.forEach((j, i) => { j.number = i + 1; });
+      this.nextNumber = this.jobs.length + 1;
+    }
+    return dropped;
   }
 
   // What the bar shows. Up to `max` barrels as they are; beyond that the first
