@@ -5,8 +5,9 @@
   <style>
     html, body {
       margin: 0; height: 100%; background: transparent; overflow: hidden;
-      -webkit-user-select: none; cursor: pointer;
+      -webkit-user-select: none; cursor: grab; /* click: open the window; drag: move */
     }
+    body.dragging { cursor: grabbing; }
     /* One barrel per recording not yet dealt with, oldest on the left. The
        main process sizes the window to fit them; a lone barrel looks exactly
        like the single bar did before. */
@@ -118,6 +119,7 @@
     const rowEl = document.getElementById('row');
     let drawn = '';
     function draw(state) {
+      if (state.hint) rowEl.title = state.hint; // "Нажмите — открыть окно. Перетащите — передвинуть"
       const key = JSON.stringify([state.items, state.numbered, state.busy, state.done]);
       if (key === drawn) return;
       drawn = key;
@@ -159,16 +161,38 @@
       window.overlay.onState(draw);
     }
 
-    // Clicking the bar hands control back to the main window. mousedown as well
-    // as click: some window styles deliver one but not the other. The main
-    // process also treats focus as a click, so this is belt and braces.
-    function handoff(e) {
+    // A click on the bar hands control back to the main window; pressing and
+    // moving drags the bar somewhere else on the screen (it can cover what the
+    // user needs to see). Told apart by distance: under 4 px it is a click.
+    // The pointer is captured, so a fast drag that outruns the bar still
+    // follows; positions are in screen pixels, which the moving window does
+    // not change.
+    let press = null; // { x, y, dragging }
+    rowEl.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !window.overlay) return;
       e.preventDefault();
-      if (window.overlay && window.overlay.clicked) window.overlay.clicked();
-      else console.error('overlay bridge missing - preload did not load');
+      press = { x: e.screenX, y: e.screenY, dragging: false };
+      try { rowEl.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
+      window.overlay.dragStart();
+    });
+    rowEl.addEventListener('pointermove', (e) => {
+      if (!press) return;
+      const dx = e.screenX - press.x, dy = e.screenY - press.y;
+      if (!press.dragging && Math.hypot(dx, dy) < 4) return;
+      press.dragging = true;
+      document.body.classList.add('dragging');
+      window.overlay.dragMove(dx, dy);
+    });
+    function release() {
+      if (!press) return;
+      const dragged = press.dragging;
+      press = null;
+      document.body.classList.remove('dragging');
+      if (dragged) window.overlay.dragEnd();
+      else window.overlay.clicked();
     }
-    rowEl.addEventListener('mousedown', handoff);
-    rowEl.addEventListener('click', handoff);
+    rowEl.addEventListener('pointerup', release);
+    rowEl.addEventListener('pointercancel', () => { if (press && press.dragging) window.overlay.dragEnd(); press = null; document.body.classList.remove('dragging'); });
   </script>
 </body>
 </html>

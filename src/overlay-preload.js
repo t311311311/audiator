@@ -9,4 +9,8 @@ contextBridge.exposeInMainWorld('overlay', {
   // the user's language.
   onState: (cb) => ipcRenderer.on('overlay-state', (event, state) => cb(state)),
   clicked: () => ipcRenderer.send('overlay-clicked'),
+  // Moving the bar: how far the pointer is from where it was pressed.
+  dragStart: () => ipcRenderer.send('overlay-drag-start'),
+  dragMove: (dx, dy) => ipcRenderer.send('overlay-drag-move', { dx, dy }),
+  dragEnd: () => ipcRenderer.send('overlay-drag-end'),
 });

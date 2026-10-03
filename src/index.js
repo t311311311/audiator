@@ -113,13 +113,25 @@ if (uiohook) {
   });
 }
 
+// Where the bar goes for a given width. By default bottom centre of the main
+// screen, just above the taskbar; once the user has dragged it, around the
+// centre they left it at (stored as overlayPos { cx, y }), so it grows and
+// shrinks in place as barrels come and go. Always kept inside a screen.
+const overlayBoundsFor = (width) => {
+  const pos = store.get('overlayPos');
+  if (!pos) {
+    const wa = screen.getPrimaryDisplay().workArea;
+    return { x: wa.x + Math.round((wa.width - width) / 2), y: wa.y + wa.height - BAR_H - 16, width, height: BAR_H };
+  }
+  const wa = screen.getDisplayNearestPoint({ x: Math.round(pos.cx), y: Math.round(pos.y) }).workArea;
+  const x = Math.min(Math.max(Math.round(pos.cx - width / 2), wa.x), wa.x + wa.width - width);
+  const y = Math.min(Math.max(Math.round(pos.y), wa.y), wa.y + wa.height - BAR_H);
+  return { x, y, width, height: BAR_H };
+};
+
 const createOverlay = () => {
-  const width = BARREL_W, height = BAR_H; // resized to fit the barrels as they come and go
-  const area = screen.getPrimaryDisplay().workAreaSize;
   overlayWindow = new BrowserWindow({
-    width, height,
-    x: Math.round((area.width - width) / 2),
-    y: area.height - height - 16, // bottom centre, just above the taskbar
+    ...overlayBoundsFor(BARREL_W), // resized to fit the barrels as they come and go
     frame: false,
     transparent: true,
     resizable: false,
@@ -148,17 +160,9 @@ const createOverlay = () => {
   overlayWindow.loadFile(path.join(__dirname, 'recorder-overlay.html'));
   overlayWindow.webContents.on('did-finish-load', () => refreshOverlay());
   overlayWindow.on('closed', () => { overlayWindow = null; });
-
-  // Primary path for "user tapped the bar". The overlay is always shown with
-  // showInactive() and is kept out of the taskbar and Alt-Tab, so the only way
-  // it can gain focus is a real click on it. Acting on focus works even when
-  // the click never reaches the page, which is what happened before.
-  overlayWindow.on('focus', () => {
-    if (!overlayWindow.isVisible()) return; // ignore focus while hidden
-    console.log('[overlay] focused (clicked) -> revealing main window');
-    overlayWindow.hide();
-    revealMainWindow();
-  });
+  // A press on the bar no longer opens the window by itself (it used to, on
+  // focus): the page tells a click (open the window) from a drag (move the
+  // bar) and reports which — see the overlay-* handlers below.
 };
 
 // Bring the main window to the front and give it focus.
@@ -223,18 +227,13 @@ const refreshOverlay = () => {
     const barrelW = numbered ? BARREL_W_NUMBERED : BARREL_W;
     const width = items.reduce((w, it) => w + (it.more ? MORE_W : barrelW), 0) +
                   BARREL_GAP * (items.length - 1);
-    if (overlayWindow.getSize()[0] !== width) {
-      const area = screen.getPrimaryDisplay().workAreaSize;
-      overlayWindow.setBounds({
-        x: Math.round((area.width - width) / 2), y: area.height - BAR_H - 16,
-        width, height: BAR_H,
-      });
-    }
+    if (overlayWindow.getSize()[0] !== width) overlayWindow.setBounds(overlayBoundsFor(width));
     overlayWindow.webContents.send('overlay-state', {
       items,
       numbered,
       busy: [tr('ov.busy1'), tr('ov.busy2')],
       done: [tr('ov.done1'), tr('ov.done2')],
+      hint: tr('ov.hint'),
     });
   }
   const show = items.length > 0 && !inView;
@@ -480,6 +479,34 @@ app.on('ready', async () => {
     console.log('[overlay] clicked -> revealing main window');
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
     revealMainWindow();
+  });
+  // Dragging the bar. The page sends how far the pointer has moved since the
+  // press (screen coordinates), the bar follows, and its new place is kept.
+  // Pressing the bar took the focus from the application the user was typing
+  // in; give it back, or the next Ctrl+V would land on the bar.
+  // Each move sets the size too: moving with setPosition alone let Windows
+  // round the size up at 125 % scaling, so the bar grew a pixel with every
+  // step and the barrels "dripped" downwards while dragged.
+  let dragFrom = null;
+  ipcMain.on('overlay-drag-start', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) dragFrom = overlayWindow.getBounds();
+  });
+  ipcMain.on('overlay-drag-move', (event, { dx, dy }) => {
+    if (!dragFrom || !overlayWindow || overlayWindow.isDestroyed()) return;
+    overlayWindow.setBounds({
+      x: Math.round(dragFrom.x + dx), y: Math.round(dragFrom.y + dy),
+      width: dragFrom.width, height: BAR_H,
+    });
+  });
+  ipcMain.on('overlay-drag-end', () => {
+    const from = dragFrom;
+    dragFrom = null;
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    const { x, y } = overlayWindow.getBounds();
+    const w = from ? from.width : overlayWindow.getBounds().width;
+    store.set('overlayPos', { cx: x + w / 2, y });
+    overlayWindow.setBounds(overlayBoundsFor(w)); // exact size; back inside the screen if dragged past an edge
+    overlayWindow.blur();
   });
   // Hiding/minimising the window while recording hands over to the overlay,
   // and so does switching to another application. Focus moving between our own
