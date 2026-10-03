@@ -111,6 +111,14 @@
             overflow-wrap: break-word; /* For modern browsers */
         }
 
+        /* Free plan: time left today, in the middle of the title bar; red once
+           it is used up. */
+        .minutes-left {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            font-size: 12px; opacity: 0.8; white-space: nowrap;
+        }
+        .minutes-left.empty { color: var(--record-color); opacity: 1; }
+
         /* Speech model downloading / loading / failed: a strip under the title
            bar; the history moves down while it is there. */
         .engine-banner {
@@ -446,6 +454,8 @@
         <div>
             <div class="title-bar-button" id="menu-btn">&#9776;</div>
         </div>
+        <!-- Free plan: transcription time left today (unlimited plans: hidden). -->
+        <div id="minutes-left" class="minutes-left hidden"></div>
         <div style="display: flex;">
             <div class="title-bar-button" id="minimize-btn" style="font-size: 10px;">&#128469;</div>
             <div class="title-bar-button" id="close-btn">&#10005;</div>
@@ -550,6 +560,7 @@
                 });
                 fitTranslateLabel();
                 renderEngine(lastEngine); // its text is built in code, not marked up
+                renderAccount();
             }).catch((e) => console.error('i18n load failed', e));
         }
 
@@ -601,12 +612,39 @@
         // Short-lived confirmation inside the window. When the window is hidden
         // (the usual hotkey flow) the overlay shows the same message instead.
         let _toastTimer = null;
-        function showToast(message) {
+        function showToast(message, ms = 2200) {
             const el = document.getElementById('toast');
             el.textContent = message;
             el.classList.add('show');
             clearTimeout(_toastTimer);
-            _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+            _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+        }
+
+        // --- Account: transcription time left today (free plan) ---
+        // The main process keeps the count (account.js) and sends every change.
+        let acct = null;
+        function formatLeft(seconds) {
+            const m = Math.floor(seconds / 60), h = Math.floor(m / 60);
+            if (!h) return `${m} ${S('unit.min')}`;
+            return m % 60 ? `${h} ${S('unit.h')} ${m % 60} ${S('unit.min')}` : `${h} ${S('unit.h')}`;
+        }
+        function renderAccount(v) {
+            if (v) acct = v;
+            const el = document.getElementById('minutes-left');
+            const show = !!(acct && acct.signedIn && acct.limited);
+            el.classList.toggle('hidden', !show);
+            if (!show) return;
+            el.textContent = S('account.leftToday').replace('{t}', formatLeft(acct.remaining));
+            el.classList.toggle('empty', acct.remaining <= 0);
+        }
+        // No minutes left today: say so instead of recording what could not
+        // be transcribed.
+        function limitReached() {
+            return !!(acct && acct.signedIn && acct.limited && acct.remaining <= 0);
+        }
+        if (window.api.onAccountUpdated) {
+            window.api.onAccountUpdated(renderAccount);
+            window.api.getAccount().then(renderAccount).catch(() => {});
         }
 
         // --- Speech model download / load (first run, or a new quality) ---
@@ -850,7 +888,9 @@
                 const result = blob.size ? await window.api.transcribe(blob)
                                          : { success: true, text: '' };
                 if (!result.success) {
-                    throw new Error(result.error || 'Transcription failed');
+                    // reason: the account's own refusal (limit, signed out),
+                    // already a sentence for the user.
+                    throw Object.assign(new Error(result.error || 'Transcription failed'), { reason: result.reason });
                 }
                 originalTextField.classList.remove('pending');
                 originalTextField.textContent = result.text || S('status.noText');
@@ -871,7 +911,7 @@
                 console.error('Transcription error:', error);
                 originalTextField.classList.remove('pending');
                 // Detailed logging of error information
-                const errorMessage = `${S('error.transcribe')}: ${error.message}`;
+                const errorMessage = error.reason ? error.message : `${S('error.transcribe')}: ${error.message}`;
                 originalTextField.textContent = errorMessage;
                 originalTextField.dataset.state = 'error';
 
@@ -1308,6 +1348,11 @@
         let stopWhenStarted = false; // the user asked to stop before it was open
         recordBtn.addEventListener('click', async () => {
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
+            if (limitReached()) {
+                window.api.limitReached(); // brings this window up when the hotkey was used
+                showToast(S('error.limit'), 5000);
+                return;
+            }
             micStarting = true;
             stopWhenStarted = false;
             try {

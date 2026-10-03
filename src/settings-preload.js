@@ -34,4 +34,8 @@ contextBridge.exposeInMainWorld('settingsApi', {
   getEngineStatus: () => ipcRenderer.invoke('get-engine-status'),
   onEngineStatus: (cb) => ipcRenderer.on('engine-status', (event, s) => cb(s)),
   deleteModel: (name) => ipcRenderer.invoke('engine-delete', name),
+  // The account section: who is signed in, the plan, minutes left today.
+  getAccount: () => ipcRenderer.invoke('account-get'),
+  onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
+  signOut: (reason) => ipcRenderer.send('account-sign-out', reason), // 'user' | 'switch'
 });

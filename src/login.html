@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Audiator</title>
+    <!-- Sign-in by a code sent to the email (step 4 of docs/PRODUCT-PLAN.md).
+         No password: the first sign-in with an address creates the account.
+         The app does not work without it, so closing this window quits. -->
+    <style>
+        :root {
+            --bg-color: #282c34;
+            --primary-color: #3e4452;
+            --text-color: #abb2bf;
+            --border-color: #4b5263;
+            --accent-color: #61afef;
+            --error-color: #e06c75;
+        }
+        body.light-theme {
+            --bg-color: #fafafa;
+            --primary-color: #e4e6eb;
+            --text-color: #1c1e21;
+            --border-color: #d1d5db;
+            --error-color: #c0392b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: flex-start; /* from the top: the card does not jump between the steps */
+            justify-content: center;
+            padding-top: 36px;
+            overflow: hidden;
+            user-select: none;
+        }
+        .card {
+            width: 100%;
+            padding: 0 32px;
+            text-align: center;
+        }
+        .logo svg { width: 44px; height: 44px; fill: var(--accent-color); }
+        h1 { font-size: 19px; margin: 8px 0 6px; }
+        .subtitle { font-size: 12.5px; opacity: 0.75; line-height: 1.4; margin: 0 0 18px; }
+        .notice {
+            font-size: 12.5px; margin: 0 0 14px; padding: 7px 10px; border-radius: 6px;
+            background: var(--primary-color); border-left: 3px solid var(--accent-color); text-align: left;
+        }
+        input {
+            width: 100%;
+            font: inherit; font-size: 15px;
+            padding: 9px 11px;
+            color: var(--text-color);
+            background: var(--primary-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            outline: none;
+            user-select: text;
+        }
+        input:focus { border-color: var(--accent-color); }
+        input.code { text-align: center; letter-spacing: 8px; font-size: 20px; }
+        .primary {
+            width: 100%;
+            margin-top: 10px;
+            padding: 9px;
+            font: inherit; font-size: 14px; font-weight: 600;
+            color: #fff;
+            background: var(--accent-color);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .primary:hover:not(:disabled) { filter: brightness(1.08); }
+        .primary:disabled { opacity: 0.55; cursor: default; }
+        .sent { font-size: 12.5px; opacity: 0.85; margin: 0 0 10px; line-height: 1.4; }
+        .sent b { opacity: 1; user-select: text; word-break: break-all; }
+        .links { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12.5px; }
+        .link {
+            background: none; border: none; padding: 0; font: inherit;
+            color: var(--accent-color); cursor: pointer;
+        }
+        .link:disabled { color: var(--text-color); opacity: 0.55; cursor: default; }
+        .link:hover:not(:disabled) { text-decoration: underline; }
+        .error { color: var(--error-color); font-size: 12.5px; min-height: 18px; margin-top: 10px; line-height: 1.4; }
+        .free { font-size: 12px; opacity: 0.6; margin-top: 14px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
+                <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+            </svg>
+        </div>
+        <h1 data-i18n="login.title">Вход в Audiator</h1>
+        <p class="subtitle" data-i18n="login.subtitle"></p>
+        <div class="notice hidden" id="notice"></div>
+
+        <!-- Step 1: the email. -->
+        <form id="email-step" autocomplete="on">
+            <input id="email" type="email" autocomplete="email" spellcheck="false" placeholder="Email" data-i18n-placeholder="login.email" />
+            <button class="primary" id="get-code" type="submit" data-i18n="login.getCode">Получить код</button>
+        </form>
+
+        <!-- Step 2: the code from the letter. -->
+        <form id="code-step" class="hidden" autocomplete="off">
+            <p class="sent"><span data-i18n="login.codeSent">Код отправлен на</span> <b id="sent-to"></b></p>
+            <input id="code" class="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" />
+            <button class="primary" id="sign-in" type="submit" data-i18n="login.signIn">Войти</button>
+            <div class="links">
+                <button class="link" id="other-email" type="button" data-i18n="login.changeEmail">Другой email</button>
+                <button class="link" id="resend" type="button"></button>
+            </div>
+        </form>
+
+        <div class="error" id="error"></div>
+        <div class="free" data-i18n="login.free"></div>
+    </div>
+
+    <script>
+        let STR = {};
+        const S = (key, vars) => {
+            let s = STR[key] !== undefined ? STR[key] : key;
+            for (const [k, v] of Object.entries(vars || {})) s = s.split(`{${k}}`).join(v);
+            return s;
+        };
+        const $ = (id) => document.getElementById(id);
+        const RESEND_AFTER = 30; // seconds before another code may be asked for
+        let email = '';
+        let resendLeft = 0, resendTimer = null;
+
+        // A server refusal in the user's words; the server's own extras (tries
+        // left, the masked email of the other account) go into the sentence.
+        function errorText(r) {
+            const key = `login.err.${r.error}`;
+            if (STR[key] === undefined) return S('login.err.server');
+            return S(key, { n: r.attempts_left != null ? r.attempts_left : '', email: r.other_email || '' });
+        }
+        function showError(text) { $('error').textContent = text || ''; }
+
+        function busy(button, on) {
+            button.disabled = on;
+            document.body.style.cursor = on ? 'progress' : '';
+        }
+
+        function renderResend() {
+            const b = $('resend');
+            b.disabled = resendLeft > 0;
+            b.textContent = resendLeft > 0 ? S('login.resendIn', { n: resendLeft }) : S('login.resend');
+        }
+        function startResendCountdown() {
+            resendLeft = RESEND_AFTER;
+            clearInterval(resendTimer);
+            resendTimer = setInterval(() => {
+                resendLeft -= 1;
+                if (resendLeft <= 0) clearInterval(resendTimer);
+                renderResend();
+            }, 1000);
+            renderResend();
+        }
+
+        function showStep(step) {
+            $('email-step').classList.toggle('hidden', step !== 'email');
+            $('code-step').classList.toggle('hidden', step !== 'code');
+            if (step === 'code') $('notice').classList.add('hidden'); // read by now; room for errors
+            (step === 'email' ? $('email') : $('code')).focus();
+        }
+
+        async function sendCode(button) {
+            showError('');
+            busy(button, true);
+            try {
+                const r = await window.loginApi.requestCode(email);
+                if (!r.ok) { showError(errorText(r)); return false; }
+                $('sent-to').textContent = email;
+                $('code').value = '';
+                showStep('code');
+                startResendCountdown();
+                return true;
+            } finally {
+                busy(button, false);
+            }
+        }
+
+        $('email-step').addEventListener('submit', (e) => {
+            e.preventDefault();
+            email = $('email').value.trim().toLowerCase();
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showError(S('login.err.bad_email')); return; }
+            sendCode($('get-code'));
+        });
+
+        $('resend').addEventListener('click', () => sendCode($('resend')));
+        $('other-email').addEventListener('click', () => {
+            clearInterval(resendTimer);
+            showError('');
+            showStep('email');
+        });
+
+        async function signIn() {
+            const code = $('code').value.replace(/\D/g, '');
+            if (code.length !== 6) return;
+            showError('');
+            busy($('sign-in'), true);
+            try {
+                const r = await window.loginApi.verify(email, code);
+                // On success the main process closes this window.
+                if (!r.ok) {
+                    showError(errorText(r));
+                    $('code').select();
+                }
+            } finally {
+                busy($('sign-in'), false);
+            }
+        }
+        $('code-step').addEventListener('submit', (e) => { e.preventDefault(); signIn(); });
+        // Digits only; the sixth one signs in by itself.
+        $('code').addEventListener('input', () => {
+            const el = $('code');
+            const digits = el.value.replace(/\D/g, '').slice(0, 6);
+            if (el.value !== digits) el.value = digits;
+            if (digits.length === 6) signIn();
+        });
+
+        async function init() {
+            const [i18n, settings, account] = await Promise.all([
+                window.loginApi.getI18n(), window.loginApi.getSettings(), window.loginApi.getAccount(),
+            ]);
+            STR = i18n.strings;
+            document.documentElement.lang = i18n.lang;
+            document.title = S('login.windowTitle');
+            document.querySelectorAll('[data-i18n]').forEach((el) => {
+                if (STR[el.dataset.i18n] !== undefined) el.textContent = STR[el.dataset.i18n];
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+                if (STR[el.dataset.i18nPlaceholder] !== undefined) el.placeholder = STR[el.dataset.i18nPlaceholder];
+            });
+            if (settings && settings.theme === 'light') document.body.classList.add('light-theme');
+            // Sent back here by the server rather than by the user.
+            const why = account && account.reason;
+            const notice = why === 'session_expired' ? S('login.sessionExpired')
+                         : why === 'blocked' ? S('login.err.blocked') : '';
+            $('notice').textContent = notice;
+            $('notice').classList.toggle('hidden', !notice);
+            if (account && account.lastEmail) $('email').value = account.lastEmail;
+            renderResend();
+            showStep('email');
+        }
+        init().catch((e) => console.error('login init failed', e));
+    </script>
+</body>
+</html>
