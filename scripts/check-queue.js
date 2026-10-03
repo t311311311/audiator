@@ -34,19 +34,27 @@ check('paste while the next recording is still running', () => {
   assert.strictEqual(states(q), '1:done 2:recording');
   assert.strictEqual(q.active.text, 'first');
   q.pasted();
-  assert.strictEqual(states(q), '1:recording', 'pasted barrel disappears, recording goes on as no. 1');
+  assert.strictEqual(states(q), '2:recording', 'pasted barrel disappears, recording goes on as no. 2');
 });
 
-check('numbers are places in the queue: after a paste 2, 3, 4 become 1, 2, 3', () => {
+check('numbers stay while pasting elsewhere: 1-6, three pasted, 4 5 6 remain', () => {
   const q = new RecordQueue();
-  for (const id of ['a', 'b', 'c']) { q.start(id); q.stop(id); }
-  q.start('d');
-  q.done('a', 'one'); q.done('b', 'two'); q.done('c', 'three');
-  assert.strictEqual(states(q), '1:done 2:done 3:done 4:recording');
-  q.pasted();
-  assert.strictEqual(states(q), '1:done 2:done 3:recording', 'the next one to paste is 1 again');
-  q.remove('c');                     // e.g. it turned out empty
-  assert.strictEqual(states(q), '1:done 2:recording');
+  for (const id of ['a', 'b', 'c', 'd', 'e']) { q.start(id); q.stop(id); }
+  q.start('f');
+  ['a', 'b', 'c', 'd', 'e'].forEach((id) => q.done(id, id));
+  q.pasted(); q.pasted(); q.pasted();
+  assert.strictEqual(states(q), '4:done 5:done 6:recording');
+});
+
+check('a visit to the window renumbers from 1 even when nothing was ready', () => {
+  const q = new RecordQueue();
+  q.start('a'); q.stop('a'); q.done('a', 'one');
+  q.start('b'); q.stop('b');
+  q.start('c');
+  q.pasted();                        // 1 pasted elsewhere: 2 busy, 3 recording
+  assert.strictEqual(states(q), '2:busy 3:recording');
+  assert.strictEqual(q.dropDone(), 0, 'nothing ready to drop');
+  assert.strictEqual(states(q), '1:busy 2:recording', 'still counts from 1 again');
 });
 
 check('hurried user: three in a row, pasted back in spoken order', () => {

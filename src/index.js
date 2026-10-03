@@ -484,21 +484,28 @@ app.on('ready', async () => {
   // press (screen coordinates), the bar follows, and its new place is kept.
   // Pressing the bar took the focus from the application the user was typing
   // in; give it back, or the next Ctrl+V would land on the bar.
+  // Each move sets the size too: moving with setPosition alone let Windows
+  // round the size up at 125 % scaling, so the bar grew a pixel with every
+  // step and the barrels "dripped" downwards while dragged.
   let dragFrom = null;
   ipcMain.on('overlay-drag-start', () => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) dragFrom = overlayWindow.getPosition();
+    if (overlayWindow && !overlayWindow.isDestroyed()) dragFrom = overlayWindow.getBounds();
   });
   ipcMain.on('overlay-drag-move', (event, { dx, dy }) => {
     if (!dragFrom || !overlayWindow || overlayWindow.isDestroyed()) return;
-    overlayWindow.setPosition(Math.round(dragFrom[0] + dx), Math.round(dragFrom[1] + dy));
+    overlayWindow.setBounds({
+      x: Math.round(dragFrom.x + dx), y: Math.round(dragFrom.y + dy),
+      width: dragFrom.width, height: BAR_H,
+    });
   });
   ipcMain.on('overlay-drag-end', () => {
+    const from = dragFrom;
     dragFrom = null;
     if (!overlayWindow || overlayWindow.isDestroyed()) return;
-    const [x, y] = overlayWindow.getPosition();
-    const [w] = overlayWindow.getSize();
+    const { x, y } = overlayWindow.getBounds();
+    const w = from ? from.width : overlayWindow.getBounds().width;
     store.set('overlayPos', { cx: x + w / 2, y });
-    overlayWindow.setBounds(overlayBoundsFor(w)); // back inside the screen if dragged past an edge
+    overlayWindow.setBounds(overlayBoundsFor(w)); // exact size; back inside the screen if dragged past an edge
     overlayWindow.blur();
   });
   // Hiding/minimising the window while recording hands over to the overlay,
