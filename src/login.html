@@ -92,7 +92,17 @@
             display: flex; align-items: flex-start; gap: 7px; margin-top: 10px;
             font-size: 12.5px; text-align: left; line-height: 1.35; cursor: pointer;
         }
-        .accept input { width: auto; margin: 1px 0 0; accent-color: var(--accent-color); cursor: pointer; }
+        .accept input {
+            -webkit-appearance: none; appearance: none; flex: 0 0 auto; cursor: pointer;
+            width: 14px; height: 14px; margin: 1px 0 0; padding: 0; border-radius: 3px;
+            border: 1.5px solid var(--text-color); background: transparent; opacity: 0.7;
+            display: inline-grid; place-content: center;
+        }
+        .accept input:checked { background: var(--accent-color); border-color: var(--accent-color); opacity: 1; }
+        .accept input:checked::after {
+            content: ''; width: 3px; height: 7px; margin-top: -2px;
+            border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+        }
         .hidden { display: none; }
     </style>
 </head>

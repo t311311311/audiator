@@ -51,6 +51,7 @@ const STRINGS = {
     'title.saveAudioText': 'Save the latest audio and text',
     'title.translate': 'Translate',
     'title.copy': 'Copy',
+    'title.copyLatest': 'Copy the latest',
     // main window — history and status
     'history.header': '--- History ---',
     'history.original': 'Original',
@@ -222,6 +223,7 @@ const STRINGS = {
     'title.saveAudioText': 'Сохранить последнее аудио и текст',
     'title.translate': 'Перевести',
     'title.copy': 'Копировать',
+    'title.copyLatest': 'Копировать последнее',
     'history.header': '--- История ---',
     'history.original': 'Оригинал',
     'history.translation': 'Перевод',
@@ -389,6 +391,7 @@ const STRINGS = {
     'title.saveAudioText': '保存最新录音和文本',
     'title.translate': '翻译',
     'title.copy': '复制',
+    'title.copyLatest': '复制最新一条',
     'history.header': '--- 历史记录 ---',
     'history.original': '原文',
     'history.translation': '译文',
