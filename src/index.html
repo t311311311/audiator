@@ -113,11 +113,13 @@
 
         /* Free plan: time left and when it renews, between the menu and the
            window buttons; red once it is used up. Cut with "…" if a language
-           makes it too long (the whole line on hover). */
+           makes it too long. It is part of the title bar the window is moved
+           by: it spans nearly all of it, and marking it "no-drag" (for a
+           tooltip) left the window impossible to move. */
         .minutes-left {
             position: absolute; left: 40px; right: 64px; text-align: center;
             font-size: 12px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            -webkit-app-region: no-drag; cursor: default; /* or its tooltip never shows */
+            -webkit-app-region: drag; pointer-events: none;
         }
         .minutes-left.empty { color: var(--record-color); opacity: 1; }
 
