@@ -24,7 +24,7 @@
             margin: 0;
             padding: 20px;
             user-select: none;
-            overflow: hidden;
+            overflow-y: auto; /* only when the screen is too small for the window */
             display: flex;
             flex-direction: column;
             height: calc(100vh - 40px);
@@ -112,7 +112,9 @@
         .account-left.empty { color: #e06c75; }
         .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
         .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
-        .settings-version { margin-right: auto; font-size: 0.8em; }
+        .settings-version { margin-right: auto; font-size: 0.8em; line-height: 1.5; }
+        .settings-version a { color: var(--accent-color); text-decoration: none; }
+        .settings-version a:hover { text-decoration: underline; }
         .settings-actions {
             display: flex;
             align-items: center;
@@ -216,7 +218,8 @@
                  under them instead of keeping a strip for it at the bottom. -->
             <div class="settings-actions">
                 <div class="settings-version">
-                    <span data-i18n="settings.version">Версия:</span> <span id="app-version"></span>
+                    <div><span data-i18n="settings.version">Версия:</span> <span id="app-version"></span></div>
+                    <a href="#" id="terms-link" data-i18n="login.termsLink">Правила использования</a>
                 </div>
                 <button class="action-button" id="cancel-settings-btn" data-i18n="settings.cancel">Отмена</button>
                 <button class="action-button" id="save-settings-btn" data-i18n="settings.save">Сохранить</button>
@@ -473,22 +476,21 @@
                     document.getElementById('account-email').title = account.email;
                     document.getElementById('account-plan').textContent = strings[`plan.${account.plan}`] || account.plan;
                     const left = document.getElementById('account-left');
-                    let text = '', tip = '';
+                    let text = '';
                     const empty = !!account.limited && account.remaining <= 0;
                     if (account.limited) {
-                        // New minutes at local midnight: said on hover, or in
-                        // place of the count once it is used up.
-                        const midnight = new Date();
-                        midnight.setHours(24, 0, 0, 0);
-                        tip = (strings['account.resetIn'] || '')
-                            .replace('{t}', formatLeft(Math.ceil((midnight - Date.now()) / 60000) * 60));
-                        text = empty ? tip : (strings['account.leftToday'] || '').replace('{t}', formatLeft(account.remaining));
+                        // Left in the account's own 24 hours, and when they
+                        // renew (once the first use has started them).
+                        const left = formatLeft(account.remaining);
+                        text = account.resetsAt
+                            ? (strings['account.leftReset'] || '').replace('{left}', left).replace('{t}',
+                                formatLeft(Math.max(60, Math.ceil((account.resetsAt - Date.now()) / 60000) * 60)))
+                            : (strings['account.left'] || '').replace('{left}', left);
                     } else if (account.plan === 'commercial' && account.paidUntil) {
                         const d = new Date(account.paidUntil).toLocaleDateString(document.documentElement.lang);
                         text = (strings['account.paidUntil'] || '').replace('{d}', d);
                     }
                     left.textContent = text;
-                    left.title = empty ? '' : tip;
                     left.hidden = !text;
                     left.classList.toggle('empty', empty);
                 }
@@ -497,6 +499,10 @@
                 window.settingsApi.onAccountUpdated(renderAccount);
                 // Signing out is also how to change accounts: the sign-in window
                 // comes up and takes any email.
+                document.getElementById('terms-link').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.settingsApi.openTerms();
+                });
                 document.getElementById('sign-out-btn').addEventListener('click', () => {
                     if (confirm(strings['account.confirmSignOut'])) window.settingsApi.signOut();
                 });

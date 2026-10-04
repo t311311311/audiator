@@ -55,6 +55,13 @@ class User(Base):
     code_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     code_expires: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     code_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    # The free plan's 24 hours: each account's own, from its first use after
+    # the last ones ran out (not a calendar day).
+    window_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    window_used: Mapped[int] = mapped_column(Integer, default=0)       # seconds in that window
+    # Which version of the rules the user accepted at sign-in, and when.
+    terms_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    terms_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class Device(Base):
@@ -95,3 +102,24 @@ class Payment(Base):
 
 def init_accounts_db() -> None:
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
+
+
+def _add_missing_columns(eng) -> None:
+    """create_all makes new tables but leaves existing ones as they are: a
+    column added to a model since the database was made is added here, so an
+    existing accounts.db keeps working (and keeps its data)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(eng)
+    with eng.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                ddl = col.type.compile(dialect=eng.dialect)
+                default = col.default.arg if col.default is not None and not callable(col.default.arg) else None
+                extra = f" DEFAULT {int(default) if isinstance(default, bool) else default!r}" if default is not None else ""
+                conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}{extra}'))

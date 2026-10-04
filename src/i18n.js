@@ -115,7 +115,7 @@ const STRINGS = {
     'login.resend': 'Send again',
     'login.resendIn': 'Send again in {n} s',
     'login.changeEmail': 'Another email',
-    'login.free': 'Free: 2 hours of transcription a day',
+    'login.free': 'Free: 2 hours of transcription every 24 hours',
     'login.sessionExpired': 'Your session has expired. Please sign in again.',
     'login.err.bad_email': 'That does not look like an email address',
     'login.err.disposable_email': 'Temporary mailboxes are not accepted. Please use your own email.',
@@ -130,19 +130,23 @@ const STRINGS = {
     'login.err.network': 'No connection to the server. Check the internet.',
     'login.err.server': 'Server error. Please try again.',
     'account.title': 'Account',
+    'account.left': '{left} left',
+    'account.leftReset': '{left} left, renews in {t}',
+    'login.accept': 'I have read and accept the',
+    'login.termsLink': 'Terms of use',
+    'login.needTerms': 'Please accept the Terms of use first',
+    'login.err.terms_not_accepted': 'The Terms of use have changed. Please open them and accept again.',
+    'terms.windowTitle': 'Terms of use — Audiator',
     'plan.free': 'Free plan',
     'plan.commercial': 'Commercial plan',
     'plan.unlimited': 'Unlimited',
     'plan.admin': 'Administrator',
-    'account.leftToday': 'Left today: {t}',
-    'account.resetIn': 'New 2 hours at midnight, in {t}',
-    'error.limitIn': 'The free 2 hours for today are used up. New ones in {t}, at midnight.',
     'account.paidUntil': 'Paid until {d}',
     'account.signOut': 'Sign out',
     'account.confirmSignOut': 'Sign out? Audiator will not work until you sign in again.',
     'unit.h': 'h',
     'unit.min': 'min',
-    'error.limit': 'The free 2 hours for today are used up. They come back at midnight.',
+    'error.limit': 'The free 2 hours are used up. They renew in {t}.',
     'error.notSignedIn': 'Sign in to transcribe',
 
     // recording overlay (two short lines: the bar is 96px wide)
@@ -256,7 +260,7 @@ const STRINGS = {
     'login.resend': 'Отправить ещё раз',
     'login.resendIn': 'Отправить ещё раз через {n} с',
     'login.changeEmail': 'Другой email',
-    'login.free': 'Бесплатно: 2 часа транскрибации в день',
+    'login.free': 'Бесплатно: 2 часа распознавания каждые 24 часа',
     'login.sessionExpired': 'Сессия истекла. Войдите снова.',
     'login.err.bad_email': 'Это не похоже на адрес почты',
     'login.err.disposable_email': 'Временные почтовые ящики не принимаются. Укажите свою почту.',
@@ -271,19 +275,23 @@ const STRINGS = {
     'login.err.network': 'Нет связи с сервером. Проверьте интернет.',
     'login.err.server': 'Ошибка сервера. Попробуйте ещё раз.',
     'account.title': 'Аккаунт',
+    'account.left': 'Осталось {left}',
+    'account.leftReset': 'Осталось {left}, обновление через {t}',
+    'login.accept': 'Я прочитал(а) и принимаю',
+    'login.termsLink': 'Правила использования',
+    'login.needTerms': 'Сначала отметьте, что принимаете Правила',
+    'login.err.terms_not_accepted': 'Правила обновились. Откройте их и примите ещё раз.',
+    'terms.windowTitle': 'Правила использования — Audiator',
     'plan.free': 'Бесплатный тариф',
     'plan.commercial': 'Коммерческий тариф',
     'plan.unlimited': 'Безлимит',
     'plan.admin': 'Администратор',
-    'account.leftToday': 'Осталось сегодня: {t}',
-    'account.resetIn': 'Новые 2 часа — в полночь, через {t}',
-    'error.limitIn': 'Бесплатные 2 часа на сегодня закончились. Новые — через {t}, в полночь.',
     'account.paidUntil': 'Оплачено до {d}',
     'account.signOut': 'Выйти из аккаунта',
     'account.confirmSignOut': 'Выйти из аккаунта? Audiator не будет работать, пока вы снова не войдёте.',
     'unit.h': 'ч',
     'unit.min': 'мин',
-    'error.limit': 'Бесплатные 2 часа на сегодня закончились. Они вернутся в полночь.',
+    'error.limit': 'Бесплатные 2 часа закончились. Обновление через {t}.',
     'error.notSignedIn': 'Войдите, чтобы распознавать речь',
 
     'ov.busy1': 'Выполняется',
@@ -395,7 +403,7 @@ const STRINGS = {
     'login.resend': '重新发送',
     'login.resendIn': '{n} 秒后可重新发送',
     'login.changeEmail': '更换邮箱',
-    'login.free': '免费：每天 2 小时转写',
+    'login.free': '免费：每 24 小时 2 小时转写',
     'login.sessionExpired': '会话已过期，请重新登录。',
     'login.err.bad_email': '邮箱地址格式不正确',
     'login.err.disposable_email': '不接受临时邮箱，请使用您自己的邮箱。',
@@ -410,19 +418,23 @@ const STRINGS = {
     'login.err.network': '无法连接服务器，请检查网络。',
     'login.err.server': '服务器错误，请重试。',
     'account.title': '账户',
+    'account.left': '剩余 {left}',
+    'account.leftReset': '剩余 {left}，{t}后更新',
+    'login.accept': '我已阅读并接受',
+    'login.termsLink': '使用条款',
+    'login.needTerms': '请先接受使用条款',
+    'login.err.terms_not_accepted': '使用条款已更新，请重新阅读并接受。',
+    'terms.windowTitle': '使用条款 — Audiator',
     'plan.free': '免费套餐',
     'plan.commercial': '商业套餐',
     'plan.unlimited': '无限制',
     'plan.admin': '管理员',
-    'account.leftToday': '今日剩余：{t}',
-    'account.resetIn': '午夜恢复 2 小时，还有 {t}',
-    'error.limitIn': '今天的 2 小时免费时长已用完，{t}后（午夜）恢复。',
     'account.paidUntil': '有效期至 {d}',
     'account.signOut': '退出账户',
     'account.confirmSignOut': '确定退出？重新登录前 Audiator 将无法使用。',
     'unit.h': '小时',
     'unit.min': '分钟',
-    'error.limit': '今天的 2 小时免费时长已用完，午夜后恢复。',
+    'error.limit': '2 小时免费时长已用完，{t}后更新。',
     'error.notSignedIn': '请登录后使用语音识别',
 
     'ov.busy1': '正在转写',
@@ -461,4 +473,13 @@ function t(lang, key) {
   return table[key] !== undefined ? table[key] : key;
 }
 
-module.exports = { LANGUAGES, FALLBACK, STRINGS, resolveLanguage, stringsFor, t };
+// A length of time in words: "1 ч 23 мин", "2 ч", "45 мин" (the main
+// process; the pages keep the same few lines of their own).
+function duration(lang, seconds) {
+  const m = Math.floor(seconds / 60), h = Math.floor(m / 60);
+  const H = t(lang, 'unit.h'), M = t(lang, 'unit.min');
+  if (!h) return `${m} ${M}`;
+  return m % 60 ? `${h} ${H} ${m % 60} ${M}` : `${h} ${H}`;
+}
+
+module.exports = { LANGUAGES, FALLBACK, STRINGS, resolveLanguage, stringsFor, t, duration };

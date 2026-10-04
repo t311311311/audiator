@@ -34,7 +34,6 @@ from typing import Optional
 import jwt
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import func
 
 import mailer
 import rate
@@ -48,6 +47,11 @@ ADMIN_EMAILS = {e.strip().lower() for e in
                 os.environ.get("ADMIN_EMAILS", "t311311311@gmail.com").split(",") if e.strip()}
 FREE_DAILY_SECONDS = int(os.environ.get("FREE_DAILY_SECONDS_V2", "7200"))
 CODE_TTL = timedelta(minutes=10)
+# The free allowance is per 24 hours of each account's own, counted from its
+# first use once the previous 24 hours are over (user's decision 2026-10-04).
+WINDOW = timedelta(hours=24)
+# The rules the app shows at sign-in; signing in means accepting this version.
+TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-10-04")
 CODE_TRIES = 5
 TOKEN_DAYS = 30
 
@@ -133,23 +137,34 @@ def _auth(authorization: Optional[str]):
     return u, claims.get("dev", "")
 
 
-def _profile(u: User, device: str, tz: Optional[int]) -> dict:
-    day = _local_day(tz)
+def _window(u: User):
+    """(when the current 24 hours end, seconds used in them), or (None, 0)
+    when none are running: the next use starts them."""
+    if u.window_start and _utcnow() < u.window_start + WINDOW:
+        return u.window_start + WINDOW, int(u.window_used or 0)
+    return None, 0
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    return dt.isoformat() + "Z" if dt else None  # stored naive, in UTC
+
+
+def _profile(u: User) -> dict:
     plan = _plan(u)
-    with Session() as s:
-        used = s.query(func.coalesce(func.sum(Usage.seconds), 0)).filter(
-            Usage.user_id == u.id, Usage.device_hash == device, Usage.day == day).scalar()
     limited = plan == "free"
+    resets_at, used = _window(u)
     return {
         "email": u.email,
         "plan": plan,                       # free | commercial | unlimited | admin
         "role": u.role,
         "unlimited": bool(u.unlimited),
-        "paid_until": u.paid_until.isoformat() if u.paid_until else None,
-        "day": day,
-        "used_today": int(used),
+        "paid_until": _iso(u.paid_until),
         "limit_seconds": FREE_DAILY_SECONDS if limited else None,
-        "remaining_today": max(0, FREE_DAILY_SECONDS - int(used)) if limited else None,
+        # The account's own 24 hours: used and left in them, and when they end
+        # (None: not running — the next use starts them).
+        "used": used if limited else None,
+        "remaining": max(0, FREE_DAILY_SECONDS - used) if limited else None,
+        "resets_at": _iso(resets_at) if limited else None,
     }
 
 
@@ -209,6 +224,7 @@ class VerifyRequest(BaseModel):
     code: str
     device: str
     tz: Optional[int] = 0
+    terms: Optional[str] = None   # the version of the rules the user ticked
 
 
 @router.post("/auth/verify")
@@ -217,6 +233,9 @@ def verify_code(req: VerifyRequest):
     device = req.device.strip().lower()
     if not DEVICE_RE.match(device):
         raise _err(400, "bad_device")
+    # No sign-in without the rules accepted — the version shown now.
+    if req.terms != TERMS_VERSION:
+        raise _err(400, "terms_not_accepted", version=TERMS_VERSION)
     with Session() as s:
         u = s.query(User).filter(User.email == email).one_or_none()
         if u is None or not u.code_hash:
@@ -249,9 +268,11 @@ def verify_code(req: VerifyRequest):
                 s.commit()
                 raise _err(403, "device_has_free_account", other_email=_mask(other.email) if other else None)
         u.last_login_at = _utcnow()
+        if u.terms_version != TERMS_VERSION:
+            u.terms_version, u.terms_accepted_at = TERMS_VERSION, _utcnow()
         s.commit()
         token = _token(u, device)
-    return {"token": token, "profile": _profile(u, device, req.tz)}
+    return {"token": token, "profile": _profile(u)}
 
 
 # --- the signed-in user -------------------------------------------------------------
@@ -259,7 +280,7 @@ def verify_code(req: VerifyRequest):
 @router.get("/me")
 def me(tz: Optional[int] = 0, authorization: Optional[str] = Header(None)):
     u, device = _auth(authorization)
-    return _profile(u, device, tz)
+    return _profile(u)
 
 
 class UsageReport(BaseModel):
@@ -269,11 +290,18 @@ class UsageReport(BaseModel):
 
 @router.post("/usage")
 def report_usage(rep: UsageReport, authorization: Optional[str] = Header(None)):
-    """Count seconds of speech recognised on this computer today."""
+    """Count seconds of speech recognised: against the account's 24 hours
+    (started by this use if none are running), and in the per-day history."""
     u, device = _auth(authorization)
     seconds = max(0, min(int(rep.seconds), 3600))
     day = _local_day(rep.tz)
     with Session() as s:
+        u = s.get(User, u.id)
+        now = _utcnow()
+        if not (u.window_start and now < u.window_start + WINDOW):
+            # The speech was just before this report: the 24 hours start with it.
+            u.window_start, u.window_used = now - timedelta(seconds=seconds), 0
+        u.window_used = (u.window_used or 0) + seconds
         row = s.query(Usage).filter(Usage.user_id == u.id, Usage.device_hash == device,
                                     Usage.day == day).one_or_none()
         if row is None:
@@ -281,4 +309,4 @@ def report_usage(rep: UsageReport, authorization: Optional[str] = Header(None)):
             s.add(row)
         row.seconds += seconds
         s.commit()
-    return _profile(u, device, rep.tz)
+    return _profile(u)

@@ -85,6 +85,12 @@
         .link:hover:not(:disabled) { text-decoration: underline; }
         .error { color: var(--error-color); font-size: 12.5px; min-height: 18px; margin-top: 10px; line-height: 1.4; }
         .free { font-size: 12px; opacity: 0.6; margin-top: 14px; }
+        /* The rules: ticked before a code can be asked for. */
+        .accept {
+            display: flex; align-items: flex-start; gap: 7px; margin-top: 10px;
+            font-size: 12.5px; text-align: left; line-height: 1.35; cursor: pointer;
+        }
+        .accept input { width: auto; margin: 1px 0 0; accent-color: var(--accent-color); cursor: pointer; }
         .hidden { display: none; }
     </style>
 </head>
@@ -103,6 +109,11 @@
         <!-- Step 1: the email. -->
         <form id="email-step" autocomplete="on">
             <input id="email" type="email" autocomplete="email" spellcheck="false" placeholder="Email" data-i18n-placeholder="login.email" />
+            <label class="accept">
+                <input type="checkbox" id="accept" />
+                <span><span data-i18n="login.accept">Я прочитал(а) и принимаю</span>
+                <button class="link" id="terms-link" type="button" data-i18n="login.termsLink">Правила использования</button></span>
+            </label>
             <button class="primary" id="get-code" type="submit" data-i18n="login.getCode">Получить код</button>
         </form>
 
@@ -193,10 +204,13 @@
             e.preventDefault();
             email = $('email').value.trim().toLowerCase();
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showError(S('login.err.bad_email')); return; }
+            if (!$('accept').checked) { showError(S('login.needTerms')); $('accept').focus(); return; }
             sendCode($('get-code'));
         });
 
         $('resend').addEventListener('click', () => sendCode($('resend')));
+        $('terms-link').addEventListener('click', (e) => { e.preventDefault(); window.loginApi.openTerms(); });
+        $('accept').addEventListener('change', () => { if ($('accept').checked) showError(''); });
         $('other-email').addEventListener('click', () => {
             clearInterval(resendTimer);
             showError('');

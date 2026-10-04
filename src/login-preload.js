@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('loginApi', {
   getAccount: () => ipcRenderer.invoke('account-get'), // why the user is here (session expired...)
   requestCode: (email) => ipcRenderer.invoke('account-request-code', email),
   verify: (email, code) => ipcRenderer.invoke('account-verify', { email, code }),
+  openTerms: () => ipcRenderer.send('open-terms'), // the rules to accept before signing in
 });
