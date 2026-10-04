@@ -57,6 +57,7 @@ const STRINGS = {
     'history.original': 'Original',
     'history.translation': 'Translation',
     'status.transcribing': 'Transcribing…',
+    'status.queued': 'Waiting its turn…',
     'status.translating': 'Translating…',
     'status.noText': 'No speech recognized.',
     'error.transcribe': 'Could not transcribe',
@@ -177,6 +178,7 @@ const STRINGS = {
     // recording overlay (two short lines: the bar is 96px wide)
     'ov.busy1': 'Transcribing',
     'ov.busy2': 'please wait…',
+    'ov.transcribing': 'Transcribing',
     'ov.done1': 'Done!',
     'ov.done2': 'Ctrl+V',
     'ov.hint': 'Click: open the window. Drag: move the bar',
@@ -228,6 +230,7 @@ const STRINGS = {
     'history.original': 'Оригинал',
     'history.translation': 'Перевод',
     'status.transcribing': 'Транскрибация…',
+    'status.queued': 'Ждёт очереди…',
     'status.translating': 'Перевод…',
     'status.noText': 'Речь не распознана.',
     'error.transcribe': 'Не удалось расшифровать',
@@ -346,6 +349,7 @@ const STRINGS = {
 
     'ov.busy1': 'Выполняется',
     'ov.busy2': 'транскрибация!',
+    'ov.transcribing': 'Транскрибация',
     'ov.done1': 'Готово!',
     'ov.done2': 'Ctrl+V',
     'ov.hint': 'Нажмите — открыть окно. Перетащите — передвинуть',
@@ -396,6 +400,7 @@ const STRINGS = {
     'history.original': '原文',
     'history.translation': '译文',
     'status.transcribing': '正在转写…',
+    'status.queued': '排队等待中…',
     'status.translating': '正在翻译…',
     'status.noText': '未识别到语音。',
     'error.transcribe': '转写失败',
@@ -514,6 +519,7 @@ const STRINGS = {
 
     'ov.busy1': '正在转写',
     'ov.busy2': '请稍候…',
+    'ov.transcribing': '转写中',
     'ov.done1': '完成！',
     'ov.done2': 'Ctrl+V',
     'ov.hint': '单击：打开窗口。拖动：移动',

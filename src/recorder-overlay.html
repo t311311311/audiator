@@ -37,8 +37,13 @@
     }
     .mic { flex: 0 0 auto; width: 13px; height: 13px; color: #e06c75; }
     .mic svg { width: 100%; height: 100%; display: block; }
-    /* Pulse so it reads as "recording" even in silence. */
-    .rec { animation: pulse 1.4s ease-in-out infinite; }
+    /* Pulse so it reads as "recording" even in silence.
+       Every animation on the bar moves in a few steps, not smoothly: the bar
+       is an always-on-top see-through window, and redrawing it 60 times a
+       second for a glow took about a third of a CPU core in two processes —
+       while a "Ctrl+V" barrel waited, transcription ran that much slower
+       (measured: glow 34 % + 30 %, in steps 6 % + 13 %). */
+    .rec { animation: pulse 1.4s steps(4) infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
     /* Status text replaces the equaliser between recording and the result.
@@ -50,14 +55,14 @@
     .status b { display: block; font-weight: 600; }
 
     /* Transcription running: red, softly breathing. */
-    .busy .status { color: #e06c75; animation: blink 1.1s ease-in-out infinite; }
+    .busy .status { color: #e06c75; animation: blink 1.1s steps(4) infinite; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
     /* Result ready: green, glowing. */
     .done .status {
       color: #98c379;
       text-shadow: 0 0 6px rgba(152, 195, 121, 0.9), 0 0 12px rgba(152, 195, 121, 0.5);
-      animation: glow 1.6s ease-in-out infinite;
+      animation: glow 1.6s steps(4) infinite;
     }
     @keyframes glow {
       0%, 100% { text-shadow: 0 0 5px rgba(152,195,121,0.75), 0 0 10px rgba(152,195,121,0.35); }
@@ -104,9 +109,14 @@
         bars[i].style.backgroundColor = 'hsl(' + Math.round(120 * (1 - v)) + ', 85%, 52%)';
       }
       level *= 0.82; // quicker fall-off, so peaks read as distinct hits
-      requestAnimationFrame(render);
+      // Only while a barrel is recording: this loop ran every frame for good
+      // and kept the bar's process busy with nothing to draw.
+      if (bars.length) requestAnimationFrame(render); else looping = false;
     }
-    requestAnimationFrame(render);
+    let looping = false;
+    function startMeter() {
+      if (!looping && bars.length) { looping = true; requestAnimationFrame(render); }
+    }
 
     function statusLines(lines) {
       const s = document.createElement('div');
@@ -125,12 +135,13 @@
     let drawn = '';
     function draw(state) {
       if (state.hint) rowEl.title = state.hint; // "Нажмите — открыть окно. Перетащите — передвинуть"
-      const key = JSON.stringify([state.items, state.numbered, state.busy, state.done]);
+      const key = JSON.stringify([state.items, state.numbered, state.busy, state.done, state.progress]);
       if (key === drawn) return;
       drawn = key;
       rowEl.textContent = '';
       document.body.classList.toggle('numbered', !!state.numbered);
       bars = [];
+      let progressShown = false;
       for (const item of state.items) {
         const bar = document.createElement('div');
         if (item.more) {
@@ -154,11 +165,16 @@
           eq.className = 'eq';
           for (let i = 0; i < BARS; i++) { const b = document.createElement('i'); eq.appendChild(b); bars.push(b); }
           bar.append(mic, eq);
+        } else if (item.state === 'busy' && state.progress != null && !progressShown) {
+          // The one being transcribed now: how far it has got.
+          progressShown = true;
+          bar.appendChild(statusLines([state.transcribing, state.progress + '%']));
         } else {
           bar.appendChild(statusLines(item.state === 'done' ? state.done : state.busy));
         }
         rowEl.appendChild(bar);
       }
+      startMeter();
     }
 
     if (window.overlay && window.overlay.onLevel) {
