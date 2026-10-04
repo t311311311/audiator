@@ -20,6 +20,7 @@ const patterns = [
   /data-i18n-placeholder="([^"]+)"/g,
   /\bS\('([^']+)'[,)]/g,
   /\btr\('([^']+)'\)/g,
+  /\bi18n\.t\([^,()]+,\s*'([^']+)'\)/g,
   /strings\['([^']+)'\]/g,
 ];
 

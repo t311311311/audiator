@@ -58,7 +58,7 @@ def test_a_message_is_kept_and_mailed_with_a_telling_subject(client, mailbox):
 
 @pytest.mark.parametrize("category,plan,within", [
     ("payment", "free", "48h"), ("bug", "free", "5wd"), ("bug", "commercial", "2wd"),
-    ("delete", "free", "5wd"), ("idea", "commercial", None)])
+    ("account", "free", "5wd"), ("idea", "commercial", None)])
 def test_answer_times_follow_the_rules(category, plan, within):
     assert support.answer_within(category, plan) == within
 
@@ -83,6 +83,7 @@ def test_ideas_have_no_deadline(client, mailbox):
 
 @pytest.mark.parametrize("payload,error", [
     ({"category": "spam", "text": "x"}, "bad_category"),
+    ({"category": "delete", "text": "x"}, "bad_category"),   # topics removed 2026-10-04
     ({"category": "bug", "text": "   "}, "empty_text"),
     ({"category": "bug", "text": "x" * 5001}, "too_long")])
 def test_bad_messages_are_refused(client, mailbox, payload, error):

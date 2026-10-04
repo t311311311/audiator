@@ -27,16 +27,14 @@ from accounts_db import Session, SupportTicket, User
 router = APIRouter(prefix="/api/v2")
 log = logging.getLogger("audiator")
 
-# Topic -> how the owner sees it in the inbox.
+# Topic -> how the owner sees it in the inbox. Recognition and translation
+# are third-party components, provided as they are (the rules name them), so
+# they have no topic of their own (user's decision 2026-10-04).
 CATEGORIES = {
     "payment": "Оплата",
     "bug": "Баг",
     "account": "Аккаунт",
-    "recognition": "Распознавание",
-    "translation": "Перевод",
-    "idea": "Идея",
-    "delete": "Удаление данных",
-    "other": "Другое",
+    "idea": "Предложение",
 }
 MAX_TEXT = 5000
 PER_HOUR = 5

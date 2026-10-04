@@ -500,10 +500,12 @@
                 window.settingsApi.onAccountUpdated(renderAccount);
                 // Signing out is also how to change accounts: the sign-in window
                 // comes up and takes any email.
-                document.getElementById('support-btn').addEventListener('click', () => window.settingsApi.openSupport());
+                document.getElementById('support-btn').addEventListener('click', () => {
+                    window.settingsApi.openSupport(document.documentElement.lang);
+                });
                 document.getElementById('terms-link').addEventListener('click', (e) => {
                     e.preventDefault();
-                    window.settingsApi.openTerms();
+                    window.settingsApi.openTerms(document.documentElement.lang);
                 });
                 document.getElementById('sign-out-btn').addEventListener('click', () => {
                     if (confirm(strings['account.confirmSignOut'])) window.settingsApi.signOut();

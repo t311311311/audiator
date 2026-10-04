@@ -75,7 +75,10 @@
         };
         const $ = (id) => document.getElementById(id);
         // The topics, payment first: it has the shortest answer time.
-        const TOPICS = ['payment', 'bug', 'account', 'recognition', 'translation', 'idea', 'delete', 'other'];
+        const TOPICS = ['payment', 'bug', 'account', 'idea'];
+        // Opened from Settings while another language is being tried there:
+        // that language (?lang=); otherwise the app's.
+        const LANG = new URLSearchParams(location.search).get('lang') || undefined;
         let topic = null;
 
         function renderTopics() {
@@ -125,11 +128,9 @@
         $('close').addEventListener('click', () => window.supportApi.close());
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.supportApi.close(); });
 
-        (async () => {
-            const [i18n, settings, account, info] = await Promise.all([
-                window.supportApi.getI18n(), window.supportApi.getSettings(),
-                window.supportApi.getAccount(), window.supportApi.getInfo(),
-            ]);
+        let info = { version: '', os: '' };
+        async function applyI18n(lang) {
+            const i18n = await window.supportApi.getI18n(lang);
             STR = i18n.strings;
             document.documentElement.lang = i18n.lang;
             document.title = S('support.windowTitle');
@@ -139,10 +140,23 @@
             document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
                 if (STR[el.dataset.i18nPlaceholder] !== undefined) el.placeholder = STR[el.dataset.i18nPlaceholder];
             });
-            if (settings && settings.theme === 'light') document.body.classList.add('light-theme');
-            $('email').textContent = (account && account.email) || '';
             $('attached').textContent = S('support.attached', { version: info.version, os: info.os });
             renderTopics();
+        }
+        // Settings saved meanwhile (a new language or theme): follow them.
+        window.supportApi.onSettingsUpdated((settings) => {
+            document.body.classList.toggle('light-theme', !!settings && settings.theme === 'light');
+            applyI18n();
+        });
+
+        (async () => {
+            const [settings, account, inf] = await Promise.all([
+                window.supportApi.getSettings(), window.supportApi.getAccount(), window.supportApi.getInfo(),
+            ]);
+            info = inf;
+            if (settings && settings.theme === 'light') document.body.classList.add('light-theme');
+            $('email').textContent = (account && account.email) || '';
+            await applyI18n(LANG);
             $('text').focus();
         })().catch((e) => console.error('support window', e));
     </script>
