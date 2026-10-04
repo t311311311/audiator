@@ -245,6 +245,39 @@ def cmd_ticket(args):
     print(f"#{args.id}: {args.status}")
 
 
+def cmd_left(args):
+    """For testing the free limit: leave N minutes in the account's current
+    24 hours (started now if none are running), or 'reset' — none running,
+    all 2 hours back. Prints what was there, to put it back."""
+    import accounts
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        print(f"было: window_start={u.window_start} window_used={u.window_used}")
+        now = accounts_db._utcnow()
+        if args.minutes == "reset":
+            u.window_start, u.window_used = None, 0
+        else:
+            if not (u.window_start and now < u.window_start + accounts.WINDOW):
+                u.window_start = now
+            u.window_used = max(0, accounts.FREE_DAILY_SECONDS - int(float(args.minutes) * 60))
+        s.commit()
+        print(f"стало: window_start={u.window_start} window_used={u.window_used}"
+              " — приложение увидит после перезапуска или после следующей записи")
+
+
+def cmd_window_set(args):
+    """Put the 24 hours back exactly as they were (the values `left` printed)."""
+    import accounts_db
+    from datetime import datetime as dt
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        u.window_start = None if args.start == "none" else dt.fromisoformat(args.start)
+        u.window_used = args.used
+        s.commit()
+    print(f"{args.email}: window_start={u.window_start} window_used={u.window_used}")
+
+
 def main():
     p = argparse.ArgumentParser(description="Управление аккаунтами Audiator")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -275,6 +308,15 @@ def main():
     pd.add_argument("email")
     pd.add_argument("days", type=int)
     pd.set_defaults(func=cmd_paid)
+    lf = sub.add_parser("left", help="тест лимита: оставить N минут в текущих 24 часах, или reset")
+    lf.add_argument("email")
+    lf.add_argument("minutes", help="минут осталось (например 5) или reset")
+    lf.set_defaults(func=cmd_left)
+    ws = sub.add_parser("window", help="вернуть 24 часа как были: <email> <start|none> <used>")
+    ws.add_argument("email")
+    ws.add_argument("start", help="window_start как напечатал left, или none")
+    ws.add_argument("used", type=int)
+    ws.set_defaults(func=cmd_window_set)
 
     # The old device-based accounts (until the app has switched over).
     sub.add_parser("list", help="список аккаунтов").set_defaults(func=cmd_list)
