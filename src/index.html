@@ -938,14 +938,14 @@
             progressField = null;
             clearInterval(progressTimer);
         }
-        function queueTranscription(blob, jobId) {
+        function queueTranscription(blob, jobId, withinLimit) {
             const pending = addPendingEntry();
             pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
             if (transcribing++ > 0) pending.originalTextField.textContent = S('status.queued');
             const gen = session;
             transcribeChain = transcribeChain
                 // Recordings made before a sign-out are not transcribed after it.
-                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen) : null))
+                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen, withinLimit) : null))
                 .catch((e) => console.error('transcription queue', e)) // keep the chain going
                 .finally(() => { transcribing = Math.max(0, transcribing - 1); });
         }
@@ -987,7 +987,7 @@
             translateBtn.disabled = !done;
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen) {
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit) {
             originalTextField.textContent = S('status.transcribing'); // its turn now
             progressField = originalTextField;
             progressPct = null;
@@ -996,7 +996,7 @@
             progressTimer = setInterval(showProgress, 1000);
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
-                const result = blob.size ? await window.api.transcribe(blob)
+                const result = blob.size ? await window.api.transcribe(blob, undefined, withinLimit)
                                          : { success: true, text: '' };
                 stopProgress(originalTextField); // before its text goes in, or a tick would cover it
                 if (gen !== session) return; // signed out while it was transcribed
@@ -1471,6 +1471,7 @@
                 showToast(S('error.limit').replace('{t}', untilReset() || formatLeft(0)), 5000);
                 return;
             }
+            const withinLimit = true; // free minutes were left at the start: transcribed whole
             micStarting = true;
             stopWhenStarted = false;
             const gen = session; // signed out meanwhile: this recording is dropped
@@ -1487,7 +1488,7 @@
                     stream.getTracks().forEach(track => track.stop());
                     if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
-                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId);
+                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit);
                 };
 
                 recordBtn.classList.add('hidden');

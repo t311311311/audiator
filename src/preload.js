@@ -50,9 +50,11 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- API ---
   // A Blob cannot cross the IPC boundary: send the raw bytes instead.
-  transcribe: async (audioBlob, language) => {
+  // startedWithinLimit: the recording began while free minutes were left —
+  // then it is transcribed whole, however long it is.
+  transcribe: async (audioBlob, language, startedWithinLimit) => {
     const arrayBuffer = await audioBlob.arrayBuffer();
-    return ipcRenderer.invoke('transcribe', { audioBuffer: Buffer.from(arrayBuffer), language });
+    return ipcRenderer.invoke('transcribe', { audioBuffer: Buffer.from(arrayBuffer), language, startedWithinLimit });
   },
   translate: async (text, targetLang, sourceLang) => ipcRenderer.invoke('translate', { text, targetLang, sourceLang }),
   getSupportedLanguages: () => ipcRenderer.invoke('get-supported-languages'),

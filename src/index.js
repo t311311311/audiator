@@ -923,12 +923,16 @@ app.on('ready', async () => {
   // Transcribe audio. Signed in, and on the free plan with minutes left today
   // (a recording started within the limit is transcribed whole); the length of
   // the recording then counts against the day.
-  ipcMain.handle('transcribe', async (event, { audioBuffer, language }) => {
+  ipcMain.handle('transcribe', async (event, { audioBuffer, language, startedWithinLimit }) => {
     if (!account.signedIn()) {
       showLoginWindow();
       return { success: false, error: tr('error.notSignedIn'), reason: 'signedOut' };
     }
-    if (!account.canTranscribe()) {
+    // The rule (the rules of use, section 3): a recording started while free
+    // minutes were left is transcribed whole. So it is the start that counts,
+    // not the moment its turn comes — two recordings in a row, the first
+    // using the minutes up, both get transcribed.
+    if (!account.canTranscribe() && !startedWithinLimit) {
       const { resetsAt } = account.view();
       const left = resetsAt ? Math.max(60, Math.ceil((resetsAt - Date.now()) / 60000) * 60) : 0;
       return { success: false, error: tr('error.limit').replace('{t}', i18n.duration(currentLang(), left)), reason: 'limit' };
