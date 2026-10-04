@@ -12,23 +12,28 @@
        main process sizes the window to fit them; a lone barrel looks exactly
        like the single bar did before. */
     .row { display: flex; gap: 6px; height: 100%; }
+    /* Half see-through, so a barrel over a button or a line of text no longer
+       hides it (users asked for it to be transparent). Fully transparent was
+       tried: the barrel's own "Ctrl+V" then mixed with the text under it and
+       neither could be read; at about half the text below shows through and
+       the barrel still reads. */
     .bar {
       flex: 0 0 96px; display: flex; align-items: center; gap: 6px; height: 100%;
-      box-sizing: border-box; padding: 0 8px; background: #23262e; border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.10);
+      box-sizing: border-box; padding: 0 8px; background: rgba(35, 38, 46, 0.55); border-radius: 20px;
+      border: 1px solid rgba(160, 170, 185, 0.6);
     }
     /* Numbered barrels (more than one in the queue) are a little wider, so the
        number fits beside the two lines of text. Keep in step with index.js. */
     .numbered .bar { flex-basis: 112px; padding-left: 6px; }
     .num {
       flex: 0 0 auto; width: 14px; height: 14px; border-radius: 7px;
-      background: rgba(255, 255, 255, 0.14); color: #cfd3dc;
+      background: rgba(35, 38, 46, 0.55); color: #e6e8ee;
       font: 600 9px/14px 'Segoe UI', Tahoma, sans-serif; text-align: center;
     }
     /* "+N": barrels hidden in the middle of a long queue. */
     .numbered .bar.more, .bar.more {
       flex: 0 0 34px; justify-content: center; padding: 0;
-      color: #cfd3dc; font: 600 11px 'Segoe UI', Tahoma, sans-serif;
+      color: #e6e8ee; font: 600 11px 'Segoe UI', Tahoma, sans-serif;
     }
     .mic { flex: 0 0 auto; width: 13px; height: 13px; color: #e06c75; }
     .mic svg { width: 100%; height: 100%; display: block; }

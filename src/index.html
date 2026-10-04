@@ -249,7 +249,21 @@
         /* The copy button, and under it (on a transcript) a box to pick it for
            translation. */
         .entry-actions { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-        .entry-check { margin: 0; cursor: pointer; accent-color: var(--accent-color); }
+        /* The box that picks a text for translation: an outline in the text's
+           colour, not a white square that caught the eye on the grey; filled
+           with the accent colour and a tick once picked. */
+        .entry-check {
+            -webkit-appearance: none; appearance: none; margin: 0; cursor: pointer;
+            width: 14px; height: 14px; border-radius: 3px; box-sizing: border-box;
+            border: 1.5px solid var(--text-color); background: transparent; opacity: 0.6;
+            display: inline-grid; place-content: center;
+        }
+        .entry-check:hover { opacity: 0.9; }
+        .entry-check:checked { background: var(--accent-color); border-color: var(--accent-color); opacity: 1; }
+        .entry-check:checked::after {
+            content: ''; width: 3px; height: 7px; margin-top: -2px;
+            border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+        }
         .entry-check[hidden] { display: none; }
         .entry-copy[hidden] { display: none; }
 
@@ -540,7 +554,7 @@
             <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить последнее аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
             <button class="control-button" id="translate-btn" title="Перевести" data-i18n="btn.translate" data-i18n-title="title.translate" disabled>Перевести</button>
         </div>
-        <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copy">&#128203;</button> <!-- Clipboard -->
+        <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copyLatest">&#128203;</button> <!-- Clipboard -->
     </div>
 
     <script>
@@ -564,6 +578,7 @@
                 fitTranslateLabel();
                 renderEngine(lastEngine); // its text is built in code, not marked up
                 renderAccount();
+                relabelHistory();
             }).catch((e) => console.error('i18n load failed', e));
         }
 
@@ -840,6 +855,29 @@
             return { row, btn, actions };
         }
 
+        // When a recording was made, the way the app's language writes it:
+        // "4 октября 2026 г. в 14:16:30", "October 4, 2026 at 2:16:30 PM",
+        // "2026年10月4日 14:16:30" (it used the language of Windows instead).
+        function formatStamp(date) {
+            const lang = document.documentElement.lang || undefined;
+            try {
+                return new Intl.DateTimeFormat(lang, { dateStyle: 'long', timeStyle: 'medium' }).format(date);
+            } catch (e) {
+                return date.toLocaleString();
+            }
+        }
+        // A new language: the dates and the "no speech" notes already in the
+        // history change with it.
+        function relabelHistory() {
+            historyContainer.querySelectorAll('.history-entry').forEach((entry) => {
+                const head = entry.querySelector('.entry-header');
+                if (head && entry.dataset.isoTimestamp) head.textContent = formatStamp(new Date(entry.dataset.isoTimestamp));
+            });
+            historyContainer.querySelectorAll('.original-text[data-state="empty"]').forEach((el) => {
+                el.textContent = S('status.noText');
+            });
+        }
+
         // A history entry for a recording that has just been stopped. It shows
         // at once, blinking "Транскрибация…", so several recordings in a row
         // are visible in order while they wait their turn.
@@ -847,7 +885,7 @@
             const newEntry = document.createElement('div');
             newEntry.className = 'history-entry';
             const date = new Date();
-            const timestamp = `${date.toLocaleString('default', { dateStyle: 'long' })}, ${date.toLocaleTimeString()}`;
+            const timestamp = formatStamp(date);
             newEntry.dataset.isoTimestamp = date.toISOString(); // Store machine-readable timestamp
             const originalTextField = document.createElement('div');
             originalTextField.className = 'original-text pending';

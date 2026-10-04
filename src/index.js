@@ -187,8 +187,10 @@ const revealMainWindow = () => {
   }, 200);
 };
 
-// Whether the user is actually looking at the app: the main window is shown,
-// not minimised, and one of our windows has focus. isVisible() alone is not
+// Whether the user is actually looking at the main window: shown, not
+// minimised, and it has the focus — not Settings or "Contact us" in front of
+// it, where a recording would otherwise go unseen (the user started one by
+// accident and could not tell). isVisible() alone is not
 // enough — a window left open behind another application still counts as
 // visible, and that hid the bar whenever the user just switched apps while
 // recording.
@@ -202,7 +204,7 @@ const mainInView = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
   const focused = BrowserWindow.getFocusedWindow() || ownFocus;
-  return !!focused && !focused.isDestroyed() && focused !== overlayWindow;
+  return focused === mainWindow;
 };
 
 // Bring the clipboard, the paste watch and the bar in line with the queue.
