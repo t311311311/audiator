@@ -173,6 +173,7 @@ const STRINGS = {
     'unit.h': 'h',
     'unit.min': 'min',
     'error.limit': 'The free 2 hours are used up. They renew in {t}.',
+    'error.limitStopped': 'Free time is up, so the recording stopped. What was recorded is being transcribed. Renews in {t}.',
     'error.notSignedIn': 'Sign in to transcribe',
 
     // recording overlay (two short lines: the bar is 96px wide)
@@ -345,6 +346,7 @@ const STRINGS = {
     'unit.h': 'ч',
     'unit.min': 'мин',
     'error.limit': 'Бесплатные 2 часа закончились. Обновление через {t}.',
+    'error.limitStopped': 'Бесплатное время закончилось — запись остановлена. Записанное распознаётся. Обновление через {t}.',
     'error.notSignedIn': 'Войдите, чтобы распознавать речь',
 
     'ov.busy1': 'Выполняется',
@@ -515,6 +517,7 @@ const STRINGS = {
     'unit.h': '小时',
     'unit.min': '分钟',
     'error.limit': '2 小时免费时长已用完，{t}后更新。',
+    'error.limitStopped': '免费时长已用完，录音已停止。已录制的内容正在识别。{t}后更新。',
     'error.notSignedIn': '请登录后使用语音识别',
 
     'ov.busy1': '正在转写',
