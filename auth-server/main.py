@@ -60,6 +60,9 @@ if not SECRET_KEY:
 # endpoints below stay until the app has switched over.
 from accounts import router as accounts_router  # noqa: E402
 app.include_router(accounts_router)
+# Messages to support from the app ("Написать нам"), mailed to the inbox.
+from support import router as support_router  # noqa: E402
+app.include_router(support_router)
 
 TRIAL_DAYS = 14
 SUBSCRIPTION_PRICES = {

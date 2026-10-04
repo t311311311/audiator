@@ -208,6 +208,7 @@
                         <div class="account-left" id="account-left"></div>
                     </div>
                     <div class="account-actions">
+                        <button class="action-button" id="support-btn" data-i18n="menu.contact">Написать нам</button>
                         <button class="action-button" id="sign-out-btn" data-i18n="account.signOut">Выйти из аккаунта</button>
                     </div>
                 </div>
@@ -499,6 +500,7 @@
                 window.settingsApi.onAccountUpdated(renderAccount);
                 // Signing out is also how to change accounts: the sign-in window
                 // comes up and takes any email.
+                document.getElementById('support-btn').addEventListener('click', () => window.settingsApi.openSupport());
                 document.getElementById('terms-link').addEventListener('click', (e) => {
                     e.preventDefault();
                     window.settingsApi.openTerms();

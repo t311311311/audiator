@@ -19,6 +19,11 @@ Accounts by email (step 4, accounts.db):
   .venv\\Scripts\\python.exe scripts\\admin.py unlimited friend@mail.ru on # lifetime unlimited
   .venv\\Scripts\\python.exe scripts\\admin.py block someone@mail.ru on
   .venv\\Scripts\\python.exe scripts\\admin.py paid client@firm.com 30     # commercial for 30 days
+
+Clients and support (the same card support letters carry):
+  .venv\\Scripts\\python.exe scripts\\admin.py client ivan@mail.ru         # who the client is
+  .venv\\Scripts\\python.exe scripts\\admin.py tickets [--all]             # messages to support
+  .venv\\Scripts\\python.exe scripts\\admin.py ticket 17 answered
 """
 import argparse
 import hashlib
@@ -190,9 +195,71 @@ def cmd_paid(args):
     print(f"{args.email}: коммерческий тариф {'до ' + u.paid_until.strftime('%Y-%m-%d') if u.paid_until else 'снят'}")
 
 
+def cmd_client(args):
+    """Who the client is: usage, payments, messages — the card support letters carry."""
+    import accounts_db
+    import clients
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        print(clients.card(s, u))
+        tickets = s.query(accounts_db.SupportTicket).filter(accounts_db.SupportTicket.user_id == u.id).order_by(
+            accounts_db.SupportTicket.created_at.desc()).limit(10).all()
+        if tickets:
+            print("\nОбращения:")
+            for t in tickets:
+                print(f"  #{t.id} {t.created_at:%Y-%m-%d} {t.category:12} {t.status:9} {t.text[:60]!r}")
+
+
+def cmd_tickets(args):
+    """Messages to support, the unanswered first by how soon they are due."""
+    import accounts_db
+    T = accounts_db.SupportTicket
+    now = accounts_db._utcnow()
+    with accounts_db.Session() as s:
+        q = s.query(T, accounts_db.User.email).join(accounts_db.User, T.user_id == accounts_db.User.id)
+        if not args.all:
+            q = q.filter(T.status == "new")
+        rows = q.order_by(T.status != "new", T.due_at.is_(None), T.due_at, T.created_at).all()
+    if not rows:
+        print("обращений нет" if args.all else "неотвеченных обращений нет")
+        return
+    for t, email in rows:
+        if t.due_at is None:
+            due = "без срока"
+        elif t.status == "new" and t.due_at < now:
+            due = f"ПРОСРОЧЕНО ({t.due_at:%d.%m %H:%M})"
+        else:
+            due = f"до {t.due_at:%d.%m %H:%M}"
+        mail = "" if t.mailed else "  [письмо не ушло]"
+        print(f"#{t.id:<4} {t.status:9} {t.category:12} {email:30} {due:26} {t.text[:50]!r}{mail}")
+
+
+def cmd_ticket(args):
+    import accounts_db
+    with accounts_db.Session() as s:
+        t = s.get(accounts_db.SupportTicket, args.id)
+        if t is None:
+            sys.exit(f"нет обращения #{args.id}")
+        t.status = args.status
+        s.commit()
+    print(f"#{args.id}: {args.status}")
+
+
 def main():
     p = argparse.ArgumentParser(description="Управление аккаунтами Audiator")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    # Clients and their messages to support.
+    cl = sub.add_parser("client", help="карточка клиента: использование, оплаты, обращения")
+    cl.add_argument("email")
+    cl.set_defaults(func=cmd_client)
+    tk = sub.add_parser("tickets", help="обращения в поддержку (по умолчанию — без ответа)")
+    tk.add_argument("--all", action="store_true", help="все, включая отвеченные")
+    tk.set_defaults(func=cmd_tickets)
+    t1 = sub.add_parser("ticket", help="отметить обращение")
+    t1.add_argument("id", type=int)
+    t1.add_argument("status", choices=("answered", "closed", "new"))
+    t1.set_defaults(func=cmd_ticket)
 
     # Accounts by email (step 4).
     sub.add_parser("accounts", help="аккаунты по email").set_defaults(func=cmd_accounts)
@@ -231,6 +298,8 @@ def main():
 
     args = p.parse_args()
     db.init_db()
+    import accounts_db  # the email accounts: tables and new columns made as the server does
+    accounts_db.init_accounts_db()
     args.func(args)
 
 

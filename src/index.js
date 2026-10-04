@@ -359,6 +359,31 @@ const showLoginWindow = () => {
   });
 };
 
+// "Написать нам" (support.html): from the main window's menu and Settings.
+let supportWindow = null;
+const showSupportWindow = () => {
+  if (supportWindow && !supportWindow.isDestroyed()) { supportWindow.focus(); return; }
+  supportWindow = new BrowserWindow({
+    width: 480,
+    height: 520,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    title: tr('support.windowTitle'),
+    icon: iconPath,
+    backgroundColor: store.get('theme') === 'light' ? '#fafafa' : '#282c34',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'support-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  supportWindow.setMenu(null);
+  supportWindow.loadFile(path.join(__dirname, 'support.html'));
+  supportWindow.on('closed', () => { supportWindow = null; });
+};
+
 // The rules of use (terms.html), from the sign-in window and from Settings.
 // A plain page: no preload, nothing it can ask of the app; its mail link
 // goes to the user's mail program.
@@ -608,6 +633,18 @@ app.on('ready', async () => {
   });
   // From Settings: sign out (also the way to another account).
   ipcMain.on('open-terms', () => showTermsWindow());
+  ipcMain.on('support-open', () => showSupportWindow());
+  ipcMain.on('support-close', () => { if (supportWindow && !supportWindow.isDestroyed()) supportWindow.close(); });
+  // What the message carries besides the text: the app's version and Windows'.
+  const supportInfo = () => ({
+    version: app.getVersion(),
+    os: `${process.platform === 'win32' ? 'Windows' : process.platform} ${require('os').release()}`,
+  });
+  ipcMain.handle('support-info', () => supportInfo());
+  ipcMain.handle('support-send', (event, { category, text }) => {
+    const { version, os } = supportInfo();
+    return account.sendSupport(category, text, version, os);
+  });
   ipcMain.on('account-sign-out', () => {
     account.signOut('user'); // onChange opens the sign-in window
   });
