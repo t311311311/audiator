@@ -12,9 +12,11 @@ installed in its default folder (development machines) are used in place.
 """
 import json
 import os
+import re
 import shutil
 import sys
 import threading
+import types
 from pathlib import Path
 
 import requests
@@ -31,9 +33,80 @@ os.makedirs(PACKAGES_DIR, exist_ok=True)
 os.environ["ARGOS_PACKAGES_DIR"] = PACKAGES_DIR
 os.environ.setdefault("ARGOS_DEVICE_TYPE", "cpu")
 
+# Sentence splitting. Argos Translate (MIT) splits text with MiniSBD, which is
+# under the AGPL-3.0: shipped inside a closed program it would oblige us to
+# publish the program's source. So MiniSBD is not used and not bundled
+# (build-engine.js excludes it): Argos imports it at start, and gets this
+# stand-in instead; the splitting itself is done by _Sentencizer below.
+_minisbd = types.ModuleType("minisbd")
+_minisbd.SBDetect = None
+_minisbd.models = types.SimpleNamespace(cache_dir=None, list_models=lambda: [])
+sys.modules["minisbd"] = _minisbd
+
 import argostranslate.package as argos_package    # noqa: E402
 import argostranslate.settings as argos_settings  # noqa: E402
 import argostranslate.translate as argos_translate  # noqa: E402
+
+# Words that end in a dot without ending the sentence ("Dr. Smith", "т. е.").
+_ABBREV = {
+    "dr", "mr", "mrs", "ms", "prof", "st", "jr", "sr", "vs", "etc", "e.g", "i.e", "no", "fig", "vol", "approx",
+    "т", "е", "т.е", "т.к", "т.д", "т.п", "др", "г", "гг", "см", "стр", "им", "ул", "д", "кв", "тыс", "млн",
+    "млрд", "руб", "коп", "проф", "доц", "акад", "z.b", "bzw", "usw", "ca", "nr", "evtl",
+}
+_END = re.compile(r"[.!?\u2026]+[\"'\u00bb\u201d\u2019)\]]*\s+|[\u3002\uff01\uff1f]+")
+_MAX = 400  # longer pieces (no punctuation) are cut at commas, then spaces
+
+
+class _Sentencizer:
+    """Splits text into sentences by its punctuation: after . ! ? … when the
+    next word starts with a capital letter or a digit (not after an
+    abbreviation), and after 。！？ in Chinese and Japanese. Dictated text
+    comes punctuated by the speech recognition, which is what this needs."""
+
+    def __init__(self, pkg=None):
+        self.pkg = pkg
+
+    def split_sentences(self, text):
+        out, start = [], 0
+        for m in _END.finditer(text):
+            end = m.end()
+            if m.group()[0] not in "\u3002\uff01\uff1f":
+                nxt = text[end:end + 2].lstrip("\"'\u00ab\u201c([")[:1]
+                if not nxt or not (nxt.isupper() or nxt.isdigit()):
+                    continue
+                if m.group()[0] == ".":
+                    before = text[start:m.start()].split()
+                    word = before[-1].lower().rstrip(".") if before else ""
+                    if word in _ABBREV or (len(word) == 1 and word.isalpha()):
+                        continue
+            piece = text[start:end].strip()
+            if piece:
+                out.extend(_cut(piece))
+            start = end
+        rest = text[start:].strip()
+        if rest:
+            out.extend(_cut(rest))
+        return out or [text]
+
+
+def _cut(piece):
+    """A piece too long for the model in one go, cut at commas, else spaces."""
+    if len(piece) <= _MAX:
+        return [piece]
+    parts, cur = [], ""
+    for chunk in re.split(r"(?<=[,;:])\s+|\s+", piece):
+        if cur and len(cur) + 1 + len(chunk) > _MAX:
+            parts.append(cur)
+            cur = chunk
+        else:
+            cur = f"{cur} {chunk}" if cur else chunk
+    if cur:
+        parts.append(cur)
+    return parts
+
+
+# Argos picks its sentence splitter by this name when a language is first used.
+argos_translate.MiniSBDSentencizer = _Sentencizer
 
 # Argos's own default folder: packages installed there earlier keep working.
 _LEGACY_DIR = Path(os.path.expanduser("~")) / ".local" / "share" / "argos-translate" / "packages"

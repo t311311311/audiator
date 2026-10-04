@@ -21,6 +21,10 @@
       {
         "from": "build/engine/Audiator Engine",
         "to": "engine"
+      },
+      {
+        "from": "build/THIRD-PARTY-NOTICES.txt",
+        "to": "THIRD-PARTY-NOTICES.txt"
       }
     ],
     "win": {

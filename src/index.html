@@ -938,16 +938,87 @@
             progressField = null;
             clearInterval(progressTimer);
         }
-        function queueTranscription(blob, jobId, withinLimit) {
+        // blob: the recording as the user can save it (webm); wav: the same
+        // for the engine (startPcmCapture), or null if it could not be taken.
+        function queueTranscription(blob, jobId, withinLimit, wav) {
             const pending = addPendingEntry();
             pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
             if (transcribing++ > 0) pending.originalTextField.textContent = S('status.queued');
             const gen = session;
             transcribeChain = transcribeChain
                 // Recordings made before a sign-out are not transcribed after it.
-                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen, withinLimit) : null))
+                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen, withinLimit, wav) : null))
                 .catch((e) => console.error('transcription queue', e)) // keep the chain going
                 .finally(() => { transcribing = Math.max(0, transcribing - 1); });
+        }
+
+        // The engine is given the recording as a plain 16 kHz mono WAV, taken
+        // straight from the microphone while recording (an AudioContext at
+        // 16 kHz resamples it; a small worklet collects the samples): it then
+        // needs no audio library of its own — the one it had, PyAV, brings GPL
+        // code into the installer — and gets the sound before any compression.
+        // (Decoding the compressed recording afterwards, decodeAudioData,
+        // crashed the window on a test machine, so it is not used.)
+        const CAPTURE_WORKLET = `
+            class PcmCapture extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this.buf = new Float32Array(8000); this.n = 0;
+                    this.port.onmessage = () => {   // "finish": hand over the rest
+                        this.port.postMessage(this.buf.slice(0, this.n)); this.n = 0;
+                        this.port.postMessage('done');
+                    };
+                }
+                process(inputs) {
+                    const ch = inputs[0] && inputs[0][0];
+                    if (ch) for (let i = 0; i < ch.length; i++) {
+                        this.buf[this.n++] = ch[i];
+                        if (this.n === this.buf.length) { this.port.postMessage(this.buf); this.buf = new Float32Array(8000); this.n = 0; }
+                    }
+                    return true;
+                }
+            }
+            registerProcessor('pcm-capture', PcmCapture);`;
+        async function startPcmCapture(stream) {
+            const ctx = new AudioContext({ sampleRate: 16000 });
+            ctx.resume().catch(() => {});
+            const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: 'application/javascript' }));
+            await ctx.audioWorklet.addModule(url);
+            URL.revokeObjectURL(url);
+            const node = new AudioWorkletNode(ctx, 'pcm-capture', { numberOfOutputs: 1 });
+            const parts = [];
+            let finished = null;
+            node.port.onmessage = (e) => {
+                if (e.data === 'done') { if (finished) finished(); } else parts.push(e.data);
+            };
+            ctx.createMediaStreamSource(stream).connect(node);
+            node.connect(ctx.destination); // silent: it writes nothing; connected so it keeps running
+            return {
+                // The recording as WAV (16-bit, 16 kHz, mono); call once it stopped.
+                finish: async () => {
+                    // The last samples; never wait long for them (a stalled context).
+                    await Promise.race([
+                        new Promise((resolve) => { finished = resolve; node.port.postMessage('finish'); }),
+                        new Promise((resolve) => setTimeout(resolve, 1500)),
+                    ]);
+                    ctx.close().catch(() => {});
+                    let n = 0;
+                    for (const p of parts) n += p.length;
+                    const pcm = new Int16Array(n);
+                    let o = 0;
+                    for (const p of parts) for (let i = 0; i < p.length; i++) {
+                        const v = Math.max(-1, Math.min(1, p[i]));
+                        pcm[o++] = v < 0 ? v * 0x8000 : v * 0x7fff;
+                    }
+                    const head = new DataView(new ArrayBuffer(44));
+                    const text = (at, str) => { for (let i = 0; i < str.length; i++) head.setUint8(at + i, str.charCodeAt(i)); };
+                    text(0, 'RIFF'); head.setUint32(4, 36 + pcm.byteLength, true); text(8, 'WAVE');
+                    text(12, 'fmt '); head.setUint32(16, 16, true); head.setUint16(20, 1, true); head.setUint16(22, 1, true);
+                    head.setUint32(24, 16000, true); head.setUint32(28, 32000, true); head.setUint16(32, 2, true);
+                    head.setUint16(34, 16, true); text(36, 'data'); head.setUint32(40, pcm.byteLength, true);
+                    return new Blob([head.buffer, pcm.buffer], { type: 'audio/wav' });
+                },
+            };
         }
 
         // --- Signing out clears the history ---
@@ -987,7 +1058,7 @@
             translateBtn.disabled = !done;
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit) {
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit, wav) {
             originalTextField.textContent = S('status.transcribing'); // its turn now
             progressField = originalTextField;
             progressPct = null;
@@ -996,7 +1067,7 @@
             progressTimer = setInterval(showProgress, 1000);
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
-                const result = blob.size ? await window.api.transcribe(blob, undefined, withinLimit)
+                const result = blob.size ? await window.api.transcribe(wav || blob, undefined, withinLimit)
                                          : { success: true, text: '' };
                 stopProgress(originalTextField); // before its text goes in, or a tick would cover it
                 if (gen !== session) return; // signed out while it was transcribed
@@ -1484,17 +1555,24 @@
                 mediaRecorder = recorder;
 
                 recorder.ondataavailable = (event) => { chunks.push(event.data); };
-                recorder.onstop = () => {
+                let capture = null; // the same sound as WAV for the engine (startPcmCapture)
+                recorder.onstop = async () => {
+                    const wav = capture ? await capture.finish().catch((e) => { console.error('capture', e); return null; }) : null;
                     stream.getTracks().forEach(track => track.stop());
                     if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
-                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit);
+                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit, wav);
                 };
 
                 recordBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
 
                 recorder.start();
+                try {
+                    capture = await startPcmCapture(stream);
+                } catch (e) {
+                    console.error('could not take the sound for the engine; the recording goes as it is', e);
+                }
                 startLevelMeter(stream);
                 if (window.api.recordingStarted) window.api.recordingStarted(jobId);
                 micStarting = false;
