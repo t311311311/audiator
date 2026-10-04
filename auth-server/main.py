@@ -17,10 +17,23 @@ try:
 except ImportError:
     pass
 
+from contextlib import asynccontextmanager
+
 from db import init_db, get_user, upsert_user, usage_today, add_usage
+import log_setup
 import rate
 
-app = FastAPI(title="Audiator Auth Server")
+
+@asynccontextmanager
+async def _lifespan(app):
+    # Log files with a size cap (log_setup.py), when LOG_DIR is set. Added at
+    # start-up: uvicorn sets up its own logging first and would drop handlers
+    # added before that.
+    log_setup.install()
+    yield
+
+
+app = FastAPI(title="Audiator Auth Server", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,

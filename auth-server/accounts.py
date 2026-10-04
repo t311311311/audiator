@@ -24,6 +24,7 @@ Rules agreed with the user:
 """
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
@@ -39,6 +40,7 @@ import rate
 from accounts_db import Device, Session, Usage, User, init_accounts_db
 
 router = APIRouter(prefix="/api/v2")
+log = logging.getLogger("audiator")  # into the capped log files (log_setup.py)
 
 SECRET = os.environ.get("AUDIATOR_SECRET_KEY", "")
 ADMIN_EMAILS = {e.strip().lower() for e in
@@ -214,7 +216,7 @@ def request_code(req: CodeRequest, request: Request):
     try:
         mailer.send_code(email, code, req.lang)
     except Exception as e:  # noqa: BLE001 — reported to the user as "could not send"
-        print(f"[mail] sending to {_mask(email)} failed: {e}", flush=True)  # no full addresses in logs
+        log.warning("mail to %s failed: %s", _mask(email), e)  # no full addresses in logs
         raise _err(502, "mail_failed")
     # The same answer for a known address and a new one: whether someone has
     # an account is not for anyone to find out by asking for codes.

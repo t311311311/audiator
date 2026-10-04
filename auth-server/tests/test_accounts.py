@@ -227,12 +227,14 @@ def _smtp_env(monkeypatch, **env):
         monkeypatch.setenv(k, env.get(k, ""))
 
 
-def test_without_a_mailbox_the_code_goes_nowhere(client, monkeypatch, capsys):
+def test_without_a_mailbox_the_code_goes_nowhere(client, monkeypatch, capsys, caplog):
     """A server with no mail set up refuses; the code never reaches a log."""
     _smtp_env(monkeypatch)
+    caplog.set_level("INFO", logger="audiator")
     r = client.post("/api/v2/auth/code", json={"email": "ivan@mail.ru"})
     assert r.status_code == 502 and r.json()["detail"]["error"] == "mail_failed"
-    out = capsys.readouterr().out
+    out = capsys.readouterr().out + caplog.text
+    assert "mail to i***@mail.ru failed" in caplog.text, "the failure is logged, masked"
     assert "ivan@mail.ru" not in out, "no full address in the log"
     with accounts_db.Session() as s:
         code_hash = s.query(accounts_db.User).one().code_hash
