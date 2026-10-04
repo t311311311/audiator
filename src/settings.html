@@ -473,17 +473,26 @@
                     document.getElementById('account-email').title = account.email;
                     document.getElementById('account-plan').textContent = strings[`plan.${account.plan}`] || account.plan;
                     const left = document.getElementById('account-left');
-                    let text = '';
+                    let text = '', tip = '';
+                    const empty = !!account.limited && account.remaining <= 0;
                     if (account.limited) {
-                        text = (strings['account.leftToday'] || '').replace('{t}', formatLeft(account.remaining));
+                        // New minutes at local midnight: said on hover, or in
+                        // place of the count once it is used up.
+                        const midnight = new Date();
+                        midnight.setHours(24, 0, 0, 0);
+                        tip = (strings['account.resetIn'] || '')
+                            .replace('{t}', formatLeft(Math.ceil((midnight - Date.now()) / 60000) * 60));
+                        text = empty ? tip : (strings['account.leftToday'] || '').replace('{t}', formatLeft(account.remaining));
                     } else if (account.plan === 'commercial' && account.paidUntil) {
                         const d = new Date(account.paidUntil).toLocaleDateString(document.documentElement.lang);
                         text = (strings['account.paidUntil'] || '').replace('{d}', d);
                     }
                     left.textContent = text;
+                    left.title = empty ? '' : tip;
                     left.hidden = !text;
-                    left.classList.toggle('empty', !!account.limited && account.remaining <= 0);
+                    left.classList.toggle('empty', empty);
                 }
+                setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
                 window.settingsApi.getAccount().then(renderAccount).catch(() => {});
                 window.settingsApi.onAccountUpdated(renderAccount);
                 // Signing out is also how to change accounts: the sign-in window
