@@ -259,7 +259,8 @@
             // Sent back here by the server rather than by the user.
             const why = account && account.reason;
             const notice = why === 'session_expired' ? S('login.sessionExpired')
-                         : why === 'blocked' ? S('login.err.blocked') : '';
+                         : why === 'blocked' ? S('login.err.blocked')
+                         : why === 'terms_not_accepted' ? S('login.err.terms_not_accepted') : '';
             $('notice').textContent = notice;
             $('notice').classList.toggle('hidden', !notice);
             if (account && account.lastEmail) $('email').value = account.lastEmail;

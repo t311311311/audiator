@@ -305,3 +305,19 @@ def test_addresses_never_confirmed_are_cleaned_up(client, mailbox):
     with accounts_db.Session() as s:
         emails = {u.email for u in s.query(accounts_db.User)}
     assert emails == {"kept@mail.ru", "fresh@mail.ru", "someone@mail.ru"}
+
+
+def test_a_session_without_the_current_rules_must_sign_in_again(client, mailbox):
+    """Signed in before there were rules, or before their new version: the
+    server serves the account again only once they are accepted."""
+    r = sign_in(client, mailbox, "a@b.com")
+    assert client.get("/api/v2/me", headers=auth(r)).status_code == 200
+    with accounts_db.Session() as s:
+        s.query(accounts_db.User).one().terms_version = None   # as before the rules
+        s.commit()
+    for call in (lambda: client.get("/api/v2/me", headers=auth(r)),
+                 lambda: client.post("/api/v2/usage", json={"seconds": 10}, headers=auth(r))):
+        res = call()
+        assert res.status_code == 403 and res.json()["detail"] == {"error": "terms_not_accepted", "version": TERMS}
+    r = sign_in(client, mailbox, "a@b.com")   # ticks them in the sign-in window
+    assert client.get("/api/v2/me", headers=auth(r)).status_code == 200
