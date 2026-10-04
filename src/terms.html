@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Audiator</title>
+    <!-- The rules the user accepts at sign-in (login.html). Version: the
+         date below; it must match TERMS_VERSION in src/account.js and
+         auth-server/accounts.py — change all three together, and the server
+         asks everyone to accept the new version at their next sign-in.
+         Opened as terms.html?lang=ru&theme=dark. -->
+    <style>
+        :root {
+            --bg-color: #282c34; --text-color: #abb2bf; --head-color: #d7dae0;
+            --border-color: #4b5263; --accent-color: #61afef;
+        }
+        body.light-theme {
+            --bg-color: #fafafa; --text-color: #1c1e21; --head-color: #000;
+            --border-color: #d1d5db; --accent-color: #2f6fb3;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-color); color: var(--text-color);
+            margin: 0; padding: 20px 26px 28px; font-size: 13.5px; line-height: 1.5;
+        }
+        h1 { color: var(--head-color); font-size: 19px; margin: 0 0 2px; }
+        h2 { color: var(--head-color); font-size: 14.5px; margin: 18px 0 4px; }
+        .edition { opacity: 0.65; font-size: 12px; margin-bottom: 8px; }
+        p, li { margin: 4px 0; }
+        ul { padding-left: 20px; margin: 4px 0; }
+        .strong { font-weight: 700; color: var(--head-color); }
+        a { color: var(--accent-color); }
+        section[lang] { display: none; }
+        section.shown { display: block; }
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<section lang="ru">
+<h1>Правила использования Audiator</h1>
+<div class="edition">Редакция от 4 октября 2026 г.</div>
+
+<h2>1. Что такое Audiator</h2>
+<p>Audiator — программа для перевода речи в текст и перевода текста. Распознавание и перевод выполняются
+на вашем компьютере: ваш голос и ваши тексты не отправляются на наши серверы. Наш сервер нужен только
+для входа в аккаунт, учёта времени использования и оплаты.</p>
+
+<h2>2. Аккаунт</h2>
+<ul>
+<li>Вход — по коду, который приходит на вашу почту. Пароля нет.</li>
+<li>На одном компьютере может быть только один бесплатный аккаунт.</li>
+<li>Не передавайте свой аккаунт другим людям.</li>
+<li>Мы можем заблокировать аккаунт за попытки обойти ограничения, автоматические запросы к серверу
+или атаки на сервис.</li>
+<li>При выходе из аккаунта история записей в программе стирается.</li>
+</ul>
+
+<h2>3. Тарифы</h2>
+<ul>
+<li><span class="strong">Бесплатно</span> — 2 часа распознавания каждые 24 часа. Отсчёт 24 часов начинается
+с первого использования; по их окончании снова доступны 2 часа.</li>
+<li><span class="strong">Месяц</span> — 3 USDT. <span class="strong">Год</span> — 25 USDT. Без ограничения времени.</li>
+</ul>
+
+<h2>4. Оплата и баланс</h2>
+<ul>
+<li>Оплата принимается только в <span class="strong">USDT в сети BNB Smart Chain (BEP-20)</span> на ваш
+личный адрес, который показывает программа. Адрес закреплён за вашим аккаунтом.</li>
+<li>Каждый платёж зачисляется на баланс аккаунта. С баланса оплачивается период: год (25 USDT), если хватает,
+иначе месяц (3 USDT). Остаток остаётся на балансе и по окончании периода автоматически идёт на продление.</li>
+<li>Недостача до 2% от цены (например, удержанная биржей комиссия) не учитывается: период оплачивается.</li>
+<li><span class="strong">Возвратов нет</span> ни при каких обстоятельствах, в том числе при ошибочных и излишних
+платежах: излишек остаётся на балансе и идёт на следующие периоды.</li>
+<li><span class="strong">Платёж в другой сети (не BEP-20) не засчитывается и не возвращается — он считается
+пожертвованием (донатом).</span> Напишите нам — возможно, подарим месяц.</li>
+<li>Цены могут меняться. Баланс хранится в USDT; продление оплачивается по цене, действующей на момент продления.</li>
+<li>Пожертвования (донат) — добровольная благодарность; они не дают тарифа и не возвращаются.</li>
+</ul>
+
+<h2>5. Какие данные мы храним</h2>
+<ul>
+<li>Адрес почты; отпечаток (хеш) идентификатора компьютера — не сам идентификатор; сколько секунд распознавания
+использовано и когда; платежи; ваши обращения в поддержку.</li>
+<li>IP-адреса в журналах сервера — не дольше 30 дней.</li>
+<li>Мы <span class="strong">не храним</span> ваш голос, тексты и переводы.</li>
+<li>Удалить аккаунт и данные можно по обращению в поддержку (данные о платежах могут храниться дольше,
+если этого требует закон).</li>
+</ul>
+
+<h2>6. Поддержка</h2>
+<p>Написать нам можно из программы («Написать нам» в меню или в настройках) или на
+<a href="mailto:audiatorr@gmail.com">audiatorr@gmail.com</a>. Мы стараемся отвечать:</p>
+<ul>
+<li>по оплате и балансу — в течение 48 часов;</li>
+<li>пользователям платных тарифов — в течение 2 рабочих дней;</li>
+<li>пользователям бесплатного тарифа — в течение 5 рабочих дней;</li>
+<li>предложения и идеи читаем все, но ответ не гарантируем.</li>
+</ul>
+
+<h2>7. Ответственность</h2>
+<ul>
+<li>Программа предоставляется «как есть». Мы не гарантируем точность распознавания и перевода — проверяйте
+важные тексты.</li>
+<li>Возможны перерывы в работе сервера аккаунтов; распознавание на вашем компьютере при этом продолжает работать
+в пределах вашего тарифа.</li>
+</ul>
+
+<h2>8. Изменение правил</h2>
+<p>Новая редакция правил показывается при входе в аккаунт; чтобы продолжить, её нужно принять.</p>
+</section>
+
+<section lang="en">
+<h1>Audiator Terms of Use</h1>
+<div class="edition">Version of 4 October 2026</div>
+
+<h2>1. What Audiator is</h2>
+<p>Audiator turns speech into text and translates text. Recognition and translation run on your computer:
+your voice and your texts are not sent to our servers. Our server is only used to sign you in, count usage
+time and take payments.</p>
+
+<h2>2. Your account</h2>
+<ul>
+<li>You sign in with a code sent to your email. There is no password.</li>
+<li>One computer can have only one free account.</li>
+<li>Do not share your account with other people.</li>
+<li>We may block an account for trying to get around the limits, automated requests to the server or attacks
+on the service.</li>
+<li>Signing out erases the history of recordings in the app.</li>
+</ul>
+
+<h2>3. Plans</h2>
+<ul>
+<li><span class="strong">Free</span> — 2 hours of recognition every 24 hours. The 24 hours start with your first
+use; when they are over, 2 hours are available again.</li>
+<li><span class="strong">Month</span> — 3 USDT. <span class="strong">Year</span> — 25 USDT. No time limit.</li>
+</ul>
+
+<h2>4. Payment and balance</h2>
+<ul>
+<li>We accept only <span class="strong">USDT on BNB Smart Chain (BEP-20)</span>, sent to your personal address
+shown in the app. The address belongs to your account.</li>
+<li>Every payment goes to your account balance. The balance pays for a period: a year (25 USDT) if there is
+enough, otherwise a month (3 USDT). The rest stays on the balance and renews the plan automatically when the
+period ends.</li>
+<li>A shortfall of up to 2% of the price (for example, a fee kept by an exchange) is ignored: the period is paid.</li>
+<li><span class="strong">There are no refunds</span> under any circumstances, including mistaken and excess
+payments: the excess stays on the balance and pays for the following periods.</li>
+<li><span class="strong">A payment on any other network (not BEP-20) is not credited and not refunded — it counts
+as a donation.</span> Write to us — we may give you a month.</li>
+<li>Prices may change. The balance is kept in USDT; a renewal is paid at the price in force at that time.</li>
+<li>Donations are a voluntary thank-you; they do not give a plan and are not refunded.</li>
+</ul>
+
+<h2>5. What data we keep</h2>
+<ul>
+<li>Your email address; a fingerprint (hash) of your computer's id — not the id itself; how many seconds of
+recognition were used and when; payments; your messages to support.</li>
+<li>IP addresses in the server logs — for no longer than 30 days.</li>
+<li>We <span class="strong">do not keep</span> your voice, texts or translations.</li>
+<li>Your account and data can be deleted on request to support (payment records may be kept longer where the
+law requires it).</li>
+</ul>
+
+<h2>6. Support</h2>
+<p>Write to us from the app ("Contact us" in the menu or in Settings) or at
+<a href="mailto:audiatorr@gmail.com">audiatorr@gmail.com</a>. We aim to answer:</p>
+<ul>
+<li>about payments and the balance — within 48 hours;</li>
+<li>users of paid plans — within 2 working days;</li>
+<li>users of the free plan — within 5 working days;</li>
+<li>we read every suggestion and idea, but do not promise an answer.</li>
+</ul>
+
+<h2>7. Liability</h2>
+<ul>
+<li>The app is provided "as is". We do not guarantee the accuracy of recognition and translation — check
+important texts.</li>
+<li>The account server may be unavailable at times; recognition on your computer keeps working within your plan.</li>
+</ul>
+
+<h2>8. Changes</h2>
+<p>A new version of the terms is shown when you sign in; you need to accept it to continue.</p>
+</section>
+
+<section lang="zh">
+<h1>Audiator 使用条款</h1>
+<div class="edition">2026 年 10 月 4 日版</div>
+
+<h2>1. Audiator 是什么</h2>
+<p>Audiator 将语音转为文字并翻译文本。识别和翻译在您的电脑上进行：您的语音和文字不会发送到我们的服务器。
+我们的服务器仅用于登录、统计使用时长和收款。</p>
+
+<h2>2. 账户</h2>
+<ul>
+<li>使用发送到您邮箱的验证码登录，无需密码。</li>
+<li>每台电脑只能有一个免费账户。</li>
+<li>请勿将账户转给他人使用。</li>
+<li>如有规避限制、自动请求服务器或攻击服务的行为，我们可能封禁账户。</li>
+<li>退出账户时，程序中的记录历史会被清除。</li>
+</ul>
+
+<h2>3. 套餐</h2>
+<ul>
+<li><span class="strong">免费</span> — 每 24 小时 2 小时识别时长。24 小时从首次使用开始计算，结束后重新获得 2 小时。</li>
+<li><span class="strong">月付</span> — 3 USDT。<span class="strong">年付</span> — 25 USDT。不限时长。</li>
+</ul>
+
+<h2>4. 付款与余额</h2>
+<ul>
+<li>仅接受 <span class="strong">BNB Smart Chain（BEP-20）网络上的 USDT</span>，付款至程序显示的您的专属地址。该地址与您的账户绑定。</li>
+<li>每笔付款计入账户余额。余额足够时支付一年（25 USDT），否则支付一个月（3 USDT）。剩余部分保留在余额中，期满后自动续费。</li>
+<li>不足价格 2% 以内的差额（例如交易所扣除的手续费）不计：视为已付清。</li>
+<li><span class="strong">任何情况下均不退款</span>，包括误付和多付：多付部分保留在余额中，用于后续周期。</li>
+<li><span class="strong">通过其他网络（非 BEP-20）的付款不予入账、不予退还，视为捐赠。</span>请联系我们——我们可能赠送一个月。</li>
+<li>价格可能调整。余额以 USDT 计；续费按续费时的价格支付。</li>
+<li>捐赠为自愿致谢，不提供套餐，不予退还。</li>
+</ul>
+
+<h2>5. 我们保存的数据</h2>
+<ul>
+<li>邮箱地址；电脑标识的指纹（哈希），而非标识本身；使用了多少秒识别时长及时间；付款记录；您的客服留言。</li>
+<li>服务器日志中的 IP 地址保存不超过 30 天。</li>
+<li>我们<span class="strong">不保存</span>您的语音、文字和翻译。</li>
+<li>可通过客服申请删除账户及数据（法律要求时，付款记录可能保存更久）。</li>
+</ul>
+
+<h2>6. 客服</h2>
+<p>可在程序中（菜单或设置中的“联系我们”）或发送邮件至 <a href="mailto:audiatorr@gmail.com">audiatorr@gmail.com</a> 联系我们。我们会尽量：</p>
+<ul>
+<li>付款和余额问题 — 48 小时内答复；</li>
+<li>付费用户 — 2 个工作日内答复；</li>
+<li>免费用户 — 5 个工作日内答复；</li>
+<li>所有建议都会阅读，但不保证答复。</li>
+</ul>
+
+<h2>7. 责任</h2>
+<ul>
+<li>本程序按“现状”提供。我们不保证识别和翻译的准确性——请核对重要文本。</li>
+<li>账户服务器可能偶尔中断；您电脑上的识别在套餐范围内照常工作。</li>
+</ul>
+
+<h2>8. 条款变更</h2>
+<p>新版条款会在登录时显示，需接受后才能继续使用。</p>
+</section>
+
+<script>
+    const q = new URLSearchParams(location.search);
+    const lang = ['ru', 'en', 'zh'].includes(q.get('lang')) ? q.get('lang') : 'en';
+    document.documentElement.lang = lang;
+    document.querySelector(`section[lang="${lang}"]`).classList.add('shown');
+    document.title = document.querySelector('section.shown h1').textContent;
+    if (q.get('theme') === 'light') document.body.classList.add('light-theme');
+    // (The mail link is handed to the user's mail program by the main process.)
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+</script>
+</body>
+</html>

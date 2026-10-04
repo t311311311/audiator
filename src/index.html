@@ -111,11 +111,12 @@
             overflow-wrap: break-word; /* For modern browsers */
         }
 
-        /* Free plan: time left today, in the middle of the title bar; red once
-           it is used up. */
+        /* Free plan: time left and when it renews, between the menu and the
+           window buttons; red once it is used up. Cut with "…" if a language
+           makes it too long (the whole line on hover). */
         .minutes-left {
-            position: absolute; left: 50%; transform: translateX(-50%);
-            font-size: 12px; opacity: 0.8; white-space: nowrap;
+            position: absolute; left: 40px; right: 64px; text-align: center;
+            font-size: 12px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
             -webkit-app-region: no-drag; cursor: default; /* or its tooltip never shows */
         }
         .minutes-left.empty { color: var(--record-color); opacity: 1; }
@@ -629,15 +630,19 @@
             if (!h) return `${m} ${S('unit.min')}`;
             return m % 60 ? `${h} ${S('unit.h')} ${m % 60} ${S('unit.min')}` : `${h} ${S('unit.h')}`;
         }
-        // The free minutes come back at local midnight: how long until then,
-        // rounded up to the minute.
+        // Each account has its own 24 hours, from its first use: how long
+        // until they renew, rounded up to the minute (null: none running yet).
         function untilReset() {
-            const midnight = new Date();
-            midnight.setHours(24, 0, 0, 0);
-            return formatLeft(Math.ceil((midnight - Date.now()) / 60000) * 60);
+            if (!acct || !acct.resetsAt) return null;
+            return formatLeft(Math.max(60, Math.ceil((acct.resetsAt - Date.now()) / 60000) * 60));
         }
-        // Minutes left; hovering says when new ones come. Used up: the
-        // countdown to them instead.
+        // "Осталось 43 мин, обновление через 4 ч 41 мин" — in plain sight,
+        // not only on hover: not everyone would think of hovering.
+        function accountLine() {
+            const left = formatLeft(acct.remaining), reset = untilReset();
+            return reset ? S('account.leftReset').replace('{left}', left).replace('{t}', reset)
+                         : S('account.left').replace('{left}', left);
+        }
         function renderAccount(v) {
             if (v && acct && acct.signedIn && !v.signedIn) clearForSignOut();
             if (v) acct = v;
@@ -645,11 +650,8 @@
             const show = !!(acct && acct.signedIn && acct.limited);
             el.classList.toggle('hidden', !show);
             if (!show) return;
-            const empty = acct.remaining <= 0;
-            const reset = S('account.resetIn').replace('{t}', untilReset());
-            el.textContent = empty ? reset : S('account.leftToday').replace('{t}', formatLeft(acct.remaining));
-            el.title = empty ? '' : reset;
-            el.classList.toggle('empty', empty);
+            el.textContent = el.title = accountLine();
+            el.classList.toggle('empty', acct.remaining <= 0);
         }
         setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
         // No minutes left today: say so instead of recording what could not
@@ -1388,7 +1390,7 @@
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
             if (limitReached()) {
                 window.api.limitReached(); // brings this window up when the hotkey was used
-                showToast(S('error.limitIn').replace('{t}', untilReset()), 5000);
+                showToast(S('error.limit').replace('{t}', untilReset() || formatLeft(0)), 5000);
                 return;
             }
             micStarting = true;

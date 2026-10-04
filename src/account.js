@@ -17,6 +17,12 @@ const path = require('path');
 const { app, safeStorage } = require('electron');
 
 const SERVER = process.env.AUDIATOR_ACCOUNTS_URL || 'http://127.0.0.1:3000';
+// The rules shown in the sign-in window (src/terms/); ticking them accepts
+// this version, and the server lets no one in without it.
+const TERMS_VERSION = '2026-10-04';
+// The free plan's allowance is per 24 hours of the account's own, from its
+// first use (auth-server/accounts.py, WINDOW).
+const WINDOW_MS = 24 * 3600 * 1000;
 const FILE = () => path.join(app.getPath('userData'), 'account.json');
 const DEVICE_SALT = 'audiator-device-v1';
 
@@ -94,11 +100,7 @@ function deviceHash() {
 
 // --- talking to the server ------------------------------------------------------------
 
-const tz = () => new Date().getTimezoneOffset(); // as the server expects
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const tz = () => new Date().getTimezoneOffset(); // as the server expects (for its per-day history)
 
 /** { ok, status, data } — status 0 when the server could not be reached. */
 async function request(urlPath, { method = 'GET', body, auth } = {}) {
@@ -128,11 +130,11 @@ async function requestCode(email, lang) {
 /** Sign in (or up) with the code. Starts a fresh session on success. */
 async function verify(email, code) {
   const res = await request('/api/v2/auth/verify', {
-    method: 'POST', body: { email, code, device: deviceHash(), tz: tz() },
+    method: 'POST', body: { email, code, device: deviceHash(), tz: tz(), terms: TERMS_VERSION },
   });
   if (!res.ok) return { ok: false, ...errorOf(res) };
   state = { token: res.data.token, email: res.data.profile.email, profile: res.data.profile,
-            pending: { day: today(), seconds: 0 }, fallbackId: load().fallbackId };
+            pending: { since: 0, seconds: 0 }, fallbackId: load().fallbackId };
   save();
   return { ok: true };
 }
@@ -157,7 +159,7 @@ async function refresh() {
 async function addUsage(seconds) {
   const s = load();
   if (!s.token || !(seconds > 0)) return;
-  if (!s.pending || s.pending.day !== today()) s.pending = { day: today(), seconds: 0 };
+  if (!s.pending || !s.pending.seconds) s.pending = { since: Date.now(), seconds: 0 };
   s.pending.seconds += Math.ceil(seconds);
   save();
   await flushUsage();
@@ -174,8 +176,9 @@ function flushUsage() {
 async function sendUsage() {
   const s = load();
   if (!s.token || !s.pending || !s.pending.seconds) return;
-  // Minutes counted offline on an earlier day do not count against today.
-  if (s.pending.day !== today()) { s.pending = { day: today(), seconds: 0 }; save(); return; }
+  // Minutes counted offline in 24 hours that are over by now are not charged
+  // to new ones.
+  if (!(s.pending.since > Date.now() - WINDOW_MS)) { s.pending = { since: 0, seconds: 0 }; save(); return; }
   const seconds = s.pending.seconds;
   const res = await request('/api/v2/usage', { method: 'POST', auth: true, body: { seconds, tz: tz() } });
   if (res.ok) {
@@ -197,7 +200,9 @@ function signOut(reason) {
 // --- what the windows see --------------------------------------------------------------
 
 /** Signed in: { signedIn, email, plan, limited, remaining (seconds, free plan
- *  only), limit, paidUntil }; signed out: { signedIn: false, reason, lastEmail }. */
+ *  only), limit, resetsAt (ms: when the account's 24 hours end; null while
+ *  none are running — the next use starts them), paidUntil }; signed out:
+ *  { signedIn: false, reason, lastEmail }. */
 function view() {
   const s = load();
   if (!s.token || !s.profile) {
@@ -205,13 +210,18 @@ function view() {
   }
   const p = s.profile;
   const limited = p.plan === 'free';
-  // The server's count for its day, less what has not reached it yet.
-  const sameDay = p.day === today();
-  const pending = s.pending && s.pending.day === today() ? s.pending.seconds : 0;
-  const remaining = limited
-    ? Math.max(0, (sameDay ? p.remaining_today : p.limit_seconds) - pending)
-    : null;
-  return { signedIn: true, email: s.email, plan: p.plan, limited, remaining,
+  let remaining = null, resetsAt = null;
+  if (limited) {
+    // The server's count for the account's 24 hours, less what has not
+    // reached it yet. 24 hours that have ended since it said so are over.
+    resetsAt = p.resets_at ? Date.parse(p.resets_at) : null;
+    let used = p.used || 0;
+    if (resetsAt && Date.now() >= resetsAt) { resetsAt = null; used = 0; }
+    const pending = s.pending && s.pending.seconds > 0 ? s.pending : null;
+    if (pending && !resetsAt) resetsAt = pending.since + WINDOW_MS; // started here, offline
+    remaining = Math.max(0, p.limit_seconds - used - (pending ? pending.seconds : 0));
+  }
+  return { signedIn: true, email: s.email, plan: p.plan, limited, remaining, resetsAt,
            limit: p.limit_seconds, paidUntil: p.paid_until };
 }
 
@@ -224,5 +234,5 @@ function canTranscribe() {
 }
 
 module.exports = {
-  deviceHash, requestCode, verify, refresh, addUsage, signOut, view, signedIn, canTranscribe, onChange,
+  TERMS_VERSION, deviceHash, requestCode, verify, refresh, addUsage, signOut, view, signedIn, canTranscribe, onChange,
 };

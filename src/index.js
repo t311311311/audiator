@@ -351,11 +351,38 @@ const showLoginWindow = () => {
   loginWindow.loadFile(path.join(__dirname, 'login.html'));
   loginWindow.on('closed', () => {
     loginWindow = null;
+    if (termsWindow && !termsWindow.isDestroyed()) termsWindow.close();
     if (!account.signedIn() && !app.isQuitting) {
       app.isQuitting = true;
       app.quit();
     }
   });
+};
+
+// The rules of use (terms.html), from the sign-in window and from Settings.
+// A plain page: no preload, nothing it can ask of the app; its mail link
+// goes to the user's mail program.
+let termsWindow = null;
+const showTermsWindow = () => {
+  if (termsWindow && !termsWindow.isDestroyed()) { termsWindow.focus(); return; }
+  const theme = store.get('theme') === 'light' ? 'light' : 'dark';
+  termsWindow = new BrowserWindow({
+    width: 560,
+    height: 640,
+    title: tr('terms.windowTitle'),
+    icon: iconPath,
+    backgroundColor: theme === 'light' ? '#fafafa' : '#282c34',
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  termsWindow.setMenu(null);
+  termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang: currentLang(), theme } });
+  termsWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (url.startsWith('mailto:')) require('electron').shell.openExternal(url);
+  });
+  termsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  termsWindow.on('closed', () => { termsWindow = null; });
 };
 
 app.on('ready', async () => {
@@ -580,6 +607,7 @@ app.on('ready', async () => {
     return r;
   });
   // From Settings: sign out (also the way to another account).
+  ipcMain.on('open-terms', () => showTermsWindow());
   ipcMain.on('account-sign-out', () => {
     account.signOut('user'); // onChange opens the sign-in window
   });
@@ -648,7 +676,10 @@ app.on('ready', async () => {
 
     settingsWindow = new BrowserWindow({
       width: 450,
-      height: 660, // inside the frame (useContentSize): language row (AUD-33), quality list, account
+      // Inside the frame (useContentSize): language row (AUD-33), quality list,
+      // account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
+      // than the screen: the page scrolls instead of the buttons going missing.
+      height: Math.min(680, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
@@ -846,7 +877,9 @@ app.on('ready', async () => {
       return { success: false, error: tr('error.notSignedIn'), reason: 'signedOut' };
     }
     if (!account.canTranscribe()) {
-      return { success: false, error: tr('error.limit'), reason: 'limit' };
+      const { resetsAt } = account.view();
+      const left = resetsAt ? Math.max(60, Math.ceil((resetsAt - Date.now()) / 60000) * 60) : 0;
+      return { success: false, error: tr('error.limit').replace('{t}', i18n.duration(currentLang(), left)), reason: 'limit' };
     }
     try {
       const result = await api.transcribe(audioBuffer, language);
