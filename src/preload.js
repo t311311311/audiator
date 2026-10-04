@@ -39,13 +39,12 @@ contextBridge.exposeInMainWorld('api', {
   // --- Logging ---
   logError: (message, error) => ipcRenderer.send('log-error', { message, error: error.toString(), stack: error.stack }),
 
-  // --- Authorization ---
-  checkAuth: () => ipcRenderer.invoke('check-auth'),
-  startTrial: () => ipcRenderer.invoke('start-trial'),
-  activateSubscription: (plan, paymentId) => ipcRenderer.invoke('activate-subscription', { plan, paymentId }),
-  logout: () => ipcRenderer.invoke('logout'),
-  onAuthRequired: (callback) => ipcRenderer.on('auth-required', () => callback()),
-  activationComplete: (payload) => ipcRenderer.send('activation-complete', payload),
+  // --- Account: plan and minutes left today (account.js) ---
+  getAccount: () => ipcRenderer.invoke('account-get'),
+  onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
+  limitReached: () => ipcRenderer.send('limit-reached'),
+  // Signed out: the history is gone; these were its texts (for the clipboard).
+  historyCleared: (texts) => ipcRenderer.send('history-cleared', texts),
   checkServerHealth: () => ipcRenderer.invoke('check-server-health'),
 
   // --- API ---

@@ -111,6 +111,16 @@
             overflow-wrap: break-word; /* For modern browsers */
         }
 
+        /* Free plan: time left and when it renews, between the menu and the
+           window buttons; red once it is used up. Cut with "…" if a language
+           makes it too long (the whole line on hover). */
+        .minutes-left {
+            position: absolute; left: 40px; right: 64px; text-align: center;
+            font-size: 12px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            -webkit-app-region: no-drag; cursor: default; /* or its tooltip never shows */
+        }
+        .minutes-left.empty { color: var(--record-color); opacity: 1; }
+
         /* Speech model downloading / loading / failed: a strip under the title
            bar; the history moves down while it is there. */
         .engine-banner {
@@ -446,6 +456,8 @@
         <div>
             <div class="title-bar-button" id="menu-btn">&#9776;</div>
         </div>
+        <!-- Free plan: transcription time left today (unlimited plans: hidden). -->
+        <div id="minutes-left" class="minutes-left hidden"></div>
         <div style="display: flex;">
             <div class="title-bar-button" id="minimize-btn" style="font-size: 10px;">&#128469;</div>
             <div class="title-bar-button" id="close-btn">&#10005;</div>
@@ -550,6 +562,7 @@
                 });
                 fitTranslateLabel();
                 renderEngine(lastEngine); // its text is built in code, not marked up
+                renderAccount();
             }).catch((e) => console.error('i18n load failed', e));
         }
 
@@ -601,12 +614,54 @@
         // Short-lived confirmation inside the window. When the window is hidden
         // (the usual hotkey flow) the overlay shows the same message instead.
         let _toastTimer = null;
-        function showToast(message) {
+        function showToast(message, ms = 2200) {
             const el = document.getElementById('toast');
             el.textContent = message;
             el.classList.add('show');
             clearTimeout(_toastTimer);
-            _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+            _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+        }
+
+        // --- Account: transcription time left today (free plan) ---
+        // The main process keeps the count (account.js) and sends every change.
+        let acct = null;
+        function formatLeft(seconds) {
+            const m = Math.floor(seconds / 60), h = Math.floor(m / 60);
+            if (!h) return `${m} ${S('unit.min')}`;
+            return m % 60 ? `${h} ${S('unit.h')} ${m % 60} ${S('unit.min')}` : `${h} ${S('unit.h')}`;
+        }
+        // Each account has its own 24 hours, from its first use: how long
+        // until they renew, rounded up to the minute (null: none running yet).
+        function untilReset() {
+            if (!acct || !acct.resetsAt) return null;
+            return formatLeft(Math.max(60, Math.ceil((acct.resetsAt - Date.now()) / 60000) * 60));
+        }
+        // "Осталось 43 мин, обновление через 4 ч 41 мин" — in plain sight,
+        // not only on hover: not everyone would think of hovering.
+        function accountLine() {
+            const left = formatLeft(acct.remaining), reset = untilReset();
+            return reset ? S('account.leftReset').replace('{left}', left).replace('{t}', reset)
+                         : S('account.left').replace('{left}', left);
+        }
+        function renderAccount(v) {
+            if (v && acct && acct.signedIn && !v.signedIn) clearForSignOut();
+            if (v) acct = v;
+            const el = document.getElementById('minutes-left');
+            const show = !!(acct && acct.signedIn && acct.limited);
+            el.classList.toggle('hidden', !show);
+            if (!show) return;
+            el.textContent = el.title = accountLine();
+            el.classList.toggle('empty', acct.remaining <= 0);
+        }
+        setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
+        // No minutes left today: say so instead of recording what could not
+        // be transcribed.
+        function limitReached() {
+            return !!(acct && acct.signedIn && acct.limited && acct.remaining <= 0);
+        }
+        if (window.api.onAccountUpdated) {
+            window.api.onAccountUpdated(renderAccount);
+            window.api.getAccount().then(renderAccount).catch(() => {});
         }
 
         // --- Speech model download / load (first run, or a new quality) ---
@@ -822,9 +877,31 @@
         function queueTranscription(blob, jobId) {
             const pending = addPendingEntry();
             pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
+            const gen = session;
             transcribeChain = transcribeChain
-                .then(() => handleTranscription(blob, jobId, pending))
+                // Recordings made before a sign-out are not transcribed after it.
+                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen) : null))
                 .catch((e) => console.error('transcription queue', e)); // keep the chain going
+        }
+
+        // --- Signing out clears the history ---
+        // Nothing of one account is left for the next: the history (texts,
+        // translations, audio), a recording in progress and transcriptions
+        // still waiting go. The main process empties the bar, and the
+        // clipboard if it holds one of these texts.
+        let session = 0; // bumped at sign-out; work from before it is dropped
+        function clearForSignOut() {
+            session++;
+            const texts = [...historyContainer.querySelectorAll('.original-text, .translated-text')]
+                .map((e) => e.textContent.trim()).filter(Boolean);
+            // Dropped in onstop; a microphone still opening is closed as soon as it opens.
+            if (mediaRecorder && mediaRecorder.state === 'recording') stopBtn.click();
+            historyContainer.innerHTML = '';
+            closeTranslatePanel();
+            updateTranslateTitle();
+            updateActionButtons();
+            updateScrollButtons();
+            window.api.historyCleared(texts);
         }
 
         // The newest transcript that is finished (not waiting or transcribing):
@@ -844,13 +921,16 @@
             translateBtn.disabled = !done;
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }) {
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen) {
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
                 const result = blob.size ? await window.api.transcribe(blob)
                                          : { success: true, text: '' };
+                if (gen !== session) return; // signed out while it was transcribed
                 if (!result.success) {
-                    throw new Error(result.error || 'Transcription failed');
+                    // reason: the account's own refusal (limit, signed out),
+                    // already a sentence for the user.
+                    throw Object.assign(new Error(result.error || 'Transcription failed'), { reason: result.reason });
                 }
                 originalTextField.classList.remove('pending');
                 originalTextField.textContent = result.text || S('status.noText');
@@ -871,7 +951,7 @@
                 console.error('Transcription error:', error);
                 originalTextField.classList.remove('pending');
                 // Detailed logging of error information
-                const errorMessage = `${S('error.transcribe')}: ${error.message}`;
+                const errorMessage = error.reason ? error.message : `${S('error.transcribe')}: ${error.message}`;
                 originalTextField.textContent = errorMessage;
                 originalTextField.dataset.state = 'error';
 
@@ -1308,10 +1388,17 @@
         let stopWhenStarted = false; // the user asked to stop before it was open
         recordBtn.addEventListener('click', async () => {
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
+            if (limitReached()) {
+                window.api.limitReached(); // brings this window up when the hotkey was used
+                showToast(S('error.limit').replace('{t}', untilReset() || formatLeft(0)), 5000);
+                return;
+            }
             micStarting = true;
             stopWhenStarted = false;
+            const gen = session; // signed out meanwhile: this recording is dropped
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                if (gen !== session) { stream.getTracks().forEach((t) => t.stop()); return; }
                 const recorder = new MediaRecorder(stream);
                 const chunks = [];
                 const jobId = ++jobCounter;
@@ -1320,6 +1407,7 @@
                 recorder.ondataavailable = (event) => { chunks.push(event.data); };
                 recorder.onstop = () => {
                     stream.getTracks().forEach(track => track.stop());
+                    if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
                     queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId);
                 };

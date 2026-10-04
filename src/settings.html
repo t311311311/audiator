@@ -24,7 +24,7 @@
             margin: 0;
             padding: 20px;
             user-select: none;
-            overflow: hidden;
+            overflow-y: auto; /* only when the screen is too small for the window */
             display: flex;
             flex-direction: column;
             height: calc(100vh - 40px);
@@ -36,7 +36,7 @@
             flex-grow: 1;
         }
         .setting {
-            margin-bottom: 20px;
+            margin-bottom: 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -100,7 +100,21 @@
             opacity: 0.75;
             line-height: 1.35;
         }
-        .settings-version { margin-right: auto; font-size: 0.8em; }
+        /* Account: who is signed in, the plan, time left today; sign out. */
+        .account-box {
+            display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
+        }
+        .account-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .account-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+        .account-plan, .account-left { font-size: 0.85em; }
+        .account-plan { opacity: 0.8; }
+        .account-left.empty { color: #e06c75; }
+        .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+        .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
+        .settings-version { margin-right: auto; font-size: 0.8em; line-height: 1.5; }
+        .settings-version a { color: var(--accent-color); text-decoration: none; }
+        .settings-version a:hover { text-decoration: underline; }
         .settings-actions {
             display: flex;
             align-items: center;
@@ -136,7 +150,7 @@
 </head>
 <body>
     <div class="content">
-        <h2 style="margin-top: 15px; margin-left: 15px; margin-bottom: 25px;" data-i18n="settings.title">Настройки</h2>
+        <h2 style="margin-top: 0; margin-left: 15px; margin-bottom: 16px;" data-i18n="settings.title">Настройки</h2>
 
         <!-- First, so someone who cannot read the current language still finds it:
              the globe is universal and every option is in its own language. -->
@@ -185,12 +199,27 @@
                 <div class="setting-hint" id="quality-hint"></div>
             </div>
 
+            <div class="setting stacked">
+                <label data-i18n="account.title">Аккаунт</label>
+                <div class="account-box">
+                    <div class="account-info">
+                        <div class="account-email" id="account-email"></div>
+                        <div class="account-plan" id="account-plan"></div>
+                        <div class="account-left" id="account-left"></div>
+                    </div>
+                    <div class="account-actions">
+                        <button class="action-button" id="sign-out-btn" data-i18n="account.signOut">Выйти из аккаунта</button>
+                    </div>
+                </div>
+            </div>
+
 
             <!-- The version sits on the buttons' line, so the window ends right
                  under them instead of keeping a strip for it at the bottom. -->
             <div class="settings-actions">
                 <div class="settings-version">
-                    <span data-i18n="settings.version">Версия:</span> <span id="app-version"></span>
+                    <div><span data-i18n="settings.version">Версия:</span> <span id="app-version"></span></div>
+                    <a href="#" id="terms-link" data-i18n="login.termsLink">Правила использования</a>
                 </div>
                 <button class="action-button" id="cancel-settings-btn" data-i18n="settings.cancel">Отмена</button>
                 <button class="action-button" id="save-settings-btn" data-i18n="settings.save">Сохранить</button>
@@ -240,6 +269,17 @@
                     window.settingsApi.send('close-settings-window');
                 });
 
+                // A font saved before the list had full CSS values (a plain
+                // "Arial" from older versions) still shows as its entry.
+                function setFontFamily(value) {
+                    fontFamilySelect.value = value || 'Arial, sans-serif';
+                    if (fontFamilySelect.selectedIndex < 0) {
+                        const name = String(value || '').split(',')[0].replace(/['"]/g, '').trim();
+                        const match = [...fontFamilySelect.options].find((o) => o.textContent === name);
+                        fontFamilySelect.value = match ? match.value : 'Arial, sans-serif';
+                    }
+                }
+
                 // --- Load Initial Settings ---
                 function applyTheme(theme) {
                     if (theme === 'light') {
@@ -259,7 +299,7 @@
 
                     // Update UI elements with initial values
                     themeSelect.value = initialSettings.theme || 'dark';
-                    fontFamilySelect.value = initialSettings.fontFamily || 'Arial, sans-serif';
+                    setFontFamily(initialSettings.fontFamily);
                     opacitySlider.value = initialSettings.opacity || 0.8;
                     fontSizeSlider.value = initialSettings.fontSize || 16;
                     fontSizeValue.textContent = `${initialSettings.fontSize || 16}px`;
@@ -268,7 +308,7 @@
                 window.settingsApi.receive('settings-loaded', (settings) => {
                     currentSettings = { ...settings };
                     themeSelect.value = settings.theme || 'dark';
-                    fontFamilySelect.value = settings.fontFamily || 'Arial, sans-serif';
+                    setFontFamily(settings.fontFamily);
                     opacitySlider.value = settings.opacity || 0.8;
                     fontSizeSlider.value = settings.fontSize || 16;
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
@@ -313,10 +353,10 @@
 
                 languageSelect.addEventListener('change', (e) => {
                     currentSettings.language = e.target.value;
-                    applyI18n(e.target.value).then(renderQuality); // preview here; other windows follow on Save
+                    applyI18n(e.target.value).then(() => { renderQuality(); renderAccount(); }); // preview here; other windows follow on Save
                 });
 
-                applyI18n().then(renderQuality);
+                applyI18n().then(() => { renderQuality(); renderAccount(); });
 
                 // --- Recognition quality (the speech model) ---
                 // One row per model: its size, a tick once it is on this
@@ -419,6 +459,53 @@
 
                 window.settingsApi.getEngineStatus().then((s) => { engineStatus = s; renderQuality(); });
                 window.settingsApi.onEngineStatus((s) => { engineStatus = s; renderQuality(); });
+
+                // --- Account ---
+                // The free plan shows the time left today; a commercial one,
+                // until when it is paid; unlimited ones, nothing more.
+                let account = null;
+                function formatLeft(seconds) {
+                    const m = Math.floor(seconds / 60), h = Math.floor(m / 60);
+                    if (!h) return `${m} ${strings['unit.min']}`;
+                    return m % 60 ? `${h} ${strings['unit.h']} ${m % 60} ${strings['unit.min']}` : `${h} ${strings['unit.h']}`;
+                }
+                function renderAccount(v) {
+                    if (v) account = v;
+                    if (!account || !account.signedIn) return; // signing out closes this window
+                    document.getElementById('account-email').textContent = account.email;
+                    document.getElementById('account-email').title = account.email;
+                    document.getElementById('account-plan').textContent = strings[`plan.${account.plan}`] || account.plan;
+                    const left = document.getElementById('account-left');
+                    let text = '';
+                    const empty = !!account.limited && account.remaining <= 0;
+                    if (account.limited) {
+                        // Left in the account's own 24 hours, and when they
+                        // renew (once the first use has started them).
+                        const left = formatLeft(account.remaining);
+                        text = account.resetsAt
+                            ? (strings['account.leftReset'] || '').replace('{left}', left).replace('{t}',
+                                formatLeft(Math.max(60, Math.ceil((account.resetsAt - Date.now()) / 60000) * 60)))
+                            : (strings['account.left'] || '').replace('{left}', left);
+                    } else if (account.plan === 'commercial' && account.paidUntil) {
+                        const d = new Date(account.paidUntil).toLocaleDateString(document.documentElement.lang);
+                        text = (strings['account.paidUntil'] || '').replace('{d}', d);
+                    }
+                    left.textContent = text;
+                    left.hidden = !text;
+                    left.classList.toggle('empty', empty);
+                }
+                setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
+                window.settingsApi.getAccount().then(renderAccount).catch(() => {});
+                window.settingsApi.onAccountUpdated(renderAccount);
+                // Signing out is also how to change accounts: the sign-in window
+                // comes up and takes any email.
+                document.getElementById('terms-link').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.settingsApi.openTerms();
+                });
+                document.getElementById('sign-out-btn').addEventListener('click', () => {
+                    if (confirm(strings['account.confirmSignOut'])) window.settingsApi.signOut();
+                });
 
                 // Load and display app version
                 window.settingsApi.getAppVersion().then(version => {

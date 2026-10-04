@@ -328,6 +328,8 @@ def asr(
             "text": "".join(parts).strip(),
             "segments": segs,
             "language": info.language,
+            # Length of the recording: what counts against the daily minutes.
+            "duration": round(float(getattr(info, "duration", 0) or 0), 2),
         }
     finally:
         try:

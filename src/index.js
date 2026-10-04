@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
 const i18n = require('./i18n');
+const account = require('./account');
 
 // --- Initialize Settings Store ---
 const store = new Store({
@@ -10,7 +11,7 @@ const store = new Store({
     theme: 'dark',
     opacity: 0.8, // Default to 80% opaque
     fontSize: 16,
-    fontFamily: 'Arial',
+    fontFamily: 'Arial, sans-serif', // a value from the Settings list
     whisperModel: 'small', // recognition quality: base | small | large-v3-turbo
   }
 });
@@ -172,6 +173,7 @@ const createOverlay = () => {
 // permanently pinning the window there.
 const revealMainWindow = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!account.signedIn()) { showLoginWindow(); return; }
   // Opening the window (bar, tray icon, tray menu) also deals with the
   // finished transcripts: refreshOverlay() drops them once it has focus.
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -314,48 +316,73 @@ const createTray = () => {
   });
 };
 
-let activationWindow = null;
+// --- Sign-in (step 4 of docs/PRODUCT-PLAN.md) --------------------------------
+// The app works only signed in: an email and the code mailed to it
+// (account.js). Signed out, the sign-in window stands in for the main window,
+// and closing it quits — there is nothing the app can do without an account.
+let loginWindow = null;
 
-const showActivationWindow = () => {
-  if (activationWindow) {
-    activationWindow.focus();
+const showLoginWindow = () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  if (settingsWindow) settingsWindow.close();
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    if (loginWindow.isMinimized()) loginWindow.restore();
+    loginWindow.show();
+    loginWindow.focus();
     return;
   }
-
-  activationWindow = new BrowserWindow({
-    width: 460,
-    height: 730, // fits the whole card without a scrollbar
-    frame: true,
+  loginWindow = new BrowserWindow({
+    width: 400,
+    height: 470,
+    useContentSize: true,
     resizable: false,
-    parent: mainWindow,
-    modal: true,
-    title: tr('act.windowTitle'),
-    backgroundColor: '#282c34', // avoids a white flash before the page paints
+    maximizable: false,
+    title: tr('login.windowTitle'),
+    icon: iconPath,
+    backgroundColor: store.get('theme') === 'light' ? '#fafafa' : '#282c34', // no white flash
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'login-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  activationWindow.setMenu(null); // no File/Edit/View bar on a product dialog
-
-  activationWindow.loadFile(path.join(__dirname, 'activation.html'));
-
-  activationWindow.on('closed', () => {
-    activationWindow = null;
-  });
-
-  // Listen for activation complete
-  ipcMain.once('activation-complete', (event, { type, subscriptionEnd }) => {
-    if (activationWindow) {
-      activationWindow.close();
-    }
-    // Show main window
-    if (mainWindow) {
-      mainWindow.show();
+  loginWindow.setMenu(null);
+  loginWindow.loadFile(path.join(__dirname, 'login.html'));
+  loginWindow.on('closed', () => {
+    loginWindow = null;
+    if (termsWindow && !termsWindow.isDestroyed()) termsWindow.close();
+    if (!account.signedIn() && !app.isQuitting) {
+      app.isQuitting = true;
+      app.quit();
     }
   });
+};
+
+// The rules of use (terms.html), from the sign-in window and from Settings.
+// A plain page: no preload, nothing it can ask of the app; its mail link
+// goes to the user's mail program.
+let termsWindow = null;
+const showTermsWindow = () => {
+  if (termsWindow && !termsWindow.isDestroyed()) { termsWindow.focus(); return; }
+  const theme = store.get('theme') === 'light' ? 'light' : 'dark';
+  termsWindow = new BrowserWindow({
+    width: 560,
+    height: 640,
+    title: tr('terms.windowTitle'),
+    icon: iconPath,
+    backgroundColor: theme === 'light' ? '#fafafa' : '#282c34',
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  termsWindow.setMenu(null);
+  termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang: currentLang(), theme } });
+  termsWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (url.startsWith('mailto:')) require('electron').shell.openExternal(url);
+  });
+  termsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  termsWindow.on('closed', () => { termsWindow = null; });
 };
 
 app.on('ready', async () => {
@@ -424,10 +451,6 @@ app.on('ready', async () => {
     await startLocalBackend(path.join(__dirname, '..'));
   }
 
-  // Check authorization status
-  const auth = require('./auth');
-  const authStatus = await auth.checkStatus();
-  
   createWindow();
   createTray();
   broadcastSettings();
@@ -439,6 +462,7 @@ app.on('ready', async () => {
   // whenever the window is out of sight or behind another application.
   if (!globalShortcut.register('CommandOrControl+Space', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!account.signedIn()) { showLoginWindow(); return; }
     mainWindow.webContents.send('hotkey-toggle-record');
   })) {
     console.error('Failed to register hotkey Ctrl+Space (already taken by another app)');
@@ -458,7 +482,8 @@ app.on('ready', async () => {
   // Answers whether the text is on the clipboard now, so the page only
   // confirms what actually happened.
   ipcMain.handle('transcribed', (event, { id, text }) => {
-    if (!text) { queue.remove(id); refreshOverlay(); return { copied: false }; }
+    // Signed out meanwhile: nothing goes on the clipboard or the bar.
+    if (!text || !account.signedIn()) { queue.remove(id); refreshOverlay(); return { copied: false }; }
     if (mainInView()) {
       clipboard.writeText(text);
       queue.remove(id);
@@ -528,10 +553,67 @@ app.on('ready', async () => {
     scheduleSync();
   });
 
-  // Show activation window if not authenticated
-  if (!authStatus.authenticated) {
-    showActivationWindow();
-  }
+  // --- The account: sign-in, plan, minutes left today ---
+  // Every change goes to all windows (the counter in the main window, the
+  // Account section in Settings). Signed out by the server (session expired,
+  // blocked) or by the user: back to the sign-in window.
+  const sendAccount = (v) => BrowserWindow.getAllWindows().forEach((w) => {
+    if (!w.isDestroyed()) w.webContents.send('account-updated', v);
+  });
+  let wasSignedIn = account.signedIn();
+  let lastSent = JSON.stringify(account.view());
+  account.onChange((v) => {
+    lastSent = JSON.stringify(v);
+    sendAccount(v); // the main window clears its history on a sign-out
+    if (wasSignedIn && !v.signedIn) {
+      queue.clear(); // no barrels of the old account
+      offeredId = null;
+      refreshOverlay();
+      showLoginWindow();
+    }
+    wasSignedIn = v.signedIn;
+  });
+  // The history is gone; if the clipboard still holds one of its texts (put
+  // there for pasting, or copied from the history), it goes too. Anything else
+  // the user copied stays.
+  ipcMain.on('history-cleared', (event, texts) => {
+    const clip = clipboard.readText().trim();
+    if (clip && Array.isArray(texts) && texts.includes(clip)) clipboard.clear();
+  });
+  // The minutes come back at local midnight without a word from the server:
+  // look once a minute whether what the windows show is still right. The
+  // server is asked every 15 minutes (minutes counted offline go out too).
+  setInterval(() => {
+    const v = JSON.stringify(account.view());
+    if (v !== lastSent) { lastSent = v; sendAccount(JSON.parse(v)); }
+  }, 60 * 1000);
+  setInterval(() => { if (account.signedIn()) account.refresh(); }, 15 * 60 * 1000);
+
+  if (account.signedIn()) account.refresh(); // not awaited: works offline on what it knows
+  else showLoginWindow();
+
+  ipcMain.handle('account-get', () => account.view());
+  ipcMain.handle('account-request-code', (event, email) => account.requestCode(email, currentLang()));
+  ipcMain.handle('account-verify', async (event, { email, code }) => {
+    const r = await account.verify(email, code);
+    if (r.ok) {
+      console.log(`[account] signed in as ${account.view().email}`);
+      // Answer first: the window that asked is about to close.
+      setTimeout(() => {
+        if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
+        revealMainWindow();
+      }, 0);
+    }
+    return r;
+  });
+  // From Settings: sign out (also the way to another account).
+  ipcMain.on('open-terms', () => showTermsWindow());
+  ipcMain.on('account-sign-out', () => {
+    account.signOut('user'); // onChange opens the sign-in window
+  });
+  // A recording was asked for with no minutes left today: show the main
+  // window, where the page explains (from the hotkey it is usually hidden).
+  ipcMain.on('limit-reached', () => revealMainWindow());
 
   ipcMain.on('close-app', () => { mainWindow.hide(); });
   ipcMain.on('quit-app', () => { app.isQuitting = true; app.quit(); });
@@ -594,7 +676,10 @@ app.on('ready', async () => {
 
     settingsWindow = new BrowserWindow({
       width: 450,
-      height: 615, // inside the frame (useContentSize): language row (AUD-33), quality list
+      // Inside the frame (useContentSize): language row (AUD-33), quality list,
+      // account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
+      // than the screen: the page scrolls instead of the buttons going missing.
+      height: Math.min(680, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
@@ -780,61 +865,33 @@ app.on('ready', async () => {
     }).catch(err => console.error('Error showing save dialog for audio/text:', err));
   });
 
-  // === AUTHORIZATION HANDLERS ===
-  // `auth` is already required above, where the startup auth check runs;
-  // re-declaring it here is a SyntaxError that stops the app from starting.
-
-  // Check authorization status
-  ipcMain.handle('check-auth', async () => {
-    try {
-      const status = await auth.checkStatus();
-      return status;
-    } catch (e) {
-      console.error('Auth check failed:', e.message);
-      return { authenticated: false, reason: 'error', error: e.message };
-    }
-  });
-
-  // Start trial
-  ipcMain.handle('start-trial', async () => {
-    try {
-      const result = await auth.startTrial('Audiator Desktop');
-      return { success: true, subscriptionEnd: result.subscription_end };
-    } catch (e) {
-      console.error('Trial start failed:', e.message);
-      return { success: false, error: e.message };
-    }
-  });
-
-  // Activate subscription
-  ipcMain.handle('activate-subscription', async (event, { plan, paymentId }) => {
-    try {
-      const result = await auth.activateSubscription(plan, paymentId);
-      return { success: true, subscriptionEnd: result.subscription_end };
-    } catch (e) {
-      console.error('Subscription activation failed:', e.message);
-      return { success: false, error: e.message };
-    }
-  });
-
-  // Logout
-  ipcMain.handle('logout', () => {
-    auth.logout();
-    return { success: true };
-  });
-
   // === API HANDLERS ===
   const api = require('./api');
 
-  // Transcribe audio
+  // Transcribe audio. Signed in, and on the free plan with minutes left today
+  // (a recording started within the limit is transcribed whole); the length of
+  // the recording then counts against the day.
   ipcMain.handle('transcribe', async (event, { audioBuffer, language }) => {
+    if (!account.signedIn()) {
+      showLoginWindow();
+      return { success: false, error: tr('error.notSignedIn'), reason: 'signedOut' };
+    }
+    if (!account.canTranscribe()) {
+      const { resetsAt } = account.view();
+      const left = resetsAt ? Math.max(60, Math.ceil((resetsAt - Date.now()) / 60000) * 60) : 0;
+      return { success: false, error: tr('error.limit').replace('{t}', i18n.duration(currentLang(), left)), reason: 'limit' };
+    }
     try {
       const result = await api.transcribe(audioBuffer, language);
+      // The engine reports the recording's length; one built before it did is
+      // measured by where the speech ends.
+      const segs = result.segments || [];
+      const seconds = result.duration || (segs.length ? segs[segs.length - 1].end : 0);
+      account.addUsage(seconds).catch((e) => console.error('[account] usage not counted:', e.message));
       return { success: true, text: result.text, language: result.language };
     } catch (e) {
       console.error('Transcription failed:', e.message);
-      if (e.authRequired) showActivationWindow();
-      return { success: false, error: e.message, authRequired: !!e.authRequired };
+      return { success: false, error: e.message };
     }
   });
 

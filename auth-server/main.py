@@ -41,6 +41,13 @@ if not SECRET_KEY:
         "AUDIATOR_SECRET_KEY is not set. Refusing to start with an insecure "
         "default secret. Set AUDIATOR_SECRET_KEY in the environment or a .env file."
     )
+
+# Accounts by email (step 4 of docs/PRODUCT-PLAN.md): sign-in by a code, the
+# free daily allowance, one free account per computer. The device-based
+# endpoints below stay until the app has switched over.
+from accounts import router as accounts_router  # noqa: E402
+app.include_router(accounts_router)
+
 TRIAL_DAYS = 14
 SUBSCRIPTION_PRICES = {
     "1_month": {"months": 1, "price": 299},

@@ -71,8 +71,10 @@ async function startLocalBackend(rootDir) {
     const child = spawn(command, args, {
       cwd: svc.exe ? rootDir : authDir,
       windowsHide: true,
-      // UTF-8 so Russian output in the logs is readable.
-      env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+      // UTF-8 so Russian output in the logs is readable. MAIL_DEV_PRINT: until
+      // the mailbox's password is in auth-server/.env, the sign-in code is
+      // printed here (a real server never does that).
+      env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8', MAIL_DEV_PRINT: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.on('data', (d) => process.stdout.write(`[${svc.name}] ${d}`));
