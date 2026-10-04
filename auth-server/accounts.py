@@ -132,6 +132,10 @@ def _auth(authorization: Optional[str]):
         raise _err(401, "not_signed_in")
     if u.status == "blocked":
         raise _err(403, "blocked")
+    # Rules accepted at sign-in, in the current version: a new version (or a
+    # session from before there were rules) means sign in again and tick them.
+    if u.terms_version != TERMS_VERSION:
+        raise _err(403, "terms_not_accepted", version=TERMS_VERSION)
     return u, claims.get("dev", "")
 
 
