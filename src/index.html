@@ -927,26 +927,18 @@
         // several recordings at once.
         let transcribeChain = Promise.resolve();
         // Transcriptions run one at a time: a recording made meanwhile says it
-        // is waiting, and the running one shows how far it has got.
-        // The engine works through a recording in 30-second pieces, so the
-        // percent moves in jumps; the running time beside it ticks every
-        // second, so a long one never looks stuck: "Транскрибация… 41% · 0:35".
+        // is waiting, and the running one shows how far it has got:
+        // "Транскрибация… 41%" (the engine works in 30-second pieces, so the
+        // percent moves in jumps; the blinking says it is at work meanwhile).
         let transcribing = 0;           // in the queue or running
         let progressField = null;       // the text field of the one running now
-        let progressPct = null, progressStart = 0, progressTimer = null;
-        function showProgress() {
-            if (!progressField) return;
-            const s = Math.floor((Date.now() - progressStart) / 1000);
-            const time = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-            progressField.textContent = `${S('status.transcribing')} ${progressPct != null ? progressPct + '% · ' : ''}${time}`;
-        }
         if (window.api.onTranscribeProgress) {
-            window.api.onTranscribeProgress((pct) => { progressPct = pct; showProgress(); });
+            window.api.onTranscribeProgress((pct) => {
+                if (progressField) progressField.textContent = `${S('status.transcribing')} ${pct}%`;
+            });
         }
         function stopProgress(field) {
-            if (progressField !== field) return;
-            progressField = null;
-            clearInterval(progressTimer);
+            if (progressField === field) progressField = null;
         }
         // blob: the recording as the user can save it (webm); wav: the same
         // for the engine (startPcmCapture), or null if it could not be taken.
@@ -1073,10 +1065,6 @@
         async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit, wav) {
             originalTextField.textContent = S('status.transcribing'); // its turn now
             progressField = originalTextField;
-            progressPct = null;
-            progressStart = Date.now();
-            clearInterval(progressTimer);
-            progressTimer = setInterval(showProgress, 1000);
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
                 const result = blob.size ? await window.api.transcribe(wav || blob, undefined, withinLimit)
