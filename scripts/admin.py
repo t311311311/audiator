@@ -263,7 +263,25 @@ def cmd_left(args):
             u.window_used = max(0, accounts.FREE_DAILY_SECONDS - int(float(args.minutes) * 60))
         s.commit()
         print(f"стало: window_start={u.window_start} window_used={u.window_used}"
-              " — приложение увидит после перезапуска или после следующей записи")
+              " — приложение увидит, когда откроете его окно, или после перезапуска")
+
+
+def cmd_spend(args):
+    """For testing: take N minutes off what is left in the account's current
+    24 hours (started now if none are running)."""
+    import accounts
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        now = accounts_db._utcnow()
+        if not (u.window_start and now < u.window_start + accounts.WINDOW):
+            u.window_start, u.window_used = now, 0
+        before = max(0, accounts.FREE_DAILY_SECONDS - (u.window_used or 0))
+        u.window_used = min(accounts.FREE_DAILY_SECONDS, (u.window_used or 0) + int(args.minutes * 60))
+        s.commit()
+        after = max(0, accounts.FREE_DAILY_SECONDS - u.window_used)
+        print(f"было осталось {before // 60} мин {before % 60} с -> стало {after // 60} мин {after % 60} с "
+              "(приложение увидит, когда откроете его окно, или после перезапуска)")
 
 
 def cmd_renew(args):
@@ -327,6 +345,10 @@ def main():
     lf.add_argument("email")
     lf.add_argument("minutes", help="минут осталось (например 5) или reset")
     lf.set_defaults(func=cmd_left)
+    sp = sub.add_parser("spend", help="тест лимита: списать N минут из оставшихся")
+    sp.add_argument("email")
+    sp.add_argument("minutes", type=float)
+    sp.set_defaults(func=cmd_spend)
     rn = sub.add_parser("renew", help="тест обновления: 24 часа кончаются через N минут")
     rn.add_argument("email")
     rn.add_argument("minutes", type=float, help="через сколько минут обновление")
