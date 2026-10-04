@@ -38,12 +38,31 @@ Env:  WHISPER_PORT (default 8000)
 import glob
 import os
 import shutil
+import sys
 import tempfile
 import threading
+import types
+import wave
 
+import numpy as np
 import requests
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from faster_whisper import WhisperModel
+
+# Reading audio. faster-whisper reads files through PyAV, whose FFmpeg build
+# carries x264 under the GPL: shipped inside a closed program it would oblige
+# us to publish the program's source. The app now sends a plain 16 kHz WAV,
+# read here with Python's own wave module, so the installed engine leaves
+# PyAV out (build-engine.js) and faster-whisper, which imports it at start,
+# gets this stand-in. In development the real PyAV is still there and reads
+# anything else (an older app's recordings).
+try:
+    import av  # noqa: F401
+    HAVE_AV = True
+except ImportError:
+    sys.modules["av"] = types.ModuleType("av")
+    HAVE_AV = False
+
+from faster_whisper import WhisperModel  # noqa: E402
 from pydantic import BaseModel
 
 import translator
@@ -301,12 +320,36 @@ def _save_upload(audio_file: UploadFile) -> str:
         return tmp.name
 
 
+def _read_audio(path):
+    """The recording as 16 kHz mono samples, from the WAV the app sends; for
+    anything else the path itself (faster-whisper reads it with PyAV, which
+    only a development setup has)."""
+    with open(path, "rb") as f:
+        head = f.read(12)
+    if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+        if not HAVE_AV:
+            raise ValueError("this engine reads WAV recordings only (16-bit); update the app")
+        return path
+    with wave.open(path, "rb") as w:
+        channels, width, rate, frames = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+        raw = w.readframes(frames)
+    if width != 2:
+        raise ValueError(f"expected 16-bit PCM WAV, got {8 * width}-bit")
+    audio = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    if channels > 1:
+        audio = audio.reshape(-1, channels).mean(axis=1)
+    if rate != 16000 and len(audio):
+        n = int(round(len(audio) * 16000 / rate))
+        audio = np.interp(np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio).astype(np.float32)
+    return audio
+
+
 def _transcribe(model, path, task, language, progress=None):
     """Text + segments + language + duration. progress(done, total) is told
     after every piece, in seconds of the recording."""
     try:
         segments, info = model.transcribe(
-            path,
+            _read_audio(path),
             task=task or "transcribe",
             language=language or None,
             vad_filter=True,  # skip silence -> honest empty result on no speech

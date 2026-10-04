@@ -27,6 +27,10 @@ if (process.argv.includes('--check')) {
     process.exit(1);
   }
   console.log(`Speech engine present: ${path.relative(ROOT, OUT)}`);
+  if (!fs.existsSync(path.join(ROOT, 'build', 'THIRD-PARTY-NOTICES.txt'))) {
+    console.error('build/THIRD-PARTY-NOTICES.txt is missing. Run: npm run build:engine');
+    process.exit(1);
+  }
   process.exit(0);
 }
 
@@ -71,7 +75,12 @@ const args = [
   '--collect-submodules', 'argostranslate',
   '--collect-data', 'sacremoses',         // per-language tokenizer rules
   '--collect-all', 'sentencepiece',       // the tokenizer library and its tables
-  '--collect-submodules', 'minisbd',      // sentence splitting
+  // Left out for their licences (GPL / AGPL — a closed program could not ship
+  // them): PyAV with FFmpeg and x264 (the app sends plain WAV, read with
+  // Python's own wave module) and MiniSBD (translator.py splits sentences
+  // itself). Both modules get stand-ins at run time.
+  '--exclude-module', 'av',
+  '--exclude-module', 'minisbd',
   '--add-data', `${path.join(ROOT, 'auth-server', 'translate_catalog.json')}${path.delimiter}.`,
   '--paths', 'auth-server',               // translator.py sits beside the script
   'auth-server/local_whisper.py',
@@ -80,6 +89,14 @@ console.log('Building the speech engine (takes a few minutes)…');
 const r = spawnSync(pyinstaller, args, { cwd: ROOT, stdio: 'inherit' });
 if (r.status !== 0 || !fs.existsSync(OUT)) {
   console.error(`PyInstaller failed (exit ${r.status})`);
+  process.exit(1);
+}
+// What the installer ships of others, with licences, read from this build
+// (build/THIRD-PARTY-NOTICES.txt, put in the program folder by electron-builder).
+const n = spawnSync(path.join(ROOT, '.venv', 'Scripts', 'python.exe'), ['scripts/third_party_notices.py'],
+  { cwd: ROOT, stdio: 'inherit', env: { ...process.env, PYTHONUTF8: '1' } });
+if (n.status !== 0) {
+  console.error('Could not write THIRD-PARTY-NOTICES.txt');
   process.exit(1);
 }
 console.log(`Built: ${path.relative(ROOT, OUT)}`);
