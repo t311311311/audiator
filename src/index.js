@@ -583,6 +583,15 @@ app.on('ready', async () => {
     syncTimer = setTimeout(refreshOverlay, 100);
   };
   ['hide', 'minimize', 'show', 'restore'].forEach((evt) => mainWindow.on(evt, scheduleSync));
+  // Opening the window asks the server for the plan and the minutes (at most
+  // every 30 seconds): a change made on the server — a payment, more minutes
+  // granted — shows without waiting for the 15-minute check.
+  let lastAccountCheck = 0;
+  mainWindow.on('focus', () => {
+    if (Date.now() - lastAccountCheck < 30 * 1000 || !account.signedIn()) return;
+    lastAccountCheck = Date.now();
+    account.refresh().catch(() => {});
+  });
   app.on('browser-window-focus', (event, win) => {
     if (win !== overlayWindow) ownFocus = win;
     scheduleSync();

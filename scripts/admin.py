@@ -266,6 +266,21 @@ def cmd_left(args):
               " — приложение увидит после перезапуска или после следующей записи")
 
 
+def cmd_renew(args):
+    """For testing the renewal: the account's 24 hours end in N minutes, with
+    M minutes left in them until then (default: none left)."""
+    import accounts
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        print(f"было: window_start={u.window_start} window_used={u.window_used}")
+        u.window_start = accounts_db._utcnow() - accounts.WINDOW + timedelta(minutes=args.minutes)
+        u.window_used = max(0, accounts.FREE_DAILY_SECONDS - int(args.left * 60))
+        s.commit()
+        print(f"стало: осталось {args.left:g} мин, обновление через {args.minutes:g} мин "
+              "(приложение увидит, когда откроете его окно, или после перезапуска)")
+
+
 def cmd_window_set(args):
     """Put the 24 hours back exactly as they were (the values `left` printed)."""
     import accounts_db
@@ -312,6 +327,11 @@ def main():
     lf.add_argument("email")
     lf.add_argument("minutes", help="минут осталось (например 5) или reset")
     lf.set_defaults(func=cmd_left)
+    rn = sub.add_parser("renew", help="тест обновления: 24 часа кончаются через N минут")
+    rn.add_argument("email")
+    rn.add_argument("minutes", type=float, help="через сколько минут обновление")
+    rn.add_argument("--left", type=float, default=0, help="сколько минут осталось до тех пор (по умолчанию 0)")
+    rn.set_defaults(func=cmd_renew)
     ws = sub.add_parser("window", help="вернуть 24 часа как были: <email> <start|none> <used>")
     ws.add_argument("email")
     ws.add_argument("start", help="window_start как напечатал left, или none")

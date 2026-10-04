@@ -658,7 +658,7 @@
         // "Осталось 43 мин, обновление через 4 ч 41 мин" — in plain sight,
         // not only on hover: not everyone would think of hovering.
         function accountLine() {
-            const left = formatLeft(acct.remaining), reset = untilReset();
+            const left = formatLeft(Math.max(0, freeSecondsLeft())), reset = untilReset();
             return reset ? S('account.leftReset').replace('{left}', left).replace('{t}', reset)
                          : S('account.left').replace('{left}', left);
         }
@@ -670,13 +670,21 @@
             el.classList.toggle('hidden', !show);
             if (!show) return;
             el.textContent = el.title = accountLine();
-            el.classList.toggle('empty', acct.remaining <= 0);
+            el.classList.toggle('empty', freeSecondsLeft() <= 0);
         }
         setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
         // No minutes left today: say so instead of recording what could not
         // be transcribed.
+        // The free time is spent as recordings are made: what is left now is
+        // the account's count less the recordings not counted yet (made, still
+        // waiting for or in transcription — counted when their text comes).
+        let uncountedSeconds = 0;
+        function freeSecondsLeft() {
+            if (!(acct && acct.signedIn && acct.limited)) return Infinity;
+            return acct.remaining - uncountedSeconds;
+        }
         function limitReached() {
-            return !!(acct && acct.signedIn && acct.limited && acct.remaining <= 0);
+            return freeSecondsLeft() <= 0;
         }
         if (window.api.onAccountUpdated) {
             window.api.onAccountUpdated(renderAccount);
@@ -940,7 +948,8 @@
         }
         // blob: the recording as the user can save it (webm); wav: the same
         // for the engine (startPcmCapture), or null if it could not be taken.
-        function queueTranscription(blob, jobId, withinLimit, wav) {
+        function queueTranscription(blob, jobId, withinLimit, wav, seconds = 0) {
+            uncountedSeconds += seconds; // spent, until its text comes and the account counts it
             const pending = addPendingEntry();
             pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
             if (transcribing++ > 0) pending.originalTextField.textContent = S('status.queued');
@@ -948,6 +957,7 @@
             transcribeChain = transcribeChain
                 // Recordings made before a sign-out are not transcribed after it.
                 .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen, withinLimit, wav) : null))
+                .finally(() => { uncountedSeconds = Math.max(0, uncountedSeconds - seconds); renderAccount(); })
                 .catch((e) => console.error('transcription queue', e)) // keep the chain going
                 .finally(() => { transcribing = Math.max(0, transcribing - 1); });
         }
@@ -1542,7 +1552,11 @@
                 showToast(S('error.limit').replace('{t}', untilReset() || formatLeft(0)), 5000);
                 return;
             }
-            const withinLimit = true; // free minutes were left at the start: transcribed whole
+            const withinLimit = true; // free time was left at the start
+            // The free plan's time runs out during the recording: it stops by
+            // itself at that moment (the user's rule: the limit is a limit),
+            // and what was recorded until then is transcribed.
+            const budget = freeSecondsLeft();
             micStarting = true;
             stopWhenStarted = false;
             const gen = session; // signed out meanwhile: this recording is dropped
@@ -1556,12 +1570,15 @@
 
                 recorder.ondataavailable = (event) => { chunks.push(event.data); };
                 let capture = null; // the same sound as WAV for the engine (startPcmCapture)
+                let startedAt = 0, limitTimer = null;
                 recorder.onstop = async () => {
+                    clearInterval(limitTimer);
+                    const seconds = startedAt ? (Date.now() - startedAt) / 1000 : 0;
                     const wav = capture ? await capture.finish().catch((e) => { console.error('capture', e); return null; }) : null;
                     stream.getTracks().forEach(track => track.stop());
                     if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
-                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit, wav);
+                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit, wav, seconds);
                 };
 
                 recordBtn.classList.add('hidden');
@@ -1574,6 +1591,16 @@
                     console.error('could not take the sound for the engine; the recording goes as it is', e);
                 }
                 startLevelMeter(stream);
+                startedAt = Date.now();
+                if (budget !== Infinity) {
+                    limitTimer = setInterval(() => {
+                        if ((Date.now() - startedAt) / 1000 < budget || recorder.state !== 'recording') return;
+                        clearInterval(limitTimer);
+                        if (mediaRecorder === recorder) stopBtn.click(); else recorder.stop();
+                        window.api.limitReached(); // brings this window up: the user is often in another app
+                        showToast(S('error.limitStopped').replace('{t}', untilReset() || formatLeft(0)), 8000);
+                    }, 250);
+                }
                 if (window.api.recordingStarted) window.api.recordingStarted(jobId);
                 micStarting = false;
                 if (stopWhenStarted) stopBtn.click();
