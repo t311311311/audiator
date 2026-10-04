@@ -116,6 +116,7 @@
         .minutes-left {
             position: absolute; left: 50%; transform: translateX(-50%);
             font-size: 12px; opacity: 0.8; white-space: nowrap;
+            -webkit-app-region: no-drag; cursor: default; /* or its tooltip never shows */
         }
         .minutes-left.empty { color: var(--record-color); opacity: 1; }
 
@@ -628,6 +629,15 @@
             if (!h) return `${m} ${S('unit.min')}`;
             return m % 60 ? `${h} ${S('unit.h')} ${m % 60} ${S('unit.min')}` : `${h} ${S('unit.h')}`;
         }
+        // The free minutes come back at local midnight: how long until then,
+        // rounded up to the minute.
+        function untilReset() {
+            const midnight = new Date();
+            midnight.setHours(24, 0, 0, 0);
+            return formatLeft(Math.ceil((midnight - Date.now()) / 60000) * 60);
+        }
+        // Minutes left; hovering says when new ones come. Used up: the
+        // countdown to them instead.
         function renderAccount(v) {
             if (v && acct && acct.signedIn && !v.signedIn) clearForSignOut();
             if (v) acct = v;
@@ -635,9 +645,13 @@
             const show = !!(acct && acct.signedIn && acct.limited);
             el.classList.toggle('hidden', !show);
             if (!show) return;
-            el.textContent = S('account.leftToday').replace('{t}', formatLeft(acct.remaining));
-            el.classList.toggle('empty', acct.remaining <= 0);
+            const empty = acct.remaining <= 0;
+            const reset = S('account.resetIn').replace('{t}', untilReset());
+            el.textContent = empty ? reset : S('account.leftToday').replace('{t}', formatLeft(acct.remaining));
+            el.title = empty ? '' : reset;
+            el.classList.toggle('empty', empty);
         }
+        setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
         // No minutes left today: say so instead of recording what could not
         // be transcribed.
         function limitReached() {
@@ -1374,7 +1388,7 @@
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
             if (limitReached()) {
                 window.api.limitReached(); // brings this window up when the hotkey was used
-                showToast(S('error.limit'), 5000);
+                showToast(S('error.limitIn').replace('{t}', untilReset()), 5000);
                 return;
             }
             micStarting = true;
