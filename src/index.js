@@ -47,6 +47,7 @@ const queue = new RecordQueue();
 // number fits beside its two lines of text.
 const BARREL_W = 96, BARREL_W_NUMBERED = 112, MORE_W = 34, BARREL_GAP = 6, BAR_H = 40;
 let offeredId = null;       // the job whose text is on the clipboard right now
+let transcribeProgress = null; // percent of the transcription running now, for its barrel
 let holdClipboardUntil = 0; // after a paste, leave the clipboard alone for a moment
 
 // --- Paste detection -------------------------------------------------------
@@ -236,6 +237,10 @@ const refreshOverlay = () => {
       items,
       numbered,
       busy: [tr('ov.busy1'), tr('ov.busy2')],
+      // The barrel being transcribed shows how far it has got (the first one
+      // still busy: they are transcribed in order).
+      progress: transcribeProgress,
+      transcribing: tr('ov.transcribing'),
       done: [tr('ov.done1'), tr('ov.done2')],
       hint: tr('ov.hint'),
     });
@@ -929,7 +934,13 @@ app.on('ready', async () => {
       return { success: false, error: tr('error.limit').replace('{t}', i18n.duration(currentLang(), left)), reason: 'limit' };
     }
     try {
-      const result = await api.transcribe(audioBuffer, language);
+      // How far it has got, to the main window ("Транскрибация… 45%") and the
+      // bar (the barrel being transcribed).
+      const result = await api.transcribe(audioBuffer, language, (share) => {
+        const pct = Math.max(0, Math.min(99, Math.floor(share * 100)));
+        if (!event.sender.isDestroyed()) event.sender.send('transcribe-progress', pct);
+        if (pct !== transcribeProgress) { transcribeProgress = pct; refreshOverlay(); }
+      });
       // The engine reports the recording's length; one built before it did is
       // measured by where the speech ends.
       const segs = result.segments || [];
@@ -939,6 +950,8 @@ app.on('ready', async () => {
     } catch (e) {
       console.error('Transcription failed:', e.message);
       return { success: false, error: e.message };
+    } finally {
+      transcribeProgress = null;
     }
   });
 

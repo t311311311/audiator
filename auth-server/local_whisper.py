@@ -21,6 +21,11 @@ Endpoints:
   POST /delete  remove a downloaded model (not the one in use)
   POST /asr     transcribe audio — the whisper-asr-webservice shape
                 (text + segments + language)
+  POST /asr/start, GET /asr/job?id=  the same as a job: answers at once, then
+                says how far it has got (seconds done of the recording's
+                length) until the result is there. The app uses this: a long
+                recording on a slow computer takes minutes, longer than an
+                HTTP request is kept waiting, and the user sees the progress.
   POST /translate, GET /translate/catalog, POST /translate/install|cancel|delete
                 translation on demand (translator.py); its state is in /status
 
@@ -289,6 +294,51 @@ def translate_delete(code: str = Query(...)):
     return status()
 
 
+def _save_upload(audio_file: UploadFile) -> str:
+    # faster-whisper decodes via PyAV, which handles webm/opus/wav from a path.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+        tmp.write(audio_file.file.read())
+        return tmp.name
+
+
+def _transcribe(model, path, task, language, progress=None):
+    """Text + segments + language + duration. progress(done, total) is told
+    after every piece, in seconds of the recording."""
+    try:
+        segments, info = model.transcribe(
+            path,
+            task=task or "transcribe",
+            language=language or None,
+            vad_filter=True,  # skip silence -> honest empty result on no speech
+        )
+        total = float(getattr(info, "duration", 0) or 0)
+        if progress:
+            progress(0.0, total)
+        segs, parts = [], []
+        for s in segments:
+            segs.append({
+                "id": len(segs),
+                "start": round(s.start, 3),
+                "end": round(s.end, 3),
+                "text": s.text,
+            })
+            parts.append(s.text)
+            if progress:
+                progress(min(float(s.end), total), total)
+        return {
+            "text": "".join(parts).strip(),
+            "segments": segs,
+            "language": info.language,
+            # Length of the recording: what counts against the free minutes.
+            "duration": round(total, 2),
+        }
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 @app.post("/asr")
 def asr(
     audio_file: UploadFile = File(...),
@@ -303,39 +353,62 @@ def asr(
     model = _model
     if model is None:
         raise HTTPException(503, "speech model is not ready")
-    data = audio_file.file.read()
-    # faster-whisper decodes via PyAV, which handles webm/opus/wav from a path.
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
-        tmp.write(data)
-        path = tmp.name
+    return _transcribe(model, _save_upload(audio_file), task, language)
+
+
+# Transcriptions as jobs (see the top of this file). Kept until the app has
+# fetched the result; a job nobody asks about again goes after an hour.
+_jobs = {}
+_jobs_lock = threading.Lock()
+
+
+def _run_job(job_id, model, path, task, language):
+    def progress(done, total):
+        with _jobs_lock:
+            _jobs[job_id].update(done=round(done, 1), total=round(total, 1))
     try:
-        segments, info = model.transcribe(
-            path,
-            task=task or "transcribe",
-            language=language or None,
-            vad_filter=True,  # skip silence -> honest empty result on no speech
-        )
-        segs, parts = [], []
-        for s in segments:
-            segs.append({
-                "id": len(segs),
-                "start": round(s.start, 3),
-                "end": round(s.end, 3),
-                "text": s.text,
-            })
-            parts.append(s.text)
-        return {
-            "text": "".join(parts).strip(),
-            "segments": segs,
-            "language": info.language,
-            # Length of the recording: what counts against the daily minutes.
-            "duration": round(float(getattr(info, "duration", 0) or 0), 2),
-        }
-    finally:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+        result = _transcribe(model, path, task, language, progress)
+        with _jobs_lock:
+            _jobs[job_id].update(state="done", result=result)
+    except Exception as e:  # noqa: BLE001 — told to the app, which shows it
+        with _jobs_lock:
+            _jobs[job_id].update(state="error", error=str(e))
+
+
+@app.post("/asr/start")
+def asr_start(
+    audio_file: UploadFile = File(...),
+    task: str = Query("transcribe"),
+    language: str = Query(None),
+):
+    model = _model
+    if model is None:
+        raise HTTPException(503, "speech model is not ready")
+    import time
+    import uuid
+    path = _save_upload(audio_file)
+    job_id = uuid.uuid4().hex
+    with _jobs_lock:
+        now = time.time()
+        for k in [k for k, j in _jobs.items() if now - j["created"] > 3600]:
+            del _jobs[k]
+        _jobs[job_id] = {"state": "running", "done": 0.0, "total": 0.0, "created": now}
+    threading.Thread(target=_run_job, args=(job_id, model, path, task, language), daemon=True).start()
+    return {"id": job_id}
+
+
+@app.get("/asr/job")
+def asr_job(id: str = Query(...)):
+    """{state: running, done, total} — or done with the result, or error;
+    a finished job is handed over once and forgotten."""
+    with _jobs_lock:
+        job = _jobs.get(id)
+        if job is None:
+            raise HTTPException(404, "no such job")
+        out = {k: v for k, v in job.items() if k != "created"}
+        if job["state"] != "running":
+            del _jobs[id]
+    return out
 
 
 if __name__ == "__main__":

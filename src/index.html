@@ -148,7 +148,7 @@
         .engine-cancel:hover { opacity: 1; color: #e06c75; } /* red, like deleting a model */
         .engine-banner.loading .engine-cancel { display: none; }
         .engine-progress i { display: block; height: 100%; width: 0; background: var(--accent-color); transition: width 0.3s; }
-        .engine-banner.loading .engine-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
+        .engine-banner.loading .engine-progress i { width: 100%; animation: pending-blink 1.1s steps(4) infinite; }
         .engine-banner.error .engine-progress-row { display: none; }
 
         /* Translation panel (on-demand languages). */
@@ -219,7 +219,7 @@
         button.tp-download:hover { opacity: 1; color: var(--accent-color); }
         .tp-progress { flex: 1 1 auto; height: 4px; border-radius: 2px; overflow: hidden; background: var(--border-color); }
         .tp-progress i { display: block; height: 100%; width: 0; background: var(--accent-color); transition: width 0.3s; }
-        .tp-installing .tp-progress i { width: 100%; animation: pending-blink 1.1s ease-in-out infinite; }
+        .tp-installing .tp-progress i { width: 100%; animation: pending-blink 1.1s steps(4) infinite; }
         .tp-note { font-size: 12px; color: var(--record-color); }
         .tp-empty { font-size: 12px; opacity: 0.6; padding: 2px 6px; }
         .tp-search {
@@ -228,10 +228,13 @@
         }
 
         /* A recording waiting for or in transcription: blinks like the bar's
-           red "transcribing" barrel. */
+           red "transcribing" barrel. Endless animations here move in a few
+           steps, not smoothly: the window is semi-transparent, and redrawing
+           it every frame cost a good part of a CPU core, taken from the
+           transcription itself (see recorder-overlay.html). */
         .original-text.pending {
             color: var(--record-color);
-            animation: pending-blink 1.1s ease-in-out infinite;
+            animation: pending-blink 1.1s steps(4) infinite;
         }
         @keyframes pending-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
@@ -361,7 +364,7 @@
             display: inline-block; vertical-align: middle; width: 20px; height: 20px;
             color: var(--record-color);
         }
-        #stop-btn .mic-icon { animation: rec-pulse 1.4s ease-in-out infinite; }
+        #stop-btn .mic-icon { animation: rec-pulse 1.4s steps(4) infinite; }
         @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
         
         #main-controls { flex-grow: 1; display: flex; gap: 10px; }
@@ -913,14 +916,38 @@
         // for Ctrl+V oldest first), and the local model is not split between
         // several recordings at once.
         let transcribeChain = Promise.resolve();
+        // Transcriptions run one at a time: a recording made meanwhile says it
+        // is waiting, and the running one shows how far it has got.
+        // The engine works through a recording in 30-second pieces, so the
+        // percent moves in jumps; the running time beside it ticks every
+        // second, so a long one never looks stuck: "Транскрибация… 41% · 0:35".
+        let transcribing = 0;           // in the queue or running
+        let progressField = null;       // the text field of the one running now
+        let progressPct = null, progressStart = 0, progressTimer = null;
+        function showProgress() {
+            if (!progressField) return;
+            const s = Math.floor((Date.now() - progressStart) / 1000);
+            const time = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+            progressField.textContent = `${S('status.transcribing')} ${progressPct != null ? progressPct + '% · ' : ''}${time}`;
+        }
+        if (window.api.onTranscribeProgress) {
+            window.api.onTranscribeProgress((pct) => { progressPct = pct; showProgress(); });
+        }
+        function stopProgress(field) {
+            if (progressField !== field) return;
+            progressField = null;
+            clearInterval(progressTimer);
+        }
         function queueTranscription(blob, jobId) {
             const pending = addPendingEntry();
             pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
+            if (transcribing++ > 0) pending.originalTextField.textContent = S('status.queued');
             const gen = session;
             transcribeChain = transcribeChain
                 // Recordings made before a sign-out are not transcribed after it.
                 .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen) : null))
-                .catch((e) => console.error('transcription queue', e)); // keep the chain going
+                .catch((e) => console.error('transcription queue', e)) // keep the chain going
+                .finally(() => { transcribing = Math.max(0, transcribing - 1); });
         }
 
         // --- Signing out clears the history ---
@@ -961,10 +988,17 @@
         }
 
         async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen) {
+            originalTextField.textContent = S('status.transcribing'); // its turn now
+            progressField = originalTextField;
+            progressPct = null;
+            progressStart = Date.now();
+            clearInterval(progressTimer);
+            progressTimer = setInterval(showProgress, 1000);
             try {
                 // Stopped the instant it began: nothing to send, nothing heard.
                 const result = blob.size ? await window.api.transcribe(blob)
                                          : { success: true, text: '' };
+                stopProgress(originalTextField); // before its text goes in, or a tick would cover it
                 if (gen !== session) return; // signed out while it was transcribed
                 if (!result.success) {
                     // reason: the account's own refusal (limit, signed out),
@@ -1007,6 +1041,7 @@
                 // still transcribing.
                 if (window.api.transcribeFailed) window.api.transcribeFailed(jobId);
             } finally {
+                stopProgress(originalTextField);
                 updateActionButtons(); // this one is now "the latest"
             }
         }

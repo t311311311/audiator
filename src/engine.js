@@ -16,7 +16,7 @@ const fs = require('fs');
 const { portOpen, waitForPort } = require('./local-backend');
 
 const ENGINE_EXE = 'Audiator Engine.exe';
-const DEV_PORT = 8000;               // the port a hand-started service uses
+const DEV_PORT = +process.env.AUDIATOR_ENGINE_PORT || 8000; // the port a hand-started service uses (tests: another)
 const READY_TIMEOUT_MS = 15 * 60e3;  // a first run downloads the model first
 
 let child = null;
