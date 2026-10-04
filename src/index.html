@@ -479,6 +479,7 @@
         <div class="dropdown-menu-item" id="settings-btn" data-i18n="menu.settings">Настройки</div>
         <div class="dropdown-menu-item" id="save-all-btn" data-i18n="menu.saveAll">Сохранить весь текст</div>
         <div class="dropdown-menu-item" id="clear-all-btn" data-i18n="menu.clearHistory">Очистить историю</div>
+        <div class="dropdown-menu-item" id="contact-btn" data-i18n="menu.contact">Написать нам</div>
         <div class="dropdown-menu-item" id="exit-btn" data-i18n="menu.exit">Выход</div>
     </div>
 
@@ -990,6 +991,10 @@
         
         settingsBtn.addEventListener('click', () => {
             window.api.openSettings();
+            appMenu.classList.add('hidden');
+        });
+        document.getElementById('contact-btn').addEventListener('click', () => {
+            window.api.openSupport();
             appMenu.classList.add('hidden');
         });
 

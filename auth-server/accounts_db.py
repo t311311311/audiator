@@ -100,6 +100,24 @@ class Payment(Base):
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class SupportTicket(Base):
+    """A message to support from the app ("Написать нам"): kept here and
+    mailed to the support inbox, the subject saying what and from whom."""
+    __tablename__ = "support_tickets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    category: Mapped[str] = mapped_column(String, index=True)   # bug | payment | account | ...
+    text: Mapped[str] = mapped_column(String)
+    plan: Mapped[str] = mapped_column(String)                   # the user's plan when they wrote
+    app_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    os: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    due_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # answer by (the rules)
+    status: Mapped[str] = mapped_column(String, default="new")  # new | answered | closed
+    mailed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 def init_accounts_db() -> None:
     Base.metadata.create_all(engine)
     _add_missing_columns(engine)

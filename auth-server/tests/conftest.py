@@ -48,7 +48,8 @@ def clean_state():
         s.query(db.User).delete()
         s.commit()
     with accounts_db.Session() as s:
-        for table in (accounts_db.Payment, accounts_db.Usage, accounts_db.Device, accounts_db.User):
+        for table in (accounts_db.SupportTicket, accounts_db.Payment, accounts_db.Usage, accounts_db.Device,
+                      accounts_db.User):
             s.query(table).delete()
         s.commit()
     rate._hits.clear()

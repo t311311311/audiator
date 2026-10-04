@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // --- Settings ---
   openSettings: () => ipcRenderer.send('open-settings-window'),
+  openSupport: () => ipcRenderer.send('support-open'), // "Написать нам"
   onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', (event, ...args) => callback(...args)),
   getSettings: () => ipcRenderer.invoke('get-current-settings'),
   getI18n: () => ipcRenderer.invoke('get-i18n'), // { lang, languages, strings }

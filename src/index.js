@@ -359,24 +359,56 @@ const showLoginWindow = () => {
   });
 };
 
+// "Написать нам" (support.html): from the main window's menu and Settings.
+let supportWindow = null;
+const showSupportWindow = (lang) => {
+  lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
+  if (supportWindow && !supportWindow.isDestroyed()) { supportWindow.focus(); return; }
+  supportWindow = new BrowserWindow({
+    width: 480,
+    height: 520,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    title: i18n.t(lang, 'support.windowTitle'),
+    icon: iconPath,
+    backgroundColor: store.get('theme') === 'light' ? '#fafafa' : '#282c34',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'support-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  supportWindow.setMenu(null);
+  supportWindow.loadFile(path.join(__dirname, 'support.html'), { query: { lang } });
+  supportWindow.on('closed', () => { supportWindow = null; });
+};
+
 // The rules of use (terms.html), from the sign-in window and from Settings.
 // A plain page: no preload, nothing it can ask of the app; its mail link
 // goes to the user's mail program.
 let termsWindow = null;
-const showTermsWindow = () => {
-  if (termsWindow && !termsWindow.isDestroyed()) { termsWindow.focus(); return; }
+const showTermsWindow = (lang) => {
+  lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
   const theme = store.get('theme') === 'light' ? 'light' : 'dark';
+  if (termsWindow && !termsWindow.isDestroyed()) {
+    // Open already, perhaps in another language: show it in this one.
+    termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang, theme } });
+    termsWindow.focus();
+    return;
+  }
   termsWindow = new BrowserWindow({
     width: 560,
     height: 640,
-    title: tr('terms.windowTitle'),
+    title: i18n.t(lang, 'terms.windowTitle'),
     icon: iconPath,
     backgroundColor: theme === 'light' ? '#fafafa' : '#282c34',
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   termsWindow.setMenu(null);
-  termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang: currentLang(), theme } });
+  termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang, theme } });
   termsWindow.webContents.on('will-navigate', (event, url) => {
     event.preventDefault();
     if (url.startsWith('mailto:')) require('electron').shell.openExternal(url);
@@ -607,7 +639,19 @@ app.on('ready', async () => {
     return r;
   });
   // From Settings: sign out (also the way to another account).
-  ipcMain.on('open-terms', () => showTermsWindow());
+  ipcMain.on('open-terms', (event, lang) => showTermsWindow(lang));
+  ipcMain.on('support-open', (event, lang) => showSupportWindow(lang));
+  ipcMain.on('support-close', () => { if (supportWindow && !supportWindow.isDestroyed()) supportWindow.close(); });
+  // What the message carries besides the text: the app's version and Windows'.
+  const supportInfo = () => ({
+    version: app.getVersion(),
+    os: `${process.platform === 'win32' ? 'Windows' : process.platform} ${require('os').release()}`,
+  });
+  ipcMain.handle('support-info', () => supportInfo());
+  ipcMain.handle('support-send', (event, { category, text }) => {
+    const { version, os } = supportInfo();
+    return account.sendSupport(category, text, version, os);
+  });
   ipcMain.on('account-sign-out', () => {
     account.signOut('user'); // onChange opens the sign-in window
   });
@@ -765,6 +809,7 @@ app.on('ready', async () => {
       overlayWindow.setOpacity(store.get('opacity')); // keep the overlay in step
     }
     buildTrayMenu(); // the tray menu is static, so relabel it for a new language
+    if (termsWindow && !termsWindow.isDestroyed()) showTermsWindow(); // the rules in the new language
     broadcastSettings(); // windows re-read their strings on this event
     if (settingsWindow) {
       settingsWindow.close();

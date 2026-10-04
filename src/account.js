@@ -188,6 +188,16 @@ async function sendUsage() {
   }
 }
 
+/** A message to support: { ok, id, answerWithin ('48h' | '2wd' | '5wd' | null),
+ *  replyTo } or { ok: false, error }. */
+async function sendSupport(category, text, appVersion, os) {
+  const res = await request('/api/v2/support', {
+    method: 'POST', auth: true, body: { category, text, app_version: appVersion, os },
+  });
+  if (!res.ok) return { ok: false, ...errorOf(res) };
+  return { ok: true, id: res.data.id, answerWithin: res.data.answer_within, replyTo: res.data.reply_to };
+}
+
 /** reason: 'user' (signed out in Settings) or what the server said
  *  (session_expired, blocked). The sign-in window offers the last email again. */
 function signOut(reason) {
@@ -234,5 +244,5 @@ function canTranscribe() {
 }
 
 module.exports = {
-  TERMS_VERSION, deviceHash, requestCode, verify, refresh, addUsage, signOut, view, signedIn, canTranscribe, onChange,
+  TERMS_VERSION, deviceHash, sendSupport, requestCode, verify, refresh, addUsage, signOut, view, signedIn, canTranscribe, onChange,
 };

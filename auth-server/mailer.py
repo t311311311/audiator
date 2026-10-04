@@ -46,6 +46,22 @@ def send_code(email: str, code: str, lang: str = "en") -> None:
             raise RuntimeError("SMTP is not configured (SMTP_HOST, SMTP_USER, SMTP_PASSWORD)")
         print(f"[mail] (no SMTP configured) sign-in code for {email}: {code}", flush=True)
         return
+    send(email, subject, body)
+
+
+def support_inbox() -> str:
+    """Where messages to support go: SUPPORT_TO, or the mailbox codes are sent from."""
+    return os.environ.get("SUPPORT_TO") or os.environ.get("SMTP_USER") or ""
+
+
+def send(to: str, subject: str, body: str, reply_to: str = "") -> None:
+    """Send a plain-text letter. reply_to: where "Reply" in the mail program
+    answers (a user's message to support: to the user)."""
+    if not configured():
+        if not dev_print():
+            raise RuntimeError("SMTP is not configured (SMTP_HOST, SMTP_USER, SMTP_PASSWORD)")
+        print(f"[mail] (no SMTP configured) to {to}: {subject}\n{body}", flush=True)
+        return
     host = os.environ["SMTP_HOST"]
     port = int(os.environ.get("SMTP_PORT", "465"))
     user = os.environ.get("SMTP_USER", "")
@@ -53,7 +69,9 @@ def send_code(email: str, code: str, lang: str = "en") -> None:
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = os.environ.get("SMTP_FROM") or user
-    msg["To"] = email
+    msg["To"] = to
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.set_content(body)
     context = ssl.create_default_context()
     if port == 465:

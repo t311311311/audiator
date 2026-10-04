@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Audiator</title>
+    <!-- "Написать нам": a topic and a message. Sent through our server, which
+         keeps it and mails it to support with the topic and the account in
+         the subject; the answer comes to the user's email. -->
+    <style>
+        :root {
+            --bg-color: #282c34; --primary-color: #3e4452; --text-color: #abb2bf;
+            --border-color: #4b5263; --accent-color: #61afef; --error-color: #e06c75; --ok-color: #98c379;
+        }
+        body.light-theme {
+            --bg-color: #fafafa; --primary-color: #e4e6eb; --text-color: #1c1e21;
+            --border-color: #d1d5db; --error-color: #c0392b; --ok-color: #2e7d32;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-color); color: var(--text-color);
+            margin: 0; padding: 18px 22px; font-size: 13px; user-select: none;
+        }
+        h1 { font-size: 18px; margin: 0 0 4px; }
+        .subtitle { opacity: 0.75; margin: 0 0 12px; line-height: 1.4; }
+        .subtitle b { user-select: text; }
+        .topics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+        .topic {
+            display: flex; align-items: center; gap: 7px; padding: 6px 9px; cursor: pointer;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 5px;
+        }
+        .topic.chosen { border-color: var(--accent-color); }
+        .topic input { margin: 0; accent-color: var(--accent-color); cursor: pointer; }
+        textarea {
+            width: 100%; height: 150px; resize: none; font: inherit; font-size: 13.5px; padding: 8px 10px;
+            color: var(--text-color); background: var(--primary-color);
+            border: 1px solid var(--border-color); border-radius: 5px; outline: none; user-select: text;
+        }
+        textarea:focus { border-color: var(--accent-color); }
+        .row { display: flex; justify-content: space-between; gap: 10px; margin-top: 5px; font-size: 11.5px; opacity: 0.7; }
+        .primary {
+            width: 100%; margin-top: 12px; padding: 9px; font: inherit; font-size: 14px; font-weight: 600;
+            color: #fff; background: var(--accent-color); border: none; border-radius: 6px; cursor: pointer;
+        }
+        .primary:disabled { opacity: 0.55; cursor: default; }
+        .error { color: var(--error-color); min-height: 18px; margin-top: 8px; }
+        .done { text-align: center; padding-top: 70px; }
+        .done .mark { font-size: 40px; color: var(--ok-color); }
+        .done p { line-height: 1.5; margin: 10px 0 18px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="form">
+        <h1 data-i18n="support.title">Написать нам</h1>
+        <p class="subtitle"><span data-i18n="support.subtitle">Выберите тему и опишите вопрос. Ответ придёт на</span> <b id="email"></b></p>
+        <div class="topics" id="topics" role="radiogroup"></div>
+        <textarea id="text" maxlength="5000" data-i18n-placeholder="support.placeholder"></textarea>
+        <div class="row"><span id="attached"></span><span id="count">0 / 5000</span></div>
+        <button class="primary" id="send" data-i18n="support.send">Отправить</button>
+        <div class="error" id="error"></div>
+    </div>
+    <div id="done" class="done hidden">
+        <div class="mark">&#10003;</div>
+        <p id="done-text"></p>
+        <button class="primary" id="close" data-i18n="support.close">Закрыть</button>
+    </div>
+
+    <script>
+        let STR = {};
+        const S = (key, vars) => {
+            let s = STR[key] !== undefined ? STR[key] : key;
+            for (const [k, v] of Object.entries(vars || {})) s = s.split(`{${k}}`).join(v);
+            return s;
+        };
+        const $ = (id) => document.getElementById(id);
+        // The topics, payment first: it has the shortest answer time.
+        const TOPICS = ['payment', 'bug', 'account', 'idea'];
+        // Opened from Settings while another language is being tried there:
+        // that language (?lang=); otherwise the app's.
+        const LANG = new URLSearchParams(location.search).get('lang') || undefined;
+        let topic = null;
+
+        function renderTopics() {
+            $('topics').textContent = '';
+            for (const t of TOPICS) {
+                const row = document.createElement('label');
+                row.className = 'topic' + (t === topic ? ' chosen' : '');
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'topic';
+                radio.checked = t === topic;
+                radio.addEventListener('change', () => { topic = t; $('error').textContent = ''; renderTopics(); });
+                const name = document.createElement('span');
+                name.textContent = S(`support.cat.${t}`);
+                row.append(radio, name);
+                $('topics').appendChild(row);
+            }
+        }
+
+        $('text').addEventListener('input', () => {
+            $('count').textContent = `${$('text').value.length} / 5000`;
+            $('error').textContent = '';
+        });
+
+        $('send').addEventListener('click', async () => {
+            const text = $('text').value.trim();
+            if (!topic) { $('error').textContent = S('support.err.topic'); return; }
+            if (!text) { $('error').textContent = S('support.err.empty'); $('text').focus(); return; }
+            $('send').disabled = true;
+            try {
+                const r = await window.supportApi.send(topic, text);
+                if (!r.ok) {
+                    const key = `support.err.${r.error}`;
+                    $('error').textContent = STR[key] !== undefined ? S(key)
+                        : STR[`login.err.${r.error}`] !== undefined ? S(`login.err.${r.error}`) : S('login.err.server');
+                    return;
+                }
+                $('done-text').textContent = r.answerWithin
+                    ? S('support.sent', { id: r.id, email: r.replyTo, within: S(`support.within.${r.answerWithin}`) })
+                    : S('support.sentIdea', { id: r.id });
+                $('form').classList.add('hidden');
+                $('done').classList.remove('hidden');
+            } finally {
+                $('send').disabled = false;
+            }
+        });
+        $('close').addEventListener('click', () => window.supportApi.close());
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.supportApi.close(); });
+
+        let info = { version: '', os: '' };
+        async function applyI18n(lang) {
+            const i18n = await window.supportApi.getI18n(lang);
+            STR = i18n.strings;
+            document.documentElement.lang = i18n.lang;
+            document.title = S('support.windowTitle');
+            document.querySelectorAll('[data-i18n]').forEach((el) => {
+                if (STR[el.dataset.i18n] !== undefined) el.textContent = STR[el.dataset.i18n];
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+                if (STR[el.dataset.i18nPlaceholder] !== undefined) el.placeholder = STR[el.dataset.i18nPlaceholder];
+            });
+            $('attached').textContent = S('support.attached', { version: info.version, os: info.os });
+            renderTopics();
+        }
+        // Settings saved meanwhile (a new language or theme): follow them.
+        window.supportApi.onSettingsUpdated((settings) => {
+            document.body.classList.toggle('light-theme', !!settings && settings.theme === 'light');
+            applyI18n();
+        });
+
+        (async () => {
+            const [settings, account, inf] = await Promise.all([
+                window.supportApi.getSettings(), window.supportApi.getAccount(), window.supportApi.getInfo(),
+            ]);
+            info = inf;
+            if (settings && settings.theme === 'light') document.body.classList.add('light-theme');
+            $('email').textContent = (account && account.email) || '';
+            await applyI18n(LANG);
+            $('text').focus();
+        })().catch((e) => console.error('support window', e));
+    </script>
+</body>
+</html>
