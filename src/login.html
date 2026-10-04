@@ -75,6 +75,8 @@
         .primary:hover:not(:disabled) { filter: brightness(1.08); }
         .primary:disabled { opacity: 0.55; cursor: default; }
         .sent { font-size: 12.5px; opacity: 0.85; margin: 0 0 10px; line-height: 1.4; }
+        /* Letters from a new mailbox often land in Spam. */
+        .spam { display: block; opacity: 0.8; margin-top: 2px; }
         .sent b { opacity: 1; user-select: text; word-break: break-all; }
         .links { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12.5px; }
         .link {
@@ -119,7 +121,8 @@
 
         <!-- Step 2: the code from the letter. -->
         <form id="code-step" class="hidden" autocomplete="off">
-            <p class="sent"><span data-i18n="login.codeSent">Код отправлен на</span> <b id="sent-to"></b></p>
+            <p class="sent"><span data-i18n="login.codeSent">Код отправлен на</span> <b id="sent-to"></b>
+                <span class="spam" data-i18n="login.spamHint">Нет письма? Проверьте папку «Спам».</span></p>
             <input id="code" class="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" />
             <button class="primary" id="sign-in" type="submit" data-i18n="login.signIn">Войти</button>
             <div class="links">
