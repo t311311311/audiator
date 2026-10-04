@@ -323,6 +323,29 @@ const createTray = () => {
   });
 };
 
+// --- How fast this computer transcribes, for the progress estimate -------------
+// Seconds of work per second of speech, per model, learnt from each
+// transcription (a running average); until then a typical laptop's figure.
+const ASR_SPEED_DEFAULT = { base: 0.35, small: 0.8, 'large-v3-turbo': 2.0 };
+function asrSpeed(model) {
+  const learnt = (store.get('asrSpeed') || {})[model];
+  return learnt > 0 ? learnt : (ASR_SPEED_DEFAULT[model] || 1);
+}
+function learnAsrSpeed(model, measured) {
+  if (!model || !(measured > 0) || measured > 20) return;
+  const all = store.get('asrSpeed') || {};
+  all[model] = all[model] ? all[model] * 0.6 + measured * 0.4 : measured;
+  store.set('asrSpeed', all);
+}
+/** The length of a 16-bit WAV in seconds (the app sends 16 kHz mono); 0 if not a WAV. */
+function wavSeconds(data) {
+  // Comes over IPC as a Uint8Array: read it as a Buffer.
+  const buf = data ? Buffer.from(data.buffer, data.byteOffset, data.byteLength) : null;
+  if (!buf || buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') return 0;
+  const byteRate = buf.readUInt32LE(28);
+  return byteRate ? (buf.length - 44) / byteRate : 0;
+}
+
 // --- The history, kept between runs (user's decision 2026-10-05) ---------------
 // Texts and translations — not the sound — of the last HISTORY_MAX recordings,
 // on this computer only, encrypted for the Windows user (DPAPI, as the
@@ -985,14 +1008,34 @@ app.on('ready', async () => {
       const left = resetsAt ? Math.max(60, Math.ceil((resetsAt - Date.now()) / 60000) * 60) : 0;
       return { success: false, error: tr('error.limit').replace('{t}', i18n.duration(currentLang(), left)), reason: 'limit' };
     }
+    // How far it has got, to the main window ("Транскрибация… 45%") and the
+    // bar (the barrel being transcribed). The engine only reports after each
+    // 30-second piece — a short recording would sit at 0 % and look stuck —
+    // so the percent is estimated from the recording's length and how fast
+    // this computer has been transcribing, and moves every second; the
+    // engine's own figure takes over whenever it is further on. The estimate
+    // stops at 95 % until the text is there; 0 % is never shown.
+    const model = (engine.currentStatus() || {}).model || store.get('whisperModel');
+    const length = wavSeconds(audioBuffer);              // 0 when not a WAV: then the engine's figure only
+    const speed = asrSpeed(model);                       // seconds of work per second of speech
+    const started = Date.now();
+    let real = 0, shown = 0;
+    const tell = () => {
+      const estimate = length ? Math.min(0.95, (Date.now() - started) / 1000 / (length * speed)) : 0;
+      const pct = Math.min(99, Math.floor(Math.max(estimate, real) * 100));
+      if (pct <= shown) return;                          // only forward, and only when it changes
+      shown = pct;
+      if (!event.sender.isDestroyed()) event.sender.send('transcribe-progress', pct);
+      transcribeProgress = pct;
+      refreshOverlay();
+    };
+    const ticker = setInterval(tell, 1000);
     try {
-      // How far it has got, to the main window ("Транскрибация… 45%") and the
-      // bar (the barrel being transcribed).
-      const result = await api.transcribe(audioBuffer, language, (share) => {
-        const pct = Math.max(0, Math.min(99, Math.floor(share * 100)));
-        if (!event.sender.isDestroyed()) event.sender.send('transcribe-progress', pct);
-        if (pct !== transcribeProgress) { transcribeProgress = pct; refreshOverlay(); }
-      });
+      // The engine is asked every 0.7 s but moves only per 30-second piece: redraw on its jumps only.
+      const result = await api.transcribe(audioBuffer, language, (share) => { if (share > real) { real = share; tell(); } });
+      // How fast it went, for the next estimate (recordings of a few seconds
+      // say little: their time is mostly the fixed start-up).
+      if (length >= 5) learnAsrSpeed(model, (Date.now() - started) / 1000 / length);
       // The engine reports the recording's length; one built before it did is
       // measured by where the speech ends.
       const segs = result.segments || [];
@@ -1003,6 +1046,7 @@ app.on('ready', async () => {
       console.error('Transcription failed:', e.message);
       return { success: false, error: e.message };
     } finally {
+      clearInterval(ticker);
       transcribeProgress = null;
     }
   });
