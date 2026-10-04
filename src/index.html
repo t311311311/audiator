@@ -600,7 +600,7 @@
                 b.style.fontSize = size + 'px';
             }
         }
-        applyI18n();
+        applyI18n().then(() => restoreHistory());
 
         // --- DOM Elements ---
         const closeBtn = document.getElementById('close-btn');
@@ -894,10 +894,9 @@
         // A history entry for a recording that has just been stopped. It shows
         // at once, blinking "Транскрибация…", so several recordings in a row
         // are visible in order while they wait their turn.
-        function addPendingEntry() {
+        function addPendingEntry(date = new Date()) {
             const newEntry = document.createElement('div');
             newEntry.className = 'history-entry';
-            const date = new Date();
             const timestamp = formatStamp(date);
             newEntry.dataset.isoTimestamp = date.toISOString(); // Store machine-readable timestamp
             const originalTextField = document.createElement('div');
@@ -919,6 +918,54 @@
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
             return { originalTextField, originalCopy, check };
+        }
+
+        // --- The history, kept between runs ---
+        // The texts and translations go to the main process (which keeps them
+        // encrypted on this computer, the last 1000) a moment after anything in
+        // the history changes; they come back at the next start. Not the sound,
+        // and not entries that are only "no speech" or an error.
+        let historyReady = false; // nothing is saved before what was kept is back
+        function historySnapshot() {
+            return [...historyContainer.querySelectorAll('.history-entry')].map((entry) => {
+                const o = entry.querySelector('.original-text');
+                if (!o || o.classList.contains('pending') || o.dataset.state || !o.textContent.trim()) return null;
+                const t = entry.querySelector('.translated-text');
+                const tr = t && t.textContent && t.textContent !== S('status.translating') ? t.textContent : null;
+                return { t: entry.dataset.isoTimestamp, lang: entry.dataset.lang || null, text: o.textContent, tr };
+            }).filter(Boolean);
+        }
+        let historySaveTimer = null;
+        new MutationObserver(() => {
+            if (!historyReady) return;
+            clearTimeout(historySaveTimer);
+            historySaveTimer = setTimeout(() => window.api.saveHistory(historySnapshot()), 300);
+        }).observe(historyContainer, { childList: true, subtree: true, characterData: true });
+
+        async function restoreHistory() {
+            try {
+                const list = window.api.loadHistory ? await window.api.loadHistory() : [];
+                for (const e of [...list].reverse()) { // oldest first: each new one goes on top
+                    const p = addPendingEntry(new Date(e.t));
+                    const entry = p.originalTextField.closest('.history-entry');
+                    p.originalTextField.classList.remove('pending');
+                    p.originalTextField.textContent = e.text;
+                    if (e.lang) entry.dataset.lang = e.lang;
+                    p.check.hidden = false;
+                    if (e.tr) {
+                        const tr = document.createElement('div');
+                        tr.className = 'translated-text';
+                        tr.textContent = e.tr;
+                        entry.appendChild(withCopyButton(tr).row);
+                    }
+                }
+                updateActionButtons();
+                updateScrollButtons();
+            } catch (e) {
+                console.error('history could not be restored', e);
+            } finally {
+                historyReady = true;
+            }
         }
 
         // Recordings are transcribed one at a time, in the order they were

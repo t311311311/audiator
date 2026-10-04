@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -323,6 +323,40 @@ const createTray = () => {
   });
 };
 
+// --- The history, kept between runs (user's decision 2026-10-05) ---------------
+// Texts and translations — not the sound — of the last HISTORY_MAX recordings,
+// on this computer only, encrypted for the Windows user (DPAPI, as the
+// session is): the file copied elsewhere is unreadable. Gone on sign-out and
+// with "Clear history" (the page sends an empty list).
+const HISTORY_MAX = 1000;
+const historyFile = () => path.join(app.getPath('userData'), 'history.dat');
+
+function loadHistory() {
+  let raw;
+  try { raw = fs.readFileSync(historyFile()); } catch (e) { return []; }
+  try {
+    const json = safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(raw) : raw.toString('utf8');
+    const list = JSON.parse(json);
+    return Array.isArray(list) ? list.slice(0, HISTORY_MAX) : [];
+  } catch (e) {
+    console.error('[history] not readable here, left out:', e.message);
+    return [];
+  }
+}
+
+function saveHistory(list) {
+  try {
+    if (!list.length) { fs.rmSync(historyFile(), { force: true }); return; }
+    const json = JSON.stringify(list.slice(0, HISTORY_MAX));
+    const data = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json, 'utf8');
+    const tmp = historyFile() + '.tmp';
+    fs.writeFileSync(tmp, data);
+    fs.renameSync(tmp, historyFile()); // whole or not at all
+  } catch (e) {
+    console.error('[history] could not save:', e.message);
+  }
+}
+
 // --- Sign-in (step 4 of docs/PRODUCT-PLAN.md) --------------------------------
 // The app works only signed in: an email and the code mailed to it
 // (account.js). Signed out, the sign-in window stands in for the main window,
@@ -614,6 +648,7 @@ app.on('ready', async () => {
     lastSent = JSON.stringify(v);
     sendAccount(v); // the main window clears its history on a sign-out
     if (wasSignedIn && !v.signedIn) {
+      saveHistory([]); // the kept history goes with the account
       queue.clear(); // no barrels of the old account
       offeredId = null;
       refreshOverlay();
@@ -656,6 +691,10 @@ app.on('ready', async () => {
   });
   // From Settings: sign out (also the way to another account).
   ipcMain.on('open-terms', (event, lang) => showTermsWindow(lang));
+  ipcMain.handle('history-load', () => (account.signedIn() ? loadHistory() : []));
+  ipcMain.on('history-save', (event, list) => {
+    if (account.signedIn() && Array.isArray(list)) saveHistory(list);
+  });
   ipcMain.on('support-open', (event, lang) => showSupportWindow(lang));
   ipcMain.on('support-close', () => { if (supportWindow && !supportWindow.isDestroyed()) supportWindow.close(); });
   // What the message carries besides the text: the app's version and Windows'.

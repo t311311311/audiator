@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('api', {
   getAccount: () => ipcRenderer.invoke('account-get'),
   onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
   limitReached: () => ipcRenderer.send('limit-reached'),
+  // The history kept between runs: [{ t (ISO), lang, text, tr }], newest first.
+  loadHistory: () => ipcRenderer.invoke('history-load'),
+  saveHistory: (list) => ipcRenderer.send('history-save', list),
   // Signed out: the history is gone; these were its texts (for the clipboard).
   historyCleared: (texts) => ipcRenderer.send('history-cleared', texts),
   checkServerHealth: () => ipcRenderer.invoke('check-server-health'),
