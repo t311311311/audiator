@@ -255,8 +255,9 @@
            translation. */
         .entry-actions { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
         /* The box that picks a text for translation: an outline in the text's
-           colour, not a white square that caught the eye on the grey; filled
-           with the accent colour and a tick once picked. */
+           colour, not a white square that caught the eye on the grey. Picked,
+           it is filled like the title bar with a tick in the text's colour —
+           the app's own look, in both themes (users' suggestion). */
         .entry-check {
             -webkit-appearance: none; appearance: none; margin: 0; cursor: pointer;
             width: 14px; height: 14px; border-radius: 3px; box-sizing: border-box;
@@ -264,10 +265,10 @@
             display: inline-grid; place-content: center;
         }
         .entry-check:hover { opacity: 0.9; }
-        .entry-check:checked { background: var(--accent-color); border-color: var(--accent-color); opacity: 1; }
+        .entry-check:checked { background: var(--primary-color); border-color: var(--text-color); opacity: 1; }
         .entry-check:checked::after {
             content: ''; width: 3px; height: 7px; margin-top: -2px;
-            border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+            border: solid var(--text-color); border-width: 0 2px 2px 0; transform: rotate(45deg);
         }
         .entry-check[hidden] { display: none; }
         .entry-copy[hidden] { display: none; }
@@ -951,12 +952,18 @@
                     p.originalTextField.classList.remove('pending');
                     p.originalTextField.textContent = e.text;
                     if (e.lang) entry.dataset.lang = e.lang;
+                    // Copy buttons start hidden until a text is there (withCopyButton):
+                    // here it is, so show them — forgetting this left restored
+                    // entries with no copy button.
+                    p.originalCopy.btn.hidden = false;
                     p.check.hidden = false;
                     if (e.tr) {
                         const tr = document.createElement('div');
                         tr.className = 'translated-text';
                         tr.textContent = e.tr;
-                        entry.appendChild(withCopyButton(tr).row);
+                        const trCopy = withCopyButton(tr);
+                        trCopy.btn.hidden = false;
+                        entry.appendChild(trCopy.row);
                     }
                 }
                 updateActionButtons();

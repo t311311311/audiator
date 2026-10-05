@@ -98,10 +98,10 @@
             border: 1.5px solid var(--text-color); background: transparent; opacity: 0.7;
             display: inline-grid; place-content: center;
         }
-        .accept input:checked { background: var(--accent-color); border-color: var(--accent-color); opacity: 1; }
+        .accept input:checked { background: var(--primary-color); border-color: var(--text-color); opacity: 1; }
         .accept input:checked::after {
             content: ''; width: 3px; height: 7px; margin-top: -2px;
-            border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+            border: solid var(--text-color); border-width: 0 2px 2px 0; transform: rotate(45deg);
         }
         .hidden { display: none; }
     </style>
