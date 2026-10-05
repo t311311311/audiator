@@ -1493,9 +1493,10 @@
         }
 
         // Translate the ticked transcripts — or, with none ticked, the latest —
-        // into `target`, one after another. Those done are unticked; if some
-        // need a language that is not installed, the panel stays open and
-        // offers it, and their ticks stay for another go once it is in.
+        // into `target`, one after another. The ticks stay: the same texts can
+        // then go into another language just by picking it (user's wish
+        // 2026-10-05); "Сбросить" in the list clears them. If some need a
+        // language that is not installed, the panel stays open and offers it.
         async function translateInto(target) {
             const chosen = checkedEntries();
             const entries = chosen.length ? chosen
@@ -1507,8 +1508,6 @@
                 if (r && r.missing) { missing.add(r.missing); continue; }
                 if (r && r.noLang) { noLang = true; continue; }
                 if (r === 'error') failed = true;
-                const box = entry.querySelector('.entry-check');
-                if (box) box.checked = false;
             }
             updateTranslateTitle();
             if (missing.size) {

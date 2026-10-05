@@ -190,9 +190,23 @@ app.whenReady().then(async () => {
   check('the arrow again closes it', !(await panelOpen()));
   await w.webContents.reload(); await sleep(900);
   check('remembered after a restart', (await js(`document.getElementById('tb-lang').textContent`)) === 'EN');
+  // The ticks stay after translating: the same texts into another language just by picking it.
+  await js(`(() => { for (const t of ['Раз', 'Два']) { const p = addPendingEntry(); p.originalTextField.classList.remove('pending');
+    p.originalTextField.textContent = t; p.check.hidden = false; p.originalCopy.btn.hidden = false; p.originalTextField.closest('.history-entry').dataset.lang = 'ru'; }
+    updateActionButtons(); document.querySelectorAll('.entry-check').forEach((c) => c.click()); })()`);
+  await js(`document.getElementById('translate-btn').click()`); await sleep(400);
+  check('two ticked, Translate: both into English, the ticks stay',
+    (await js(`window.__calls.translate.map((c) => c.target + ':' + c.text).join()`)) === 'en:Два,en:Раз' && (await js(`document.querySelectorAll('.entry-check:checked').length`)) === 2);
   await js(`document.getElementById('translate-pick').click()`); await sleep(200);
-  await js(`[...document.querySelectorAll('#tp-installed .tp-name')].find((b) => b.textContent === 'Русский').click()`); await sleep(300);
+  check('the list title says the two ticked', (await js(`document.getElementById('tp-title').textContent`)) === R['translate.toChecked'].replace('{n}', 2));
+  await js(`[...document.querySelectorAll('#tp-installed .tp-name')].find((b) => b.textContent === 'Русский').click()`); await sleep(400);
   check('another language picked in the list becomes the one', (await js(`document.getElementById('tb-lang').textContent`)) === 'RU');
+  check('...and the same two go into it, still ticked',
+    (await js(`window.__calls.translate.slice(2).map((c) => c.target + ':' + c.text).join()`)) === 'ru:Два,ru:Раз' && (await js(`document.querySelectorAll('.entry-check:checked').length`)) === 2);
+  await js(`document.getElementById('translate-pick').click()`); await sleep(200);
+  await js(`document.getElementById('tp-reset').click()`); await sleep(100);
+  check('"Сбросить" in the list clears the ticks', (await js(`document.querySelectorAll('.entry-check:checked').length`)) === 0);
+  await js(`document.getElementById('translate-pick').click()`); await sleep(200);
   await js(`document.getElementById('translate-pick').click()`); await sleep(200);
   await js(`document.querySelector('#tp-installed .tp-default .tp-delete').click()`); await sleep(400);
   check('deleting that language: Translate asks again', (await js(`document.getElementById('tb-lang').textContent`)) === '');
