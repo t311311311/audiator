@@ -376,10 +376,19 @@
         /* While recording, the bar's green level meter under the microphone too,
            inside the button: the blinking alone was not obvious to people
            seeing the app for the first time. */
+        /* As wide as the microphone and centred under it; a muted green, and the
+           microphone's own red when loud (no yellow: it did not show on the
+           light theme); breathing with the microphone. */
+        :root { --meter-green: #5fba67; }
+        body.light-theme { --meter-green: #4ea859; }
         #stop-btn { flex-direction: column; gap: 2px; }
         #stop-btn .mic-icon { width: 18px; height: 18px; }
-        .btn-eq { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 8px; }
-        .btn-eq i { display: block; width: 3px; height: 2px; border-radius: 1px; background: #3ec46d; }
+        .btn-eq {
+            display: flex; align-items: flex-end; justify-content: center; gap: 1px;
+            width: 20px; height: 8px; margin: 0 auto;
+            animation: rec-pulse 1.4s steps(4) infinite;
+        }
+        .btn-eq i { display: block; flex: 0 0 2px; height: 2px; border-radius: 1px; background: var(--meter-green); }
         @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
         
         #main-controls { flex-grow: 1; display: flex; gap: 10px; }
@@ -764,7 +773,7 @@
         }
 
         // The button's own small meter: louder in the middle, a ripple across
-        // (as on the bar), green -> yellow -> red with the level.
+        // (as on the bar); green, the microphone's red when loud.
         const BTN_EQ_WEIGHT = [0.55, 0.8, 0.95, 1, 0.95, 0.8, 0.55];
         let tick = 0;
         function drawButtonMeter(level) {
@@ -773,7 +782,7 @@
             for (let i = 0; i < bars.length; i++) {
                 const v = Math.max(0, Math.min(1, level * BTN_EQ_WEIGHT[i] * (0.75 + 0.35 * Math.sin(t / 90 + i * 0.9))));
                 bars[i].style.height = Math.max(2, Math.round(v * 8)) + 'px';
-                bars[i].style.backgroundColor = `hsl(${Math.round(120 * (1 - v))}, 85%, 52%)`;
+                bars[i].style.backgroundColor = v > 0.8 ? 'var(--record-color)' : '';
             }
         }
         function startLevelMeter(mediaStream) {
