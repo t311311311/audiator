@@ -1,0 +1,3 @@
+*.png
+fixtures/*
+!fixtures/test-ru.wav
