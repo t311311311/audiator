@@ -381,11 +381,13 @@
            light theme); breathing with the microphone. */
         :root { --meter-green: #5fba67; }
         body.light-theme { --meter-green: #4ea859; }
-        #stop-btn { flex-direction: column; gap: 2px; }
-        #stop-btn .mic-icon { width: 18px; height: 18px; }
+        /* Two blocks, each centred by its margins. Not a column flex: a button
+           in Chromium is a flex box inside already, and a column there put the
+           microphone and the meter at the left edge (user's screenshot). */
+        #stop-btn .mic-icon { display: block; width: 18px; height: 18px; margin: 0 auto; }
         .btn-eq {
             display: flex; align-items: flex-end; justify-content: center; gap: 1px;
-            width: 20px; height: 8px; margin: 0 auto;
+            width: 20px; height: 8px; margin: 2px auto 0;
             animation: rec-pulse 1.4s steps(4) infinite;
         }
         .btn-eq i { display: block; flex: 0 0 2px; height: 2px; border-radius: 1px; background: var(--meter-green); }
