@@ -502,12 +502,15 @@
                     document.getElementById('account-plan').textContent = strings[`plan.${account.plan}`] || account.plan;
                     const left = document.getElementById('account-left');
                     let text = '';
-                    const empty = !!account.limited && account.remaining <= 0;
+                    // 24 hours just over: all the time back at once (as in the main window).
+                    const over = !!account.resetsAt && Date.now() >= account.resetsAt;
+                    const remaining = over ? account.limit : account.remaining;
+                    const empty = !!account.limited && remaining <= 0;
                     if (account.limited) {
                         // Left in the account's own 24 hours, and when they
                         // renew (once the first use has started them).
-                        const left = formatLeft(account.remaining);
-                        text = account.resetsAt
+                        const left = formatLeft(remaining);
+                        text = account.resetsAt && !over
                             ? (strings['account.leftReset'] || '').replace('{left}', left).replace('{t}',
                                 formatLeft(Math.max(60, Math.ceil((account.resetsAt - Date.now()) / 60000) * 60)))
                             : (strings['account.left'] || '').replace('{left}', left);

@@ -173,15 +173,22 @@ function flushUsage() {
   return flushing;
 }
 
+// The server counts at most an hour per report (auth-server/accounts.py,
+// report_usage): a recording longer than that, or minutes piled up offline,
+// go in pieces. Sent whole, everything over the hour was lost (found
+// 2026-10-06: a 1 h 23 min recording counted as 1 h). The 24 hours then start
+// an hour before the first piece, not at the very start of a longer recording.
+const REPORT_MAX_SECONDS = 3600;
+
 async function sendUsage() {
   const s = load();
-  if (!s.token || !s.pending || !s.pending.seconds) return;
-  // Minutes counted offline in 24 hours that are over by now are not charged
-  // to new ones.
-  if (!(s.pending.since > Date.now() - WINDOW_MS)) { s.pending = { since: 0, seconds: 0 }; save(); return; }
-  const seconds = s.pending.seconds;
-  const res = await request('/api/v2/usage', { method: 'POST', auth: true, body: { seconds, tz: tz() } });
-  if (res.ok) {
+  while (s.token && s.pending && s.pending.seconds > 0) {
+    // Minutes counted offline in 24 hours that are over by now are not charged
+    // to new ones.
+    if (!(s.pending.since > Date.now() - WINDOW_MS)) { s.pending = { since: 0, seconds: 0 }; save(); return; }
+    const seconds = Math.min(s.pending.seconds, REPORT_MAX_SECONDS);
+    const res = await request('/api/v2/usage', { method: 'POST', auth: true, body: { seconds, tz: tz() } });
+    if (!res.ok) return; // offline: the rest goes next time
     s.pending.seconds = Math.max(0, s.pending.seconds - seconds);
     s.profile = res.data;
     save();
