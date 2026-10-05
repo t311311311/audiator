@@ -266,11 +266,13 @@ app.whenReady().then(async () => {
       check(`${lang}/${theme}: four equal buttons, the label whole`, new Set(ws.split('/')).size === 1 && fits, ws);
       await m.webContents.capturePage();
       fs.writeFileSync(path.join(OUT, `lib-main-${lang}-${theme}.png`), (await m.webContents.capturePage()).toPNG());
-      // The menu with "Распознать аудиофайл…".
+      // The menu (2026-10-06): no "Написать нам" (it is in Settings); "Распознать аудиофайл…" hidden (backlog).
       await m.webContents.executeJavaScript(`document.getElementById('menu-btn').click()`);
       await sleep(200);
-      const item = await m.webContents.executeJavaScript(`document.getElementById('transcribe-file-btn').textContent`);
-      check(`${lang}/${theme}: the menu offers "${item}"`, item === i18n.stringsFor(lang)['menu.transcribeFile']);
+      const menu = await m.webContents.executeJavaScript(`[...document.querySelectorAll('#app-menu .dropdown-menu-item')].filter((e) => e.offsetParent).map((e) => e.textContent)`);
+      const L = i18n.stringsFor(lang);
+      check(`${lang}/${theme}: the menu is Settings, Save all text, Clear history, Exit`,
+        JSON.stringify(menu) === JSON.stringify([L['menu.settings'], L['menu.saveAll'], L['menu.clearHistory'], L['menu.exit']]), JSON.stringify(menu));
       fs.writeFileSync(path.join(OUT, `lib-menu-${lang}-${theme}.png`), (await m.webContents.capturePage({ x: 0, y: 0, width: 400, height: 260 })).toPNG());
       m.destroy();
 
