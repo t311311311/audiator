@@ -85,12 +85,24 @@
             border-bottom: 1px solid var(--primary-color);
         }
 
+        /* The recording's date, and at the right — over the copy button — a
+           play button that opens its sound file in the player Windows has. */
         .entry-header {
             font-size: 0.8em;
             color: var(--text-color);
-            opacity: 0.6;
             margin-bottom: 8px;
+            display: flex; align-items: center; gap: 6px;
         }
+        .entry-date { flex: 1 1 auto; min-width: 0; opacity: 0.6; }
+        .entry-play {
+            flex: 0 0 auto; width: 22px; height: 16px; padding: 0; margin: 0;
+            background: none; border: none; cursor: pointer;
+            color: var(--text-color); opacity: 0.45;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .entry-play:hover { opacity: 1; }
+        .entry-play[hidden] { display: none; }
+        .entry-play svg { width: 10px; height: 10px; }
 
         .original-text {
             font-size: var(--main-font-size);
@@ -171,8 +183,10 @@
             opacity: 0.8; user-select: none;
         }
         .tp-reset:hover { opacity: 1; border-color: var(--accent-color); }
-        /* The Translate button while its panel is open: visibly out of play. */
-        .control-button.locked { opacity: 0.4; pointer-events: none; }
+        /* The language the Translate button translates into: framed like the
+           chosen quality in Settings. */
+        .tp-lang.tp-default { border-color: var(--accent-color); }
+        .tp-lang.tp-default .tp-name { color: var(--accent-color); }
         .tp-list { display: flex; flex-direction: column; gap: 3px; }
         /* At most three rows of each list in view (the rest scroll inside it),
            so a long list of languages does not push the text out of sight;
@@ -358,7 +372,7 @@
             position: fixed; left: 50%; transform: translateX(-50%);
             bottom: 74px; z-index: 2000; max-width: 88%;
             background: #23262e; color: #cfd3dc; border: 1px solid rgba(255,255,255,0.10);
-            border-radius: 8px; padding: 7px 12px; font-size: 12px; text-align: center;
+            border-radius: 8px; padding: 7px 12px; font-size: 12px; text-align: center; white-space: pre-line; /* a second line: where a file went */
             opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
         }
         #toast.show { opacity: 1; }
@@ -393,39 +407,46 @@
         .btn-eq i { display: block; flex: 0 0 2px; height: 2px; border-radius: 1px; background: var(--meter-green); }
         @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
         
-        #main-controls { flex-grow: 1; display: flex; gap: 10px; }
-
-        /* One row, one height, the same spacing in every language (AUD-33).
-           The translate label varies in length ("Translate", "Перевести", "翻译"):
-           a long one squeezed the row until the "+" of the save-with-text button
-           wrapped onto a second line and stretched the whole row taller, and a
-           short one left a wide gap before the copy button. So: nothing wraps,
-           icon buttons keep their size, and the text button takes what is left. */
-        .control-button { white-space: nowrap; }
-        /* min-width: 0 lets the group get narrower than its content, so a label
-           that is too long is squeezed (and then scaled to fit by the script)
-           instead of pushing the copy button past the right edge. */
-        #main-controls { min-width: 0; }
-        #main-controls > .control-button { flex: 0 0 auto; }
-        /* Every icon button is the same fixed box, and the stop button takes the
-           record button's box while recording. Sized to content they differed
-           (record 48px, stop 59px, save+text 59px), so pressing record shoved
-           the row sideways and cut the translate label to "Переве…".
-           50px fits the widest icon ("💾+") and leaves the translate button its
-           full label in every language. The height is fixed too: left to the
+        /* One row, four buttons of one width — record, save, translate, copy
+           (user's wish 2026-10-05) — one height, in every language (AUD-33).
+           The group around record/save/translate does not take part in the
+           layout (display: contents): all four share the row equally, and the
+           stop button takes the record button's place while recording. Nothing
+           wraps; a translate label too long for its quarter is scaled down by
+           the script (fitTranslateLabel). The height is fixed: left to the
            content it followed the font (40px for Latin/Cyrillic, 42px for
            Chinese). Buttons centre their content vertically on their own. */
-        .icon-button { width: 50px; padding: 0; }
-        #main-controls > .control-button, #copy-btn { height: 43px; }
-        /* Two ids on purpose: this must outrank the "#main-controls > .control-button"
-           rule above, or the button never grows (measured: the gap stayed 57px). */
-        #main-controls > #translate-btn {
-            flex: 1 1 auto;
-            min-width: 0;
-            text-align: center;
-            overflow: hidden;
-            text-overflow: ellipsis; /* only if the window ever gets too narrow */
+        .control-button { white-space: nowrap; }
+        #main-controls { display: contents; }
+        /* The same starting width for all (not 0: buttons count their border in
+           it, the translate group has none, and from 0 the group came out 1px
+           narrower), then the row shared out equally. */
+        .controls > #copy-btn, #main-controls > .control-button, #translate-group {
+            flex: 1 1 40px; min-width: 0; height: 43px; box-sizing: border-box;
         }
+        .icon-button { padding: 0; }
+        /* Translate: the button translates the latest text (or the ticked ones)
+           straight into the language chosen once — its code under the label —
+           and the narrow arrow beside it opens the list of languages to choose
+           another. One frame around both, like a single button. */
+        #translate-group { display: flex; }
+        #translate-group > .control-button { height: 100%; box-sizing: border-box; }
+        #translate-btn {
+            flex: 1 1 auto; min-width: 0; padding: 0 3px; overflow: hidden;
+            border-radius: 5px 0 0 5px; line-height: 1.15;
+        }
+        /* Smaller than the icons' 1.2em: a quarter of the row holds the label
+           beside the arrow ("Перевести" at 15px is ~66px; the script shrinks it
+           further when a font or language needs it). */
+        .tb-label { display: block; font-size: 15px; overflow: hidden; text-overflow: ellipsis; }
+        .tb-lang { display: block; font-size: 10px; letter-spacing: 0.5px; opacity: 0.7; }
+        .tb-lang:empty { display: none; }
+        #translate-pick {
+            flex: 0 0 16px; padding: 0; border-left: none; border-radius: 0 5px 5px 0;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        #translate-pick svg { width: 10px; height: 10px; opacity: 0.8; }
+        #translate-pick.open { background-color: var(--border-color); }
 
 
         
@@ -580,9 +601,13 @@
                 </svg>
                 <span class="btn-eq" id="btn-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             </button>
-            <button class="control-button icon-button" id="save-audio-btn" title="Сохранить последнее аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
-            <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить последнее аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
-            <button class="control-button" id="translate-btn" title="Перевести" data-i18n="btn.translate" data-i18n-title="title.translate" disabled>Перевести</button>
+            <!-- The sound of every recording is saved by itself (▶ in the history);
+                 this saves texts: the latest, or the ticked ones, a file each. -->
+            <button class="control-button icon-button" id="save-btn" title="Сохранить последний текст или выбранные" data-i18n-title="title.save" disabled>&#128190;</button> <!-- Floppy Disk -->
+            <div id="translate-group">
+                <button class="control-button" id="translate-btn" title="Перевести последний текст или выбранные" data-i18n-title="title.translate" disabled><span class="tb-label" data-i18n="btn.translate">Перевести</span><span class="tb-lang" id="tb-lang"></span></button>
+                <button class="control-button" id="translate-pick" title="Выбрать язык перевода" data-i18n-title="translate.pick"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3 L5 7 L9 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
         </div>
         <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copyLatest">&#128203;</button> <!-- Clipboard -->
     </div>
@@ -616,7 +641,7 @@
         // font: shrink it a pixel at a time, only when it does not fit (a wide
         // font such as Verdana, or a long word such as "Übersetzen").
         function fitTranslateLabel() {
-            const b = document.getElementById('translate-btn');
+            const b = document.querySelector('#translate-btn .tb-label');
             b.style.fontSize = ''; // start from the stylesheet size every time
             let size = parseFloat(getComputedStyle(b).fontSize);
             const floor = size * 0.75;
@@ -635,9 +660,9 @@
         const appMenu = document.getElementById('app-menu');
         const recordBtn = document.getElementById('record-btn');
         const stopBtn = document.getElementById('stop-btn');
-        const saveAudioBtn = document.getElementById('save-audio-btn');
-        const saveAudioTextBtn = document.getElementById('save-audio-text-btn');
+        const saveBtn = document.getElementById('save-btn');
         const translateBtn = document.getElementById('translate-btn');
+        const translatePick = document.getElementById('translate-pick');
         const mainContent = document.getElementById('main-content');
         const scrollUpBtn = document.getElementById('scroll-up');
         const scrollDownBtn = document.getElementById('scroll-down');
@@ -831,7 +856,7 @@
             let fullText = S('history.header') + '\n\n';
             // No reverse() to sort from newest to oldest
             Array.from(entries).forEach(entry => {
-                const timestamp = entry.querySelector('.entry-header')?.innerText || '';
+                const timestamp = entry.querySelector('.entry-date')?.innerText || '';
                 const original = entry.querySelector('.original-text')?.innerText || '';
                 const translated = entry.querySelector('.translated-text')?.innerText || '';
                 fullText += `${timestamp}\n`;
@@ -882,14 +907,16 @@
 
         // Put a history text in a row with its own copy button. The button is
         // shown by the caller once the text is real (not a status or an error).
-        function withCopyButton(textEl) {
+        // Its tooltip says which text it copies: the original or the translation.
+        function withCopyButton(textEl, translation = false) {
             const row = document.createElement('div');
             row.className = 'text-row';
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'entry-copy';
-            btn.dataset.i18nTitle = 'title.copy'; // relabelled on a language change
-            btn.title = S('title.copy');
+            // relabelled on a language change
+            btn.dataset.i18nTitle = translation ? 'title.copyTranslation' : 'title.copyOriginal';
+            btn.title = translation ? S('title.copyTranslation') : S('title.copyOriginal');
             btn.textContent = '\u{1F4CB}'; // clipboard
             btn.hidden = true;
             btn.addEventListener('click', () => {
@@ -923,8 +950,8 @@
         // history change with it.
         function relabelHistory() {
             historyContainer.querySelectorAll('.history-entry').forEach((entry) => {
-                const head = entry.querySelector('.entry-header');
-                if (head && entry.dataset.isoTimestamp) head.textContent = formatStamp(new Date(entry.dataset.isoTimestamp));
+                const date = entry.querySelector('.entry-date');
+                if (date && entry.dataset.isoTimestamp) date.textContent = formatStamp(new Date(entry.dataset.isoTimestamp));
             });
             historyContainer.querySelectorAll('.original-text[data-state="empty"]').forEach((el) => {
                 el.textContent = S('status.noText');
@@ -937,15 +964,25 @@
         function addPendingEntry(date = new Date()) {
             const newEntry = document.createElement('div');
             newEntry.className = 'history-entry';
-            const timestamp = formatStamp(date);
             newEntry.dataset.isoTimestamp = date.toISOString(); // Store machine-readable timestamp
             const originalTextField = document.createElement('div');
             originalTextField.className = 'original-text pending';
             originalTextField.textContent = S('status.transcribing');
-            newEntry.innerHTML = `<div class="entry-header">${timestamp}</div>`;
+            // The date; beside it, once the recording's file is there, ▶.
+            const header = el('div', 'entry-header');
+            header.appendChild(el('span', 'entry-date', formatStamp(date)));
+            const play = el('button', 'entry-play');
+            play.type = 'button';
+            play.hidden = true;
+            play.dataset.i18nTitle = 'title.play'; // relabelled on a language change
+            play.title = S('title.play');
+            play.innerHTML = PLAY_SVG;
+            play.addEventListener('click', () => openRecording(newEntry));
+            header.appendChild(play);
+            newEntry.appendChild(header);
             const originalCopy = withCopyButton(originalTextField);
             // Under the copy button: a box to pick this text for translation
-            // (several can be picked and translated in one go).
+            // and saving (several can be picked and done in one go).
             const check = document.createElement('input');
             check.type = 'checkbox';
             check.className = 'entry-check';
@@ -957,13 +994,43 @@
             newEntry.appendChild(originalCopy.row);
             historyContainer.insertBefore(newEntry, historyContainer.firstChild);
             updateScrollButtons(); // Update scroll buttons visibility
-            return { originalTextField, originalCopy, check };
+            return { originalTextField, originalCopy, check, play };
+        }
+
+        // --- Every recording is kept as a file (recordings.js in the main process) ---
+        // Written as soon as it stops, in the folder from Settings (Downloads\Audiator
+        // by default); ▶ beside its date opens it in the player Windows has. A
+        // recording with no speech in it is taken back: no file, no ▶, as it has
+        // no copy button or tick either. The files are the user's: signing out
+        // or clearing the history leaves them where they are.
+        const PLAY_SVG = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>';
+        // Once its file is there, the entry gets ▶ (and the file goes into the
+        // kept history with it).
+        function showPlay(entry) {
+            (entry._saved || Promise.resolve(null)).then((r) => {
+                if (!r || !r.file) return;
+                entry.dataset.audio = r.file;
+                const play = entry.querySelector('.entry-play');
+                if (play) play.hidden = false;
+            });
+        }
+        // No speech after all: that file goes again (only one this run wrote).
+        function dropRecordingFile(entry) {
+            (entry._saved || Promise.resolve(null)).then((r) => {
+                if (r && r.file) window.api.discardRecording(r.file);
+            });
+        }
+        async function openRecording(entry) {
+            const r = await window.api.openFile(entry.dataset.audio);
+            if (r && r.missing) showToast(S('toast.fileMissing'), 4000);
+            else if (r && r.error) showToast(`${S('toast.openFailed')}: ${r.error}`, 5000);
         }
 
         // --- The history, kept between runs ---
         // The texts and translations go to the main process (which keeps them
         // encrypted on this computer, the last 1000) a moment after anything in
-        // the history changes; they come back at the next start. Not the sound,
+        // the history changes; they come back at the next start — with the path
+        // of each one's recording, so ▶ still plays it. Not the sound itself,
         // and not entries that are only "no speech" or an error.
         let historyReady = false; // nothing is saved before what was kept is back
         function historySnapshot() {
@@ -972,7 +1039,8 @@
                 if (!o || o.classList.contains('pending') || o.dataset.state || !o.textContent.trim()) return null;
                 const t = entry.querySelector('.translated-text');
                 const tr = t && t.textContent && t.textContent !== S('status.translating') ? t.textContent : null;
-                return { t: entry.dataset.isoTimestamp, lang: entry.dataset.lang || null, text: o.textContent, tr };
+                return { t: entry.dataset.isoTimestamp, lang: entry.dataset.lang || null, text: o.textContent, tr,
+                         a: entry.dataset.audio || null };
             }).filter(Boolean);
         }
         let historySaveTimer = null;
@@ -980,7 +1048,8 @@
             if (!historyReady) return;
             clearTimeout(historySaveTimer);
             historySaveTimer = setTimeout(() => window.api.saveHistory(historySnapshot()), 300);
-        }).observe(historyContainer, { childList: true, subtree: true, characterData: true });
+        }).observe(historyContainer, { childList: true, subtree: true, characterData: true,
+                                       attributes: true, attributeFilter: ['data-audio'] });
 
         async function restoreHistory() {
             try {
@@ -996,11 +1065,14 @@
                     // entries with no copy button.
                     p.originalCopy.btn.hidden = false;
                     p.check.hidden = false;
+                    // ▶ for the recording's file; if it has since been moved
+                    // or deleted, a click says so.
+                    if (e.a) { entry.dataset.audio = e.a; p.play.hidden = false; }
                     if (e.tr) {
                         const tr = document.createElement('div');
                         tr.className = 'translated-text';
                         tr.textContent = e.tr;
-                        const trCopy = withCopyButton(tr);
+                        const trCopy = withCopyButton(tr, true);
                         trCopy.btn.hidden = false;
                         entry.appendChild(trCopy.row);
                     }
@@ -1033,12 +1105,21 @@
         function stopProgress(field) {
             if (progressField === field) progressField = null;
         }
-        // blob: the recording as the user can save it (webm); wav: the same
+        // blob: the recording as the user keeps it (webm); wav: the same
         // for the engine (startPcmCapture), or null if it could not be taken.
         function queueTranscription(blob, jobId, withinLimit, wav, seconds = 0) {
             uncountedSeconds += seconds; // spent, until its text comes and the account counts it
-            const pending = addPendingEntry();
-            pending.originalTextField.closest('.history-entry')._audio = blob; // for "save audio"
+            const when = new Date(); // the entry's time, and its files' names
+            const pending = addPendingEntry(when);
+            // Its file now, before transcription: a failure there does not lose
+            // the recording. (Stopped the instant it began: nothing to keep.)
+            const entry = pending.originalTextField.closest('.history-entry');
+            entry._saved = blob.size && window.api.saveRecording
+                ? window.api.saveRecording(blob, when.toISOString()).catch((e) => ({ error: e.message }))
+                : Promise.resolve(null);
+            entry._saved.then((r) => {
+                if (r && r.error) showToast(`${S('toast.audioFailed')}: ${r.error}`, 6000);
+            });
             if (transcribing++ > 0) pending.originalTextField.textContent = S('status.queued');
             const gen = session;
             transcribeChain = transcribeChain
@@ -1119,10 +1200,11 @@
         }
 
         // --- Signing out clears the history ---
-        // Nothing of one account is left for the next: the history (texts,
-        // translations, audio), a recording in progress and transcriptions
-        // still waiting go. The main process empties the bar, and the
-        // clipboard if it holds one of these texts.
+        // Nothing of one account is left in the window for the next: the
+        // history (texts, translations), a recording in progress and
+        // transcriptions still waiting go. The main process empties the bar,
+        // and the clipboard if it holds one of these texts. The files in the
+        // user's folder stay: they belong to whoever uses this Windows account.
         let session = 0; // bumped at sign-out; work from before it is dropped
         function clearForSignOut() {
             session++;
@@ -1138,24 +1220,29 @@
             window.api.historyCleared(texts);
         }
 
-        // The newest transcript that is finished (not waiting or transcribing):
-        // what "the latest" means for saving, copying and translating. So those
-        // keep working on what is already there while a new recording is made
-        // or transcribed, and move on to it once it is done.
-        function latestDoneEntry() {
-            return [...historyContainer.querySelectorAll('.history-entry')]
-                .find((e) => !e.querySelector('.original-text.pending')) || null;
+        // A history entry that holds a real text — not waiting, transcribing,
+        // "no speech" or an error.
+        function hasText(entry) {
+            const o = entry.querySelector('.original-text');
+            return !!(o && !o.classList.contains('pending') && !o.dataset.state && o.textContent.trim());
         }
-        // Save and translate are usable as soon as there is a finished
-        // transcript, and stay usable through new recordings.
+        // The newest of those: what "the latest" means for saving, copying and
+        // translating. So those keep working on what is already there while a
+        // new recording is made or transcribed, and move on to it once it is
+        // done; a "no speech" or an error on top is passed over.
+        function latestDoneEntry() {
+            return [...historyContainer.querySelectorAll('.history-entry')].find(hasText) || null;
+        }
+        // Save and translate are usable as soon as there is a text, and stay
+        // usable through new recordings.
         function updateActionButtons() {
             const done = latestDoneEntry();
-            saveAudioBtn.disabled = !(done && done._audio);
-            saveAudioTextBtn.disabled = !(done && done._audio);
+            saveBtn.disabled = !done;
             translateBtn.disabled = !done;
         }
 
         async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit, wav) {
+            const entry = originalTextField.closest('.history-entry');
             originalTextField.textContent = S('status.transcribing'); // its turn now
             progressField = originalTextField;
             try {
@@ -1177,6 +1264,8 @@
                 if (!result.text) originalTextField.dataset.state = 'empty';
                 originalCopy.btn.hidden = !result.text;
                 check.hidden = !result.text;
+                // Its recording: ▶ with a text; with no speech it is not kept.
+                if (result.text) showPlay(entry); else dropRecordingFile(entry);
 
                 // Hand the transcript to the queue: on the clipboard at once when
                 // this window is in front, otherwise when its barrel's turn comes.
@@ -1191,6 +1280,7 @@
                 const errorMessage = error.reason ? error.message : `${S('error.transcribe')}: ${error.message}`;
                 originalTextField.textContent = errorMessage;
                 originalTextField.dataset.state = 'error';
+                showPlay(entry); // the recording is kept: it can be listened to
 
                 // Log detailed error information for debugging
                 if (error.stack) {
@@ -1244,47 +1334,69 @@
             }
         });
 
-        saveAudioBtn.addEventListener('click', () => { 
-            const latestEntry = latestDoneEntry();
-            if (latestEntry && latestEntry._audio) {
-                const isoTimestamp = latestEntry.dataset.isoTimestamp || new Date().toISOString();
-                window.api.saveAudio(latestEntry._audio, isoTimestamp);
-            } else {
-                alert(S('alert.noAudio'));
+        // --- Save: the latest text, or the ticked ones — a file each ---
+        // transcribe_135607_051026.txt in the folder from Settings, named like
+        // the recording's own file; the date, the original and the translation
+        // if there is one. The same tick picks texts for translating and saving.
+        function entryFileText(entry) {
+            const date = entry.querySelector('.entry-date')?.innerText || '';
+            const original = entry.querySelector('.original-text')?.innerText || '';
+            const translated = entry.querySelector('.translated-text')?.innerText || '';
+            let text = `${date}\n\n${S('history.original')}: ${original}\n`;
+            if (translated && translated !== S('status.translating')) {
+                text += `${S('history.translation')}: ${translated}\n`;
             }
-        });
-
-        saveAudioTextBtn.addEventListener('click', () => {
-            const latestEntry = latestDoneEntry();
-            if (!latestEntry) {
-                alert(S('alert.noText'));
+            return text;
+        }
+        saveBtn.addEventListener('click', async () => {
+            const chosen = checkedEntries().filter(hasText);
+            const entries = chosen.length ? chosen : [latestDoneEntry()].filter(Boolean);
+            if (!entries.length) return;
+            const r = await window.api.saveTexts(entries.map((e) => ({
+                text: entryFileText(e), when: e.dataset.isoTimestamp, audio: e.dataset.audio || null,
+            })));
+            if (!r || r.error) {
+                showToast(`${S('toast.saveFailed')}: ${(r && r.error) || ''}`, 6000);
                 return;
             }
-            if (!latestEntry._audio) {
-                alert(S('alert.noAudio'));
-                return;
-            }
-
-            const humanReadableTimestamp = latestEntry.querySelector('.entry-header')?.innerText || '';
-            const isoTimestamp = latestEntry.dataset.isoTimestamp || new Date().toISOString();
-            const original = latestEntry.querySelector('.original-text')?.innerText || '';
-            const translated = latestEntry.querySelector('.translated-text')?.innerText || '';
-            
-            let textToSave = `${humanReadableTimestamp}\n\n`;
-            textToSave += `${S('history.original')}: ${original}\n`;
-            if (translated) {
-                textToSave += `${S('history.translation')}: ${translated}\n`;
-            }
-
-            window.api.saveAudioAndText(latestEntry._audio, textToSave, isoTimestamp);
+            entries.forEach((e) => { const box = e.querySelector('.entry-check'); if (box) box.checked = false; });
+            updateTranslateTitle();
+            const name = (p) => p.split(/[\\/]/).pop();
+            const what = r.files.length === 1 ? S('toast.saved').replace('{name}', name(r.files[0]))
+                                              : S('toast.savedN').replace('{n}', r.files.length);
+            showToast(`${what}\n${r.folder}`, 4500);
         });
 
-        // The panel opens from the Translate button, which is then locked (it
-        // looked clickable while it had nothing left to do); the panel closes
-        // with its own cross, Esc, or after a translation went through.
+        // --- The translation language, chosen once ---
+        // Picked in the list (clicking a language translates into it and makes
+        // it the one), remembered on this computer. The Translate button then
+        // translates straight into it, its code under the label; the arrow
+        // beside the button opens the list to pick another. Not chosen yet, or
+        // deleted since: the Translate button opens the list.
+        let tpDefault = null;
+        try { tpDefault = localStorage.getItem('translateDefault'); } catch (e) {}
+        const installedLangs = () => (tpState && tpState.installed) || ['en'];
+        const LANG_CODE = { pb: 'PT-BR', zt: 'ZH-TW' };
+        function setDefaultLang(code) {
+            tpDefault = code;
+            try {
+                if (code) localStorage.setItem('translateDefault', code);
+                else localStorage.removeItem('translateDefault');
+            } catch (e) {}
+            renderTranslateButton();
+        }
+        function renderTranslateButton() {
+            const ready = tpDefault && installedLangs().includes(tpDefault);
+            document.getElementById('tb-lang').textContent = ready ? (LANG_CODE[tpDefault] || tpDefault.toUpperCase()) : '';
+            fitTranslateLabel();
+        }
+
+        // The panel opens from the arrow (or from Translate while no language
+        // is chosen); it closes with the arrow again, its own cross, Esc, or
+        // after a translation went through.
         function openTranslatePanel() {
             translateBar.classList.remove('hidden');
-            translateBtn.classList.add('locked');
+            translatePick.classList.add('open');
             tpSearch.placeholder = S('translate.search');
             tpSearch.value = ''; // a fresh search each time the panel opens
             renderTranslatePanel();
@@ -1292,12 +1404,16 @@
         }
         function closeTranslatePanel() {
             translateBar.classList.add('hidden');
-            translateBtn.classList.remove('locked');
+            translatePick.classList.remove('open');
             updateScrollButtons(); // Update scroll buttons position after hiding translate bar
         }
         translateBtn.addEventListener('click', () => {
-            if (translateBtn.classList.contains('locked')) return; // e.g. Enter on the focused button
-            openTranslatePanel();
+            if (tpDefault && installedLangs().includes(tpDefault)) translateInto(tpDefault);
+            else openTranslatePanel();
+        });
+        translatePick.addEventListener('click', () => {
+            if (translateBar.classList.contains('hidden')) openTranslatePanel();
+            else closeTranslatePanel();
         });
         document.getElementById('tp-close').addEventListener('click', closeTranslatePanel);
         document.addEventListener('keydown', (e) => {
@@ -1316,7 +1432,7 @@
             updateScrollButtons();
         });
 
-        // The transcripts ticked for translation, newest first (as listed).
+        // The transcripts ticked for translation or saving, newest first (as listed).
         function checkedEntries() {
             return [...historyContainer.querySelectorAll('.entry-check:checked')]
                 .map((c) => c.closest('.history-entry'));
@@ -1345,7 +1461,7 @@
             if (!translatedDiv) {
                 translatedDiv = document.createElement('div');
                 translatedDiv.className = 'translated-text';
-                entry.appendChild(withCopyButton(translatedDiv).row);
+                entry.appendChild(withCopyButton(translatedDiv, true).row);
             }
             const translatedCopyBtn = translatedDiv.parentElement.querySelector('.entry-copy');
             const previous = translatedDiv.textContent;
@@ -1397,10 +1513,15 @@
             updateTranslateTitle();
             if (missing.size) {
                 tpNeed = [...missing];
+                if (translateBar.classList.contains('hidden')) openTranslatePanel(); // from the button: show what is needed
                 showTranslateNote(`${S('translate.needLanguage')} ${tpNeed.map((c) => langName(c)).join(', ')}`);
                 return;
             }
-            if (noLang) { showTranslateNote(S('translate.noLang')); return; }
+            if (noLang) {
+                if (translateBar.classList.contains('hidden')) openTranslatePanel();
+                showTranslateNote(S('translate.noLang'));
+                return;
+            }
             tpNeed = [];
             hideTranslateNote();
             if (!failed) closeTranslatePanel();
@@ -1453,6 +1574,7 @@
         async function deleteLanguage(code) {
             const what = `${langName(code)} (${mbText(sizeOf(code))})`;
             if (!(await window.api.confirmBox(`${S('translate.confirmDelete')} ${what}?`, S('dlg.delete')))) return;
+            if (code === tpDefault) setDefaultLang(null); // Translate asks again next time
             window.api.translateDelete(code).then((s) => renderEngine(s));
         }
 
@@ -1480,10 +1602,12 @@
                 rank(a) - rank(b) ||
                 (rank(a) === 0 ? starOrder.indexOf(a) - starOrder.indexOf(b) : langName(a).localeCompare(langName(b))));
 
-            // Languages on this computer: click one to translate into it.
+            // Languages on this computer: click one to translate into it \u2014 it
+            // becomes the Translate button's language (framed).
+            renderTranslateButton();
             tpInstalled.textContent = '';
             for (const code of installed) {
-                const row = el('div', 'tp-row tp-lang');
+                const row = el('div', 'tp-row tp-lang' + (code === tpDefault ? ' tp-default' : ''));
                 const fav = tpFavorites.has(code);
                 const star = el('button', 'tp-star' + (fav ? ' on' : ''), '\u2605');
                 star.type = 'button';
@@ -1492,8 +1616,12 @@
                 row.appendChild(star);
                 const name = el('button', 'tp-name', langName(code));
                 name.type = 'button';
-                name.title = S('translate.clickToTranslate');
-                name.addEventListener('click', () => translateInto(code));
+                name.title = code === tpDefault ? S('translate.isDefault') : S('translate.clickToTranslate');
+                name.addEventListener('click', () => {
+                    setDefaultLang(code);
+                    renderTranslatePanel(); // the frame moves to it at once
+                    translateInto(code);
+                });
                 row.appendChild(name);
                 if (code === 'en') {
                     row.append(el('span', 'tp-size', S('translate.builtIn')), el('span', 'tp-icon'));

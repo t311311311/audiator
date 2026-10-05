@@ -112,6 +112,14 @@
         .account-left.empty { color: #e06c75; }
         .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
         .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
+        /* The folder for recordings and texts: its path (the start cut with "…"
+           when long — the end is the part that tells), change, open. */
+        .folder-box {
+            display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
+        }
+        .folder-path { flex: 1 1 auto; min-width: 0; font-size: 0.85em; white-space: nowrap; overflow: hidden; user-select: text; }
+        .folder-box .action-button { flex: 0 0 auto; padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
         .settings-version { margin-right: auto; font-size: 0.8em; line-height: 1.5; }
         .settings-version a { color: var(--accent-color); text-decoration: none; }
         .settings-version a:hover { text-decoration: underline; }
@@ -197,6 +205,17 @@
                 <label data-i18n="settings.quality">Качество распознавания</label>
                 <div class="quality-list" id="quality-list" role="radiogroup"></div>
                 <div class="setting-hint" id="quality-hint"></div>
+            </div>
+
+            <!-- Where every recording and the saved texts go (Downloads\Audiator by
+                 default). Another folder applies on Save; files already there stay. -->
+            <div class="setting stacked">
+                <label data-i18n="settings.folder">Папка для записей и текстов</label>
+                <div class="folder-box">
+                    <div class="folder-path" id="folder-path"></div>
+                    <button class="action-button" id="folder-change" data-i18n="settings.folderChange">Изменить…</button>
+                    <button class="action-button" id="folder-open" data-i18n="settings.folderOpen">Открыть</button>
+                </div>
             </div>
 
             <div class="setting stacked">
@@ -315,6 +334,7 @@
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
                     applyTheme(settings.theme); // Apply theme to settings window itself
                     renderQuality();
+                    renderFolder();
                 });
 
                 window.settingsApi.send('get-settings');
@@ -354,10 +374,10 @@
 
                 languageSelect.addEventListener('change', (e) => {
                     currentSettings.language = e.target.value;
-                    applyI18n(e.target.value).then(() => { renderQuality(); renderAccount(); }); // preview here; other windows follow on Save
+                    applyI18n(e.target.value).then(() => { renderQuality(); renderAccount(); renderFolder(); }); // preview here; other windows follow on Save
                 });
 
-                applyI18n().then(() => { renderQuality(); renderAccount(); });
+                applyI18n().then(() => { renderQuality(); renderAccount(); renderFolder(); });
 
                 // --- Recognition quality (the speech model) ---
                 // One row per model: its size, a tick once it is on this
@@ -513,6 +533,33 @@
                     if (await window.settingsApi.confirmBox(strings['account.confirmSignOut'], strings['account.signOut'],
                         document.documentElement.lang)) window.settingsApi.signOut();
                 });
+
+                // --- The folder for recordings and texts ---
+                // The one in use until another is picked; the pick is kept on Save
+                // (currentSettings.saveFolder), like everything else here.
+                let folderInUse = '';
+                const folderPath = document.getElementById('folder-path');
+                const shownFolder = () => currentSettings.saveFolder || folderInUse;
+                // The whole path when it fits; else the drive, "…", and as many
+                // of the last folders as fit: C:\…\Downloads\Audiator.
+                function renderFolder() {
+                    const full = shownFolder();
+                    folderPath.title = full;
+                    folderPath.textContent = full;
+                    const parts = full.split('\\');
+                    for (let i = 1; folderPath.scrollWidth > folderPath.clientWidth && i < parts.length - 1; i++) {
+                        folderPath.textContent = [parts[0], '…', ...parts.slice(i + 1)].join('\\');
+                    }
+                }
+                if (window.settingsApi.getSaveFolder) window.settingsApi.getSaveFolder().then((f) => { folderInUse = f; renderFolder(); }).catch(() => {});
+                document.getElementById('folder-change').addEventListener('click', async () => {
+                    const picked = await window.settingsApi.chooseFolder(shownFolder(), document.documentElement.lang);
+                    if (picked) { currentSettings.saveFolder = picked; renderFolder(); } // applied on Save
+                });
+                document.getElementById('folder-open').addEventListener('click', () => {
+                    window.settingsApi.openFolder(shownFolder());
+                });
+                window.addEventListener('resize', renderFolder);
 
                 // Load and display app version
                 window.settingsApi.getAppVersion().then(version => {
