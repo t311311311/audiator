@@ -1148,9 +1148,14 @@
                     };
                 }
                 process(inputs) {
-                    const ch = inputs[0] && inputs[0][0];
-                    if (ch) for (let i = 0; i < ch.length; i++) {
-                        this.buf[this.n++] = ch[i];
+                    // Every channel the microphone gives, as one (their average):
+                    // the engine wants mono, and a two-microphone array sends two.
+                    const chs = inputs[0] || [];
+                    const len = chs.length ? chs[0].length : 0;
+                    for (let i = 0; i < len; i++) {
+                        let v = 0;
+                        for (let c = 0; c < chs.length; c++) v += chs[c][i];
+                        this.buf[this.n++] = v / chs.length;
                         if (this.n === this.buf.length) { this.port.postMessage(this.buf); this.buf = new Float32Array(8000); this.n = 0; }
                     }
                     return true;
@@ -1755,6 +1760,19 @@
         let jobCounter = 0;
         let micStarting = false;     // the microphone is being opened
         let stopWhenStarted = false; // the user asked to stop before it was open
+
+        // The microphone as it is, by default. Chromium's processing for calls
+        // (noise suppression, automatic gain, echo cancellation — on unless
+        // asked otherwise) dulled the voice: measured 2026-10-05, about 8 dB
+        // less above 12 kHz than older recordings, and a pumping level. The
+        // engine hears just as well without it. Settings turn it on for noisy
+        // places. As many channels as the microphone gives (two for a laptop's
+        // microphone array); the sound is encoded at 128 kbit/s either way.
+        let micProcessing = false;
+        const micConstraints = () => ({ audio: {
+            echoCancellation: micProcessing, noiseSuppression: micProcessing, autoGainControl: micProcessing,
+            channelCount: { ideal: 2 },
+        } });
         recordBtn.addEventListener('click', async () => {
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
             if (limitReached()) {
@@ -1771,9 +1789,9 @@
             stopWhenStarted = false;
             const gen = session; // signed out meanwhile: this recording is dropped
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const stream = await navigator.mediaDevices.getUserMedia(micConstraints());
                 if (gen !== session) { stream.getTracks().forEach((t) => t.stop()); return; }
-                const recorder = new MediaRecorder(stream);
+                const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
                 const chunks = [];
                 const jobId = ++jobCounter;
                 mediaRecorder = recorder;
@@ -1849,6 +1867,7 @@
         // --- Settings Listener ---
         window.api.onSettingsUpdated((settings) => {
             applyI18n(); // the language may have changed with these settings
+            micProcessing = !!settings.micNoiseSuppression; // for the next recording
             if (settings.theme === 'light') {
                 document.body.classList.add('light-theme');
             } else {
@@ -1860,6 +1879,7 @@
 
         // --- Apply initial settings on page load ---
         window.api.getSettings().then(initialSettings => {
+            micProcessing = !!(initialSettings && initialSettings.micNoiseSuppression);
             if (initialSettings && initialSettings.theme) {
                 if (initialSettings.theme === 'light') {
                     document.body.classList.add('light-theme');

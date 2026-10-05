@@ -22,12 +22,12 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 20px;
+            padding: 16px 20px; /* 16, not 20, above and below: everything fits a 14" laptop at 125 % (766 px) */
             user-select: none;
             overflow-y: auto; /* only when the screen is too small for the window */
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 40px);
+            height: calc(100vh - 32px);
         }
         h2 {
             margin-top: 0;
@@ -36,7 +36,7 @@
             flex-grow: 1;
         }
         .setting {
-            margin-bottom: 14px;
+            margin-bottom: 11px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -68,11 +68,11 @@
         /* Recognition quality: a label above a full-width list of the models,
            with an explanation under it. */
         .setting.stacked { flex-direction: column; align-items: stretch; }
-        .setting.stacked > label { margin-bottom: 8px; }
+        .setting.stacked > label { margin-bottom: 6px; }
         .quality-list { display: flex; flex-direction: column; gap: 4px; }
         .quality-row {
             margin: 0; /* a <label>: not the spacing of the setting labels */
-            display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: pointer;
+            display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer;
             background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
         }
         .quality-row.chosen { border-color: var(--accent-color); }
@@ -112,6 +112,9 @@
         .account-left.empty { color: #e06c75; }
         .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
         .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
+        /* A setting that is a tick: the box, then its name; its hint under it. */
+        .setting.stacked > label.check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 0; cursor: pointer; }
+        .check-row input { margin: 0; accent-color: var(--accent-color); cursor: pointer; }
         /* The folder for recordings and texts: its path (the start cut with "…"
            when long — the end is the part that tells), change, open. */
         .folder-box {
@@ -158,7 +161,7 @@
 </head>
 <body>
     <div class="content">
-        <h2 style="margin-top: 0; margin-left: 15px; margin-bottom: 16px;" data-i18n="settings.title">Настройки</h2>
+        <h2 style="margin-top: 0; margin-left: 15px; margin-bottom: 10px;" data-i18n="settings.title">Настройки</h2>
 
         <!-- First, so someone who cannot read the current language still finds it:
              the globe is universal and every option is in its own language. -->
@@ -205,6 +208,14 @@
                 <label data-i18n="settings.quality">Качество распознавания</label>
                 <div class="quality-list" id="quality-list" role="radiogroup"></div>
                 <div class="setting-hint" id="quality-hint"></div>
+            </div>
+
+            <!-- Chromium's processing for calls (noise suppression, automatic gain,
+                 echo cancellation): off by default — the voice as it is. Applies
+                 to the next recording after Save. -->
+            <div class="setting stacked">
+                <!-- What it means, on hover: a line of its own did not fit a laptop screen. -->
+                <label class="check-row" id="noise-row"><input type="checkbox" id="noise-check"> <span data-i18n="settings.noiseSuppression">Шумоподавление микрофона</span></label>
             </div>
 
             <!-- Where every recording and the saved texts go (Downloads\Audiator by
@@ -280,6 +291,11 @@
                     window.settingsApi.send('update-setting', { key: 'opacity', value: parseFloat(e.target.value) });
                 });
 
+                // The microphone's processing for calls: for the next recording, after Save.
+                document.getElementById('noise-check').addEventListener('change', (e) => {
+                    currentSettings.micNoiseSuppression = e.target.checked;
+                });
+
                 // --- Save and Cancel ---
                 saveSettingsBtn.addEventListener('click', () => {
                     window.settingsApi.send('save-all-settings', currentSettings);
@@ -323,6 +339,7 @@
                     opacitySlider.value = initialSettings.opacity || 0.8;
                     fontSizeSlider.value = initialSettings.fontSize || 16;
                     fontSizeValue.textContent = `${initialSettings.fontSize || 16}px`;
+                    document.getElementById('noise-check').checked = !!initialSettings.micNoiseSuppression;
                 });
 
                 window.settingsApi.receive('settings-loaded', (settings) => {
@@ -332,6 +349,7 @@
                     opacitySlider.value = settings.opacity || 0.8;
                     fontSizeSlider.value = settings.fontSize || 16;
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
+                    document.getElementById('noise-check').checked = !!settings.micNoiseSuppression;
                     applyTheme(settings.theme); // Apply theme to settings window itself
                     renderQuality();
                     renderFolder();
@@ -368,6 +386,7 @@
                             }
                         }
                         languageSelect.value = i18n.lang;
+                        document.getElementById('noise-row').title = strings['settings.noiseSuppressionHint'] || '';
                         renderVersion();
                     });
                 }
