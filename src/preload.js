@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('api', {
   getAccount: () => ipcRenderer.invoke('account-get'),
   onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
   limitReached: () => ipcRenderer.send('limit-reached'),
+  // A yes/no question as a system dialog (not confirm(): see index.js).
+  confirmBox: (message, ok) => ipcRenderer.invoke('confirm-box', { message, ok }),
   // The history kept between runs: [{ t (ISO), lang, text, tr }], newest first.
   loadHistory: () => ipcRenderer.invoke('history-load'),
   saveHistory: (list) => ipcRenderer.send('history-save', list),

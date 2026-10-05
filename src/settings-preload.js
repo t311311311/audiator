@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   getAccount: () => ipcRenderer.invoke('account-get'),
   onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
   signOut: () => ipcRenderer.send('account-sign-out'),
+  confirmBox: (message, ok, lang) => ipcRenderer.invoke('confirm-box', { message, ok, lang }),
   // In the language shown in Settings (it may be one being tried, not yet saved).
   openTerms: (lang) => ipcRenderer.send('open-terms', lang),
   openSupport: (lang) => ipcRenderer.send('support-open', lang),

@@ -391,9 +391,11 @@
                     renderQuality();
                 }
 
-                function deleteQuality(m, info) {
+                async function deleteQuality(m, info) {
                     const what = qualityName(m) + (info.size ? ` (${formatSize(info.size)})` : '');
-                    if (!confirm(`${strings['quality.confirmDelete']} ${what}?`)) return;
+                    // A system dialog, not confirm(): that left the page's fields dead afterwards.
+                    if (!(await window.settingsApi.confirmBox(`${strings['quality.confirmDelete']} ${what}?`,
+                        strings['dlg.delete'], document.documentElement.lang))) return;
                     window.settingsApi.deleteModel(m).then((s) => { engineStatus = s; renderQuality(); });
                 }
 
@@ -507,8 +509,9 @@
                     e.preventDefault();
                     window.settingsApi.openTerms(document.documentElement.lang);
                 });
-                document.getElementById('sign-out-btn').addEventListener('click', () => {
-                    if (confirm(strings['account.confirmSignOut'])) window.settingsApi.signOut();
+                document.getElementById('sign-out-btn').addEventListener('click', async () => {
+                    if (await window.settingsApi.confirmBox(strings['account.confirmSignOut'], strings['account.signOut'],
+                        document.documentElement.lang)) window.settingsApi.signOut();
                 });
 
                 // Load and display app version

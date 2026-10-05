@@ -368,6 +368,13 @@
             color: var(--record-color);
         }
         #stop-btn .mic-icon { animation: rec-pulse 1.4s steps(4) infinite; }
+        /* While recording, the bar's green level meter under the microphone too,
+           inside the button: the blinking alone was not obvious to people
+           seeing the app for the first time. */
+        #stop-btn { flex-direction: column; gap: 2px; }
+        #stop-btn .mic-icon { width: 18px; height: 18px; }
+        .btn-eq { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 8px; }
+        .btn-eq i { display: block; width: 3px; height: 2px; border-radius: 1px; background: #3ec46d; }
         @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
         
         #main-controls { flex-grow: 1; display: flex; gap: 10px; }
@@ -555,6 +562,7 @@
                     <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>
                     <path d="M17 11a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
                 </svg>
+                <span class="btn-eq" id="btn-eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             </button>
             <button class="control-button icon-button" id="save-audio-btn" title="Сохранить последнее аудио" data-i18n-title="title.saveAudio" disabled>&#128190;</button> <!-- Floppy Disk -->
             <button class="control-button icon-button" id="save-audio-text-btn" title="Сохранить последнее аудио и текст" data-i18n-title="title.saveAudioText" disabled>&#128190;+</button> <!-- Floppy Disk with Plus -->
@@ -750,6 +758,19 @@
             document.getElementById('engine-cancel').addEventListener('click', () => window.api.engineCancel());
         }
 
+        // The button's own small meter: louder in the middle, a ripple across
+        // (as on the bar), green -> yellow -> red with the level.
+        const BTN_EQ_WEIGHT = [0.55, 0.8, 0.95, 1, 0.95, 0.8, 0.55];
+        let tick = 0;
+        function drawButtonMeter(level) {
+            const bars = document.getElementById('btn-eq').children;
+            const t = performance.now();
+            for (let i = 0; i < bars.length; i++) {
+                const v = Math.max(0, Math.min(1, level * BTN_EQ_WEIGHT[i] * (0.75 + 0.35 * Math.sin(t / 90 + i * 0.9))));
+                bars[i].style.height = Math.max(2, Math.round(v * 8)) + 'px';
+                bars[i].style.backgroundColor = `hsl(${Math.round(120 * (1 - v))}, 85%, 52%)`;
+            }
+        }
         function startLevelMeter(mediaStream) {
             try {
                 stopLevelMeter();
@@ -769,10 +790,12 @@
                     // the bars and only shouting reaches the red.
                     const level = Math.min(1, Math.pow(rms * 5, 0.65));
                     if (window.api.recLevel) window.api.recLevel(level);
+                    if ((tick = (tick + 1) % 2) === 0) drawButtonMeter(level); // half as often: plenty for 8 px
                 }, 33); // ~30fps keeps the meter feeling instant
             } catch (e) { console.error('level meter failed', e); }
         }
         function stopLevelMeter() {
+            drawButtonMeter(0); // flat again for the next recording
             if (_meterTimer) { clearInterval(_meterTimer); _meterTimer = null; }
             if (_meterCtx) { try { _meterCtx.close(); } catch (e) {} _meterCtx = null; }
         }
@@ -1196,13 +1219,13 @@
             appMenu.classList.add('hidden');
         });
 
-        clearAllBtn.addEventListener('click', () => {
-            if (confirm(S('confirm.clearHistory'))) {
+        clearAllBtn.addEventListener('click', async () => {
+            appMenu.classList.add('hidden');
+            if (await window.api.confirmBox(S('confirm.clearHistory'), S('dlg.clear'))) {
                 historyContainer.innerHTML = '';
                 updateScrollButtons(); // Update scroll buttons visibility
                 updateActionButtons();
             }
-            appMenu.classList.add('hidden');
         });
 
         saveAudioBtn.addEventListener('click', () => { 
@@ -1411,9 +1434,9 @@
         function installLanguage(code) {
             window.api.translateInstall(code);
         }
-        function deleteLanguage(code) {
+        async function deleteLanguage(code) {
             const what = `${langName(code)} (${mbText(sizeOf(code))})`;
-            if (!confirm(`${S('translate.confirmDelete')} ${what}?`)) return;
+            if (!(await window.api.confirmBox(`${S('translate.confirmDelete')} ${what}?`, S('dlg.delete')))) return;
             window.api.translateDelete(code).then((s) => renderEngine(s));
         }
 
