@@ -98,10 +98,13 @@
             border: 1.5px solid var(--text-color); background: transparent; opacity: 0.7;
             display: inline-grid; place-content: center;
         }
-        .accept input:checked { background: var(--primary-color); border-color: var(--text-color); opacity: 1; }
+        /* Ticked: the title bar's light grey (as in the main window's history). */
+        :root { --tick-color: var(--text-color); }
+        body.light-theme { --tick-color: #80858e; }
+        .accept input:checked { background: var(--primary-color); border-color: var(--tick-color); opacity: 1; }
         .accept input:checked::after {
             content: ''; width: 3px; height: 7px; margin-top: -2px;
-            border: solid var(--text-color); border-width: 0 2px 2px 0; transform: rotate(45deg);
+            border: solid var(--tick-color); border-width: 0 2px 2px 0; transform: rotate(45deg);
         }
         .hidden { display: none; }
     </style>

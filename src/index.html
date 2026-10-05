@@ -265,10 +265,15 @@
             display: inline-grid; place-content: center;
         }
         .entry-check:hover { opacity: 0.9; }
-        .entry-check:checked { background: var(--primary-color); border-color: var(--text-color); opacity: 1; }
+        /* The tick in the light grey of the title bar's text: in the dark theme
+           that is the text colour itself; in the light one a softer grey than
+           the near-black text (user: "light grey, like the top bar"). */
+        :root { --tick-color: var(--text-color); }
+        body.light-theme { --tick-color: #80858e; }
+        .entry-check:checked { background: var(--primary-color); border-color: var(--tick-color); opacity: 1; }
         .entry-check:checked::after {
             content: ''; width: 3px; height: 7px; margin-top: -2px;
-            border: solid var(--text-color); border-width: 0 2px 2px 0; transform: rotate(45deg);
+            border: solid var(--tick-color); border-width: 0 2px 2px 0; transform: rotate(45deg);
         }
         .entry-check[hidden] { display: none; }
         .entry-copy[hidden] { display: none; }
