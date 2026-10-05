@@ -77,8 +77,10 @@ const stamp = (d) => { const t = (n) => String(n).padStart(2, '0');
     await c.resume(); while (c.currentTime < 0.3) await new Promise((r) => setTimeout(r, 50));
     const r = new MediaRecorder(d.stream); const parts = []; r.ondataavailable = (e) => parts.push(e.data);
     r.onstop = async () => { const blob = new Blob(parts, { type: 'audio/webm' });
-      const a = await window.api.saveRecording(blob, '${when.toISOString()}');
-      const b = await window.api.saveRecording(blob, '${when.toISOString()}');
+      // As the app writes a recording: begin, its sound, end (here in one piece).
+      const save = async () => { const b = await window.api.recordingBegin('${when.toISOString()}');
+        await window.api.recordingChunk(b.file, blob); return window.api.recordingEnd(b.id, b.file); };
+      const a = await save(), b = await save();
       done({ a, b, size: blob.size }); };
     r.start(); setTimeout(() => r.stop(), 2000);
   })`);

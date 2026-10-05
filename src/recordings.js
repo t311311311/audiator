@@ -3,15 +3,15 @@
 // material on their own computer: the program writes them and opens them, and
 // never deletes them — not at sign-out, not with "Clear history", not when
 // the program is uninstalled (user's decision 2026-10-05). The one exception
-// is the file it has just written for a recording in which no speech was found.
+// is the file it has just made for a recording in which no speech was found.
 //
-//   audio_135607_051026.webm        every recording, written when it stops
+//   audio_135607_051026.webm        every recording, written while it is made
 //   transcribe_135607_051026.txt    a text, by the Save button
-// (HHMMSS_DDMMYY, local time of the recording).
+// (HHMMSS_DDMMYY, local time the recording started).
 
 const fs = require('fs');
 const path = require('path');
-const { makeSeekable } = require('./webm-seekable');
+const { rewriteSeekable } = require('./webm-seekable');
 
 // "135607_051026" for 13:56:07 on 5 October 2026.
 function stamp(when) {
@@ -22,22 +22,25 @@ function stamp(when) {
          `${two(d.getDate())}${two(d.getMonth() + 1)}${two(d.getFullYear() % 100)}`;
 }
 
-// The files written by this run, so a page can only take back what was just
-// made for it (a "no speech" recording), never any other file.
+// The files this run made, so a page can only take back what was made for
+// it (a "no speech" recording), never any other file.
 const written = new Set();
+// Writes to each recording, one after another in the order they came.
+const chains = new Map();
 
-// A recording, made seekable (webm-seekable.js; as it was if that fails),
-// under a name no other file has: audio_135607_051026.webm, then _2, _3...
-// Returns the file's full path.
-async function saveRecording(folder, bytes, when) {
+// A recording begins: its file, under a name no other file has
+// (audio_135607_051026.webm, then _2, _3...), created empty; the sound is
+// added to it as it is recorded (appendChunk), so a crash or a closed
+// program keeps what was recorded until then. Returns the file's full path.
+async function beginRecording(folder, when) {
   await fs.promises.mkdir(folder, { recursive: true });
-  const data = makeSeekable(bytes) || Buffer.from(bytes);
   const base = `audio_${stamp(when)}`;
   for (let n = 1; ; n++) {
     const file = path.join(folder, n === 1 ? `${base}.webm` : `${base}_${n}.webm`);
     try {
-      await fs.promises.writeFile(file, data, { flag: 'wx' }); // never over another file
+      await fs.promises.writeFile(file, Buffer.alloc(0), { flag: 'wx' }); // never over another file
       written.add(file);
+      chains.set(file, Promise.resolve());
       return file;
     } catch (e) {
       if (e.code !== 'EEXIST' || n > 999) throw e;
@@ -45,9 +48,40 @@ async function saveRecording(folder, bytes, when) {
   }
 }
 
-// Takes back a recording this run has just written (no speech in it).
-async function discardRecording(file) {
-  if (!written.has(file)) return false;
+function appendChunk(file, bytes) {
+  const prev = chains.get(file);
+  if (!prev) return Promise.resolve(false); // not one being recorded
+  const next = prev.then(() => fs.promises.appendFile(file, Buffer.from(bytes)))
+    .catch((e) => console.error('[recordings] could not add to', path.basename(file), e.message));
+  chains.set(file, next);
+  return next;
+}
+
+// The file made seekable (webm-seekable.js), written whole or not at all;
+// as it was if it cannot be read. Returns its length in seconds (0 if unknown).
+async function repairRecording(file) {
+  const r = rewriteSeekable(await fs.promises.readFile(file));
+  if (!r) return 0;
+  const tmp = file + '.tmp';
+  await fs.promises.writeFile(tmp, r.data);
+  await fs.promises.rename(tmp, file);
+  return r.seconds;
+}
+
+// A file this run began and has not finished yet.
+function isRecording(file) { return chains.has(file); }
+
+// The recording is over: the last of its sound is in, then it is made seekable.
+async function finishRecording(file) {
+  await (chains.get(file) || Promise.resolve());
+  chains.delete(file);
+  return repairRecording(file);
+}
+
+// Takes back a recording made for this account that had no speech in it:
+// one this run made, or (allowed) one left in the queue by an earlier run.
+async function discardRecording(file, allowed = false) {
+  if (!written.has(file) && !allowed) return false;
   written.delete(file);
   await fs.promises.rm(file, { force: true });
   return true;
@@ -80,4 +114,4 @@ function openable(p) {
   }
 }
 
-module.exports = { stamp, saveRecording, discardRecording, saveTexts, openable };
+module.exports = { stamp, beginRecording, appendChunk, isRecording, finishRecording, repairRecording, discardRecording, saveTexts, openable };

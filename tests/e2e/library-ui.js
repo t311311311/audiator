@@ -18,7 +18,7 @@ function mainStub(lang, theme) {
   // A fresh start for the stand's first page in a window; kept across its reloads (a restart).
   try { if (!sessionStorage.getItem('started')) { localStorage.removeItem('translateDefault'); sessionStorage.setItem('started', '1'); } } catch (e) {}
   const noop = () => {}; window.__cb = {}; window.__jobs = []; let __n = 0;
-  window.__calls = { saveRecording: [], discard: [], saveTexts: [], openFile: [], translate: [] };
+  window.__calls = { begin: [], chunks: [], end: [], done: [], discard: [], saveTexts: [], openFile: [], translate: [] };
   const engine = (installed) => ({ model: 'small', state: 'ready', models: {}, translate: { installed, queue: [], failed: {} } });
   window.api = { getI18n: () => Promise.resolve(${I18N}),
     getSettings: () => Promise.resolve({ theme: '${theme}', fontSize: 16, fontFamily: 'Arial, sans-serif' }),
@@ -33,8 +33,11 @@ function mainStub(lang, theme) {
     getAccount: () => Promise.resolve({ signedIn: true, plan: 'admin', limited: false }), onAccountUpdated: noop, limitReached: noop,
     loadHistory: () => Promise.resolve(JSON.parse(sessionStorage.getItem('history') || '[]')),
     saveHistory: (l) => { window.__saved = l; }, historyCleared: noop,
-    saveRecording: (blob, when) => { window.__calls.saveRecording.push({ size: blob.size, when });
-      return Promise.resolve({ file: '${FOLDER}/audio_13560' + (++__n) + '_051026.webm' }); },
+    recordingBegin: (when) => { window.__calls.begin.push(when);
+      return Promise.resolve({ id: 'p' + (++__n), file: '${FOLDER}/audio_13560' + __n + '_051026.webm' }); },
+    recordingChunk: (file, blob) => { window.__calls.chunks.push({ file, size: blob.size, at: Date.now() }); },
+    recordingEnd: (id, file) => { window.__calls.end.push({ id, file, at: Date.now() }); return Promise.resolve({ file, seconds: 1, id }); },
+    pendingDone: (id) => { window.__calls.done.push(id); return Promise.resolve(true); },
     discardRecording: (f) => { window.__calls.discard.push(f); return Promise.resolve(true); },
     saveTexts: (items) => { window.__calls.saveTexts.push(items);
       return Promise.resolve({ files: items.map((it, i) => '${FOLDER}/transcribe_' + i + '.txt'), folder: '${FOLDER}' }); },
@@ -100,22 +103,25 @@ app.whenReady().then(async () => {
     (await js(`[document.getElementById('save-btn').title, document.getElementById('translate-btn').title, document.getElementById('translate-pick').title].join('|')`))
       === [R['title.save'], R['title.translate'], R['translate.pick']].join('|'));
 
-  // A recording: its file is written as it stops, ▶ once its text is there.
+  // A recording: its file is written while it is made, ▶ once its text is there.
   const record = async (ms = 1200) => {
     await js(`document.getElementById('record-btn').click()`); await sleep(ms);
     const during = await widths();
     await js(`document.getElementById('stop-btn').click()`); await sleep(900);
     return during;
   };
-  const during = await record();
+  const during = await record(2600);
   check('while recording the stop button has the same width', new Set(during).size === 1 && during[0] === idle[0], during.join(' '));
   let calls = await js('window.__calls');
-  check('the recording is saved as it stops (before its text)', calls.saveRecording.length === 1 && calls.saveRecording[0].size > 0,
-    JSON.stringify(calls.saveRecording));
-  check('its time is the entry\'s time (one name for audio and text)',
-    calls.saveRecording[0].when === await js(`document.querySelector('.history-entry').dataset.isoTimestamp`));
-  check('no ▶ while transcribing', await js(`document.querySelector('.history-entry .entry-play').hidden`));
+  const piecesBefore = calls.chunks.filter((c) => c.at < calls.end[0].at - 300);
+  check('its file begins with it; the sound goes in every second while recording',
+    calls.begin.length === 1 && piecesBefore.length >= 2 && calls.chunks.every((c) => /audio_135601/.test(c.file)) && calls.end.length === 1,
+    `begin ${calls.begin.length}, pieces ${calls.chunks.length} (${piecesBefore.length} before the stop), end ${calls.end.length}`);
+  check('its time is the entry\'s time — when it started (one name for audio and text)',
+    calls.begin[0] === await js(`document.querySelector('.history-entry').dataset.isoTimestamp`));
+  check('no ▶ while transcribing; still in the queue', (await js(`document.querySelector('.history-entry .entry-play').hidden`)) && calls.done.length === 0);
   await js(`window.__jobs.shift()({ success: true, text: 'Первая запись', language: 'ru' })`); await sleep(300);
+  check('its text in the history: out of the queue', JSON.stringify((await js('window.__calls')).done) === '["p1"]');
   const first = await js(`(() => { const e = document.querySelector('.history-entry'); return { play: !e.querySelector('.entry-play').hidden,
     audio: e.dataset.audio, copy: !e.querySelector('.entry-copy').hidden, tick: !e.querySelector('.entry-check').hidden,
     playTitle: e.querySelector('.entry-play').title, copyTitle: e.querySelector('.entry-copy').title, tickTitle: e.querySelector('.entry-check').title }; })()`);
@@ -260,6 +266,12 @@ app.whenReady().then(async () => {
       check(`${lang}/${theme}: four equal buttons, the label whole`, new Set(ws.split('/')).size === 1 && fits, ws);
       await m.webContents.capturePage();
       fs.writeFileSync(path.join(OUT, `lib-main-${lang}-${theme}.png`), (await m.webContents.capturePage()).toPNG());
+      // The menu with "Распознать аудиофайл…".
+      await m.webContents.executeJavaScript(`document.getElementById('menu-btn').click()`);
+      await sleep(200);
+      const item = await m.webContents.executeJavaScript(`document.getElementById('transcribe-file-btn').textContent`);
+      check(`${lang}/${theme}: the menu offers "${item}"`, item === i18n.stringsFor(lang)['menu.transcribeFile']);
+      fs.writeFileSync(path.join(OUT, `lib-menu-${lang}-${theme}.png`), (await m.webContents.capturePage({ x: 0, y: 0, width: 400, height: 260 })).toPNG());
       m.destroy();
 
       const s = new BrowserWindow({ width: 450, height: need, useContentSize: true, show: false });

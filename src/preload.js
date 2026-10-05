@@ -8,12 +8,23 @@ contextBridge.exposeInMainWorld('api', {
   // Function to send a 'quit' message to the main process
   quit: () => ipcRenderer.send('quit-app'),
 
-  // --- The user's files (recordings.js) ---
-  // Every recording as it stops -> { file } or { error }; taken back if no
-  // speech was in it. Texts by the Save button, one file each. The play
-  // button opens a recording -> { ok } | { missing } | { error }.
-  saveRecording: async (blob, when) =>
-    ipcRenderer.invoke('recording-save', { audio: Buffer.from(await blob.arrayBuffer()), when }),
+  // --- The user's files (recordings.js) and the queue of recordings (pending.js) ---
+  // A recording is written while it is made: begin -> { id, file } | { error },
+  // a piece of sound every second, end -> { file, seconds }. It stays queued
+  // until its text is in the history (pendingDone); the next start lists what
+  // is left (pendingList). Taken back if no speech was in it. Texts by the
+  // Save button, one file each. The play button opens a recording ->
+  // { ok } | { missing } | { error }.
+  recordingBegin: (when) => ipcRenderer.invoke('recording-begin', { when }),
+  recordingChunk: async (file, blob) =>
+    ipcRenderer.send('recording-chunk', { file, bytes: Buffer.from(await blob.arrayBuffer()) }),
+  recordingEnd: (id, file) => ipcRenderer.invoke('recording-end', { id, file }), // -> { file, seconds, id }
+  pendingDone: (id) => ipcRenderer.invoke('pending-done', id),
+  pendingList: () => ipcRenderer.invoke('pending-list'), // [{ id, file, when, seconds, own }]
+  // Menu "Transcribe an audio file…": pick one (-> { file, when } or null), queue it, read it.
+  chooseAudioFile: () => ipcRenderer.invoke('audio-file-choose'),
+  pendingAddFile: (file, when, seconds) => ipcRenderer.invoke('pending-add-file', { file, when, seconds }),
+  readRecording: (file) => ipcRenderer.invoke('recording-read', file), // its bytes, or null
   discardRecording: (file) => ipcRenderer.invoke('recording-discard', file),
   saveTexts: (items) => ipcRenderer.invoke('texts-save', items), // [{ text, when, audio }]
   openFile: (file) => ipcRenderer.invoke('file-open', file),
