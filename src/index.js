@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -813,9 +813,9 @@ app.on('ready', async () => {
     settingsWindow = new BrowserWindow({
       width: 450,
       // Inside the frame (useContentSize): language row (AUD-33), quality list,
-      // account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
+      // the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
       // than the screen: the page scrolls instead of the buttons going missing.
-      height: Math.min(680, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
+      height: Math.min(760, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
@@ -918,88 +918,74 @@ app.on('ready', async () => {
     }
   });
 
-  // --- File Saving Logic ---
-  // Helper function to format timestamp into HHMMSS_DDMMYY
-  function formatTimestampForFilename(isoTimestamp) {
-    const dateObj = new Date(isoTimestamp);
-    if (isNaN(dateObj.getTime())) {
-      // Fallback for invalid timestamps
-      const now = new Date();
-      const year = now.getFullYear().toString().slice(2);
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-      const day = now.getDate().toString().padStart(2, '0');
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const seconds = now.getSeconds().toString().padStart(2, '0');
-      return `${hours}${minutes}${seconds}_${day}${month}${year}`;
+  // --- The user's files: every recording, and texts by the Save button ---
+  // In the folder from Settings, DownloadsAudiator by default (recordings.js).
+  // They are the user's own: never deleted, at sign-out or ever.
+  const recordings = require('./recordings');
+  const saveFolder = () => store.get('saveFolder') || path.join(app.getPath('downloads'), 'Audiator');
+  // A recording as soon as it stops — before transcription, so a failure
+  // there does not lose it. Answers { file } or { error }.
+  ipcMain.handle('recording-save', async (event, { audio, when }) => {
+    try {
+      return { file: await recordings.saveRecording(saveFolder(), audio, when) };
+    } catch (e) {
+      console.error('[recordings] not saved:', e.message);
+      return { error: e.message };
     }
-    const year = dateObj.getFullYear().toString().slice(2);
-    const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-    const day = dateObj.getDate().toString().padStart(2, '0');
-    const hours = dateObj.getHours().toString().padStart(2, '0');
-    const minutes = dateObj.getMinutes().toString().padStart(2, '0');
-    const seconds = dateObj.getSeconds().toString().padStart(2, '0');
-    return `${hours}${minutes}${seconds}_${day}${month}${year}`;
-  }
-
-  // Generic file saver
-  ipcMain.on('save-audio', (event, { audio, timestamp }) => {
-    const defaultName = `ad_${formatTimestampForFilename(timestamp)}.webm`;
-    dialog.showSaveDialog({
-      title: tr('dlg.saveAudio'),
-      defaultPath: defaultName,
-      filters: [{ name: tr('dlg.filterAudio'), extensions: ['webm'] }]
-    }).then(result => {
-      if (!result.canceled && result.filePath) {
-        fs.writeFile(result.filePath, audio, (err) => {
-          if (err) console.error('Failed to save audio:', err);
-          else console.log('Audio saved successfully:', result.filePath);
-        });
-      }
-    }).catch(err => console.error('Error showing save dialog:', err));
+  });
+  // No speech in it after all: that file is taken back (only one this run wrote).
+  ipcMain.handle('recording-discard', (event, file) => recordings.discardRecording(file).catch(() => false));
+  // [{ text, when, audio }] -> one file each; { files, folder } or { error }.
+  ipcMain.handle('texts-save', async (event, items) => {
+    try {
+      const folder = saveFolder();
+      return { files: await recordings.saveTexts(folder, Array.isArray(items) ? items : []), folder };
+    } catch (e) {
+      console.error('[recordings] texts not saved:', e.message);
+      return { error: e.message };
+    }
+  });
+  // The play button: the recording in the player Windows has for it. Gone or
+  // moved — say so; the user decides what to do about it.
+  ipcMain.handle('file-open', async (event, file) => {
+    if (!file || !fs.existsSync(file)) return { missing: true };
+    if (!recordings.openable(file)) return { error: 'not a recording' };
+    const err = await shell.openPath(file);
+    return err ? { error: err } : { ok: true };
+  });
+  ipcMain.handle('save-folder', () => saveFolder());
+  // Settings: pick another folder (applied on Save), or open the one shown.
+  ipcMain.handle('folder-choose', async (event, { current, lang } = {}) => {
+    const L = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: i18n.t(L, 'settings.folder'),
+      defaultPath: current || saveFolder(),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+  });
+  ipcMain.handle('folder-open', async (event, folder) => {
+    const f = folder || saveFolder();
+    try { fs.mkdirSync(f, { recursive: true }); } catch (e) { return { error: e.message }; }
+    if (!recordings.openable(f)) return { error: 'not a folder' };
+    const err = await shell.openPath(f);
+    return err ? { error: err } : { ok: true };
   });
 
+  // Menu "Save all text": the whole history in one file, where the user says
+  // (offered in the same folder).
   ipcMain.on('save-text', (event, { text, timestamp }) => {
-    const defaultName = `history_${formatTimestampForFilename(timestamp)}.txt`;
     dialog.showSaveDialog({
       title: tr('dlg.saveHistory'),
-      defaultPath: defaultName,
+      defaultPath: path.join(saveFolder(), `history_${recordings.stamp(timestamp)}.txt`),
       filters: [{ name: tr('dlg.filterText'), extensions: ['txt'] }]
     }).then(result => {
       if (!result.canceled && result.filePath) {
         fs.writeFile(result.filePath, text, (err) => {
           if (err) console.error('Failed to save text:', err);
-          else console.log('Text saved successfully:', result.filePath);
         });
       }
     }).catch(err => console.error('Error showing save dialog for text:', err));
-  });
-
-  // Handle saving both audio and text
-  ipcMain.on('save-audio-and-text', (event, { audio, text, timestamp }) => {
-    const formattedTimestamp = formatTimestampForFilename(timestamp);
-    const defaultName = `ad_${formattedTimestamp}.webm`;
-    dialog.showSaveDialog({
-      title: tr('dlg.saveAudioText'),
-      defaultPath: defaultName,
-      filters: [{ name: tr('dlg.filterAudio'), extensions: ['webm'] }]
-    }).then(result => {
-      if (!result.canceled && result.filePath) {
-        const dir = path.dirname(result.filePath);
-        const audioPath = path.join(dir, `ad_${formattedTimestamp}.webm`);
-        const textPath = path.join(dir, `tr_${formattedTimestamp}.txt`);
-
-        fs.writeFile(audioPath, audio, (err) => {
-          if (err) console.error('Failed to save audio:', err);
-          else console.log('Audio saved successfully:', audioPath);
-        });
-
-        fs.writeFile(textPath, text, (err) => {
-          if (err) console.error('Failed to save text:', err);
-          else console.log('Text saved successfully:', textPath);
-        });
-      }
-    }).catch(err => console.error('Error showing save dialog for audio/text:', err));
   });
 
   // === API HANDLERS ===

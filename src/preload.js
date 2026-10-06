@@ -8,24 +8,17 @@ contextBridge.exposeInMainWorld('api', {
   // Function to send a 'quit' message to the main process
   quit: () => ipcRenderer.send('quit-app'),
 
-  // Function to send audio data to the main process for saving
-  saveAudio: async (audioBlob, timestamp) => {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    ipcRenderer.send('save-audio', { audio: buffer, timestamp: timestamp });
-  },
-
-  // Function to send text data to the main process for saving
-  saveText: (text, timestamp) => {
-    ipcRenderer.send('save-text', { text: text, timestamp: timestamp });
-  },
-
-  // Function to send both audio and text data to the main process for saving
-  saveAudioAndText: async (audioBlob, text, timestamp) => {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    ipcRenderer.send('save-audio-and-text', { audio: buffer, text: text, timestamp: timestamp });
-  },
+  // --- The user's files (recordings.js) ---
+  // Every recording as it stops -> { file } or { error }; taken back if no
+  // speech was in it. Texts by the Save button, one file each. The play
+  // button opens a recording -> { ok } | { missing } | { error }.
+  saveRecording: async (blob, when) =>
+    ipcRenderer.invoke('recording-save', { audio: Buffer.from(await blob.arrayBuffer()), when }),
+  discardRecording: (file) => ipcRenderer.invoke('recording-discard', file),
+  saveTexts: (items) => ipcRenderer.invoke('texts-save', items), // [{ text, when, audio }]
+  openFile: (file) => ipcRenderer.invoke('file-open', file),
+  // Menu "Save all text": the whole history in one file, via a dialog.
+  saveText: (text, timestamp) => ipcRenderer.send('save-text', { text, timestamp }),
 
   // --- Settings ---
   openSettings: () => ipcRenderer.send('open-settings-window'),
