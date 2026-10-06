@@ -778,6 +778,20 @@ app.on('ready', async () => {
     return { lang: use, languages: i18n.LANGUAGES, strings: i18n.stringsFor(use) };
   });
 
+  // Yes/no questions ("Delete French?") as a system dialog from here. The
+  // page's own confirm() left the window's text fields dead on Windows
+  // afterwards (a known Electron fault): after deleting a language the search
+  // field took no typing until the window lost and regained focus.
+  ipcMain.handle('confirm-box', async (event, { message, ok, lang }) => {
+    const L = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question', title: 'Audiator', message, noLink: true,
+      buttons: [ok || i18n.t(L, 'dlg.yes'), i18n.t(L, 'settings.cancel')], defaultId: 0, cancelId: 1,
+    });
+    return response === 0;
+  });
+
   ipcMain.handle('get-app-version', () => {
     return app.getVersion();
   });
