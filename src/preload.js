@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   recordingBegin: (when) => ipcRenderer.invoke('recording-begin', { when }),
   recordingChunk: async (file, blob) =>
     ipcRenderer.send('recording-chunk', { file, bytes: Buffer.from(await blob.arrayBuffer()) }),
-  recordingEnd: (id, file) => ipcRenderer.invoke('recording-end', { id, file }), // -> { file, seconds, id }
+  recordingEnd: (id, file, gainDb) => ipcRenderer.invoke('recording-end', { id, file, gainDb }), // -> { file, seconds, id }
   pendingDone: (id) => ipcRenderer.invoke('pending-done', id),
   pendingList: () => ipcRenderer.invoke('pending-list'), // [{ id, file, when, seconds, own }]
   // Menu "Transcribe an audio file…": pick one (-> { file, when } or null), queue it, read it.

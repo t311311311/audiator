@@ -105,6 +105,10 @@ async function page(file) {
   const head = files.length ? fs.readFileSync(path.join(folder, files[0])) : Buffer.alloc(0);
   const ch = head.indexOf(Buffer.from([0x9F, 0x81]));
   check('...its file has both channels', ch > 0 && head[ch + 2] === 2, `${files[0]}: channels ${ch > 0 ? head[ch + 2] : '-'}`);
+  const oh = head.indexOf(Buffer.from('OpusHead'));
+  const gain = oh > 0 ? head.readInt16LE(oh + 16) / 256 : null;
+  // The tone played quietly (about -45 dBFS at its peak): brought up by the most allowed, +24 dB, in the Opus header.
+  check('...a quiet recording is made louder to play (Opus header gain)', gain !== null && gain >= 20 && gain <= 24, `gain ${gain} dB`);
   check('...no screen is being captured any more', (await main.js(`document.getElementById('stop-btn').classList.contains('hidden')`)) === true);
 
   // Both, with a stand-in microphone (440 Hz) — the computer's sound still the real one.

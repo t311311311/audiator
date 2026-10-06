@@ -818,7 +818,7 @@ app.on('ready', async () => {
       // Inside the frame (useContentSize): language row (AUD-33), quality list,
       // what to record, the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
       // than the screen: the page scrolls instead of the buttons going missing.
-      height: Math.min(760, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
+      height: Math.min(770, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
@@ -962,9 +962,11 @@ app.on('ready', async () => {
   // Only a file this run began takes sound (recordings.appendChunk).
   ipcMain.on('recording-chunk', (event, { file, bytes }) => { recordings.appendChunk(file, bytes); });
   // It stopped: the last sound in, the file made seekable; waiting for its text.
-  ipcMain.handle('recording-end', async (event, { id, file }) => {
+  // gainDb: how much louder a quiet recording should play (measured by the page).
+  ipcMain.handle('recording-end', async (event, { id, file, gainDb }) => {
     if (!recordings.isRecording(file)) return { error: 'unknown recording' };
-    const seconds = await recordings.finishRecording(file).catch((e) => {
+    const gain = Math.max(0, Math.min(24, +gainDb || 0));
+    const seconds = await recordings.finishRecording(file, gain).catch((e) => {
       console.error('[recordings] could not finish', path.basename(file), e.message); return 0; });
     pending.update(id, { state: 'queued', seconds });
     return { file, seconds, id };

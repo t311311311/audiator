@@ -59,8 +59,10 @@ function appendChunk(file, bytes) {
 
 // The file made seekable (webm-seekable.js), written whole or not at all;
 // as it was if it cannot be read. Returns its length in seconds (0 if unknown).
-async function repairRecording(file) {
-  const r = rewriteSeekable(await fs.promises.readFile(file));
+// gainDb: how much louder it should play (the Opus header's output gain, see
+// webm-seekable.js); 0 leaves it as recorded.
+async function repairRecording(file, gainDb = 0) {
+  const r = rewriteSeekable(await fs.promises.readFile(file), gainDb);
   if (!r) return 0;
   const tmp = file + '.tmp';
   await fs.promises.writeFile(tmp, r.data);
@@ -72,10 +74,10 @@ async function repairRecording(file) {
 function isRecording(file) { return chains.has(file); }
 
 // The recording is over: the last of its sound is in, then it is made seekable.
-async function finishRecording(file) {
+async function finishRecording(file, gainDb = 0) {
   await (chains.get(file) || Promise.resolve());
   chains.delete(file);
-  return repairRecording(file);
+  return repairRecording(file, gainDb);
 }
 
 // Takes back a recording made for this account that had no speech in it:
