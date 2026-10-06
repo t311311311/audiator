@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage, shell, session, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -14,6 +14,7 @@ const store = new Store({
     fontSize: 16,
     fontFamily: 'Arial, sans-serif', // a value from the Settings list
     whisperModel: 'small', // recognition quality: base | small | large-v3-turbo
+    recordSource: 'mic', // what to record: mic | system (the computer's own sound) | both
   }
 });
 
@@ -815,9 +816,9 @@ app.on('ready', async () => {
     settingsWindow = new BrowserWindow({
       width: 450,
       // Inside the frame (useContentSize): language row (AUD-33), quality list,
-      // the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
+      // what to record, the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
       // than the screen: the page scrolls instead of the buttons going missing.
-      height: Math.min(720, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
+      height: Math.min(760, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing
@@ -932,6 +933,19 @@ app.on('ready', async () => {
   // a crash or a closed program keeps it; the recording stays in the queue
   // until its text is in the history, and the next start finishes the job.
   pending.load(app.getPath('userData'));
+
+  // "What to record" in Settings: the computer's own sound — whatever plays on it
+  // (a video, a browser, a call, a game) — taken digitally from Windows
+  // (WASAPI loopback), not through the air. The page asks for it with
+  // getDisplayMedia, which comes with a screen; it stops that video at once,
+  // so nothing of the screen is captured. Only the main window may ask.
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const fromMain = mainWindow && !mainWindow.isDestroyed() && request.frame === mainWindow.webContents.mainFrame;
+    if (!fromMain) { callback({}); return; }
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      .then((sources) => callback(sources.length ? { video: sources[0], audio: 'loopback' } : {}))
+      .catch((e) => { console.error('[record] the computer\'s sound is not available:', e.message); callback({}); });
+  });
   // A recording starts: its file and its place in the queue. -> { id, file } or { error }.
   ipcMain.handle('recording-begin', async (event, { when }) => {
     try {

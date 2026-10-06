@@ -199,6 +199,19 @@
                 <input type="range" id="opacity-slider" min="0.2" max="1.0" step="0.05">
             </div>
 
+            <!-- What to record: the microphone, the computer's own sound (whatever
+                 plays: a video, a call, a game — taken digitally), or both. What
+                 it means, and the headphones advice for calls, on hover. Applies
+                 to the next recording after Save. -->
+            <div class="setting">
+                <label for="source-select" data-i18n="settings.source">Что записывать</label>
+                <select id="source-select">
+                    <option value="mic" data-i18n="settings.sourceMic">Микрофон</option>
+                    <option value="system" data-i18n="settings.sourceSystem">Звук компьютера</option>
+                    <option value="both" data-i18n="settings.sourceBoth">Микрофон + звук компьютера</option>
+                </select>
+            </div>
+
             <!-- The speech model. A model not yet on this computer is downloaded
                  after Save; the main window shows the progress. -->
             <div class="setting stacked">
@@ -263,6 +276,10 @@
                     applyTheme(e.target.value); // Apply theme to settings window itself
                 });
 
+                document.getElementById('source-select').addEventListener('change', (e) => {
+                    currentSettings.recordSource = e.target.value; // for the next recording, after Save
+                });
+
                 fontFamilySelect.addEventListener('change', (e) => {
                     currentSettings.fontFamily = e.target.value;
                     window.settingsApi.send('update-setting', { key: 'fontFamily', value: e.target.value });
@@ -322,6 +339,7 @@
                     // Update UI elements with initial values
                     themeSelect.value = initialSettings.theme || 'dark';
                     setFontFamily(initialSettings.fontFamily);
+                    document.getElementById('source-select').value = initialSettings.recordSource || 'mic';
                     opacitySlider.value = initialSettings.opacity || 0.8;
                     fontSizeSlider.value = initialSettings.fontSize || 16;
                     fontSizeValue.textContent = `${initialSettings.fontSize || 16}px`;
@@ -331,6 +349,7 @@
                     currentSettings = { ...settings };
                     themeSelect.value = settings.theme || 'dark';
                     setFontFamily(settings.fontFamily);
+                    document.getElementById('source-select').value = settings.recordSource || 'mic';
                     opacitySlider.value = settings.opacity || 0.8;
                     fontSizeSlider.value = settings.fontSize || 16;
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
@@ -370,6 +389,7 @@
                             }
                         }
                         languageSelect.value = i18n.lang;
+                        document.getElementById('source-select').title = strings['settings.sourceHint'] || '';
                         renderVersion();
                     });
                 }

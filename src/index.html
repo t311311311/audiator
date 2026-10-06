@@ -1880,6 +1880,56 @@
         const micConstraints = () => ({ audio: {
             echoCancellation: false, noiseSuppression: true, autoGainControl: true,
         } });
+
+        // --- What to record (Settings): the microphone, the computer's own
+        // sound, or both (user's wish 2026-10-06) ---
+        // The computer's sound is whatever plays on it — a video, a browser, a
+        // call, a game — taken digitally from Windows (the main process allows
+        // it, index.js): a copy of what is heard, with no room and no background.
+        // Untouched: Chromium would put its call processing on it too (its noise
+        // suppression took a steady tone 30 dB down), and both channels.
+        // getDisplayMedia comes with the screen; that video is stopped at once —
+        // nothing of the screen is captured and it costs nothing.
+        let recordSource = 'mic';
+        const SYSTEM_AUDIO = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
+        // -> { stream, release() }: the sound to record, and what closes it all.
+        async function openSource() {
+            let mic = null, sys = null, mix = null;
+            const release = () => {
+                for (const st of [mic, sys]) if (st) st.getTracks().forEach((t) => t.stop());
+                if (mix) mix.close().catch(() => {});
+            };
+            try {
+                if (recordSource !== 'mic') {
+                    try {
+                        sys = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: SYSTEM_AUDIO });
+                    } catch (e) {
+                        throw Object.assign(new Error(S('error.systemAudio')), { cause: e });
+                    }
+                    sys.getVideoTracks().forEach((t) => { t.stop(); sys.removeTrack(t); });
+                    if (!sys.getAudioTracks().length) throw new Error(S('error.systemAudio'));
+                }
+                if (recordSource !== 'system') mic = await navigator.mediaDevices.getUserMedia(micConstraints());
+            } catch (e) {
+                release();
+                throw e;
+            }
+            if (!(mic && sys)) return { stream: mic || sys, release };
+            // Both: one stereo track — the microphone in the middle, the
+            // computer's sound as it is; only peaks over -3 dBFS (a loud moment
+            // in both at once) are held down, so the mix never clips.
+            mix = new AudioContext();
+            const out = mix.createMediaStreamDestination();
+            out.channelCount = 2;
+            const limiter = mix.createDynamicsCompressor();
+            limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
+            limiter.attack.value = 0.003; limiter.release.value = 0.25;
+            mix.createMediaStreamSource(mic).connect(limiter);
+            mix.createMediaStreamSource(sys).connect(limiter);
+            limiter.connect(out);
+            mix.resume().catch(() => {});
+            return { stream: out.stream, release };
+        }
         recordBtn.addEventListener('click', async () => {
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
             if (limitReached()) {
@@ -1896,8 +1946,9 @@
             stopWhenStarted = false;
             const gen = session; // signed out meanwhile: this recording is dropped
             try {
-                const stream = await navigator.mediaDevices.getUserMedia(micConstraints());
-                if (gen !== session) { stream.getTracks().forEach((t) => t.stop()); return; }
+                const source = await openSource();
+                const stream = source.stream;
+                if (gen !== session) { source.release(); return; }
                 const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
                 const chunks = [];
                 const jobId = ++jobCounter;
@@ -1929,7 +1980,7 @@
                         .then((b) => (b && b.file ? window.api.recordingEnd(b.id, b.file) : b))
                         .catch((e) => ({ error: e.message }));
                     const wav = capture ? await capture.finish().catch((e) => { console.error('capture', e); return null; }) : null;
-                    stream.getTracks().forEach(track => track.stop());
+                    source.release();
                     if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
                     queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit, wav, seconds, when, saved);
@@ -1959,7 +2010,13 @@
                 micStarting = false;
                 if (stopWhenStarted) stopBtn.click();
             } catch (err) {
-                console.error("Error accessing microphone:", err);
+                console.error('could not open what to record', err, err && err.cause);
+                if (recordSource !== 'mic') {
+                    // The computer's sound could not be had: say so, nothing is recorded.
+                    const why = err && err.cause && err.cause.message;
+                    showToast(why ? `${err.message}: ${why}` : String(err && err.message), 6000);
+                    if (window.api.limitReached) window.api.limitReached(); // brings this window up (hotkey)
+                }
             } finally {
                 micStarting = false;
             }
@@ -1993,6 +2050,7 @@
         // --- Settings Listener ---
         window.api.onSettingsUpdated((settings) => {
             applyI18n(); // the language may have changed with these settings
+            recordSource = settings.recordSource || 'mic'; // for the next recording
             if (settings.theme === 'light') {
                 document.body.classList.add('light-theme');
             } else {
@@ -2004,6 +2062,7 @@
 
         // --- Apply initial settings on page load ---
         window.api.getSettings().then(initialSettings => {
+            recordSource = (initialSettings && initialSettings.recordSource) || 'mic';
             if (initialSettings && initialSettings.theme) {
                 if (initialSettings.theme === 'light') {
                     document.body.classList.add('light-theme');
