@@ -1,10 +1,10 @@
-// Stand: the microphone as it is (user's decision 2026-10-05). The real
-// index.html with a stand-in api and a synthetic two-channel microphone (a tone
-// on the left, silence on the right); then Settings with the new switch.
-// Checks: by default no call processing and up to two channels are asked for;
-// with "Шумоподавление микрофона" on, all three processings are asked for;
-// the engine gets the average of the channels (not just the left); the saved
-// recording keeps both channels and is made seekable.
+// Stand: how the microphone is opened (user's decision 2026-10-06, after a
+// night without processing). The real index.html with a stand-in api and a
+// synthetic two-channel microphone (a tone on the left, silence on the right);
+// then Settings. Checks: noise suppression and automatic gain are asked for,
+// echo cancellation is not; whatever channels a microphone gives, the engine
+// gets their average (not just the left); the saved recording is made
+// seekable; Settings have no microphone switch and fit a laptop screen.
 //   node_modules\.bin\electron tests\e2e\mic-ui.js
 const { app, BrowserWindow } = require('electron');
 const path = require('path'), fs = require('fs'), http = require('http');
@@ -71,8 +71,8 @@ app.whenReady().then(async () => {
 
   await record();
   const asked = await js('window.__asked[0]');
-  check('by default: no call processing, up to two channels',
-    asked.audio.echoCancellation === false && asked.audio.noiseSuppression === false && asked.audio.autoGainControl === false && asked.audio.channelCount.ideal === 2,
+  check('noise suppression and automatic gain on, echo cancellation off',
+    asked.audio.echoCancellation === false && asked.audio.noiseSuppression === true && asked.audio.autoGainControl === true,
     JSON.stringify(asked));
   // The engine's WAV: the average of both channels — the left tone at half its level.
   const rms = await js(`(() => { const b = window.__wav[0]; const v = new DataView(b.buffer); let s = 0, n = 0;
@@ -83,36 +83,24 @@ app.whenReady().then(async () => {
   // The saved recording: two channels, made seekable as before.
   const webm = Buffer.from(await js(`new Blob(window.__webm[0]).arrayBuffer().then((b) => Array.from(new Uint8Array(b)))`));
   const chIdx = webm.indexOf(Buffer.from([0x9F, 0x81]));
-  check('the recording keeps both channels', chIdx > 0 && webm[chIdx + 2] === 2, `channels byte: ${chIdx > 0 ? webm[chIdx + 2] : '-'}`);
+  check('the recording keeps the channels it was given', chIdx > 0 && webm[chIdx + 2] === 2, `channels byte: ${chIdx > 0 ? webm[chIdx + 2] : '-'}`);
   check('...and is made seekable', !!makeSeekable(webm));
   // How much of the recording the engine got: the saved file against the WAV.
   const fixed = makeSeekable(webm); const di = fixed.indexOf(Buffer.from([0x44, 0x89, 0x01, 0, 0, 0, 0, 0, 0, 0x08]));
   const fileSeconds = fixed.readDoubleBE(di + 10) / 1000;
   console.log('   file', fileSeconds.toFixed(2), 's, engine WAV', rms.seconds.toFixed(2), 's: missing', (fileSeconds - rms.seconds).toFixed(2), 's');
 
-  await js(`window.__cb.settings({ theme: 'dark', micNoiseSuppression: true })`);
-  await record();
-  const asked2 = await js('window.__asked[1]');
-  check('"Шумоподавление микрофона" on: all three processings asked for',
-    asked2.audio.echoCancellation && asked2.audio.noiseSuppression && asked2.audio.autoGainControl, JSON.stringify(asked2));
-  await js(`window.__cb.settings({ theme: 'dark', micNoiseSuppression: false })`);
-  await record();
-  check('off again: none', (await js('window.__asked[2].audio.noiseSuppression')) === false);
-
-  // Settings: the switch shows what is saved and goes into Save.
+  // Settings: no microphone switch; they fit a 14" laptop at 125 %.
   for (const lang of ['ru', 'en', 'zh']) for (const theme of ['dark', 'light']) {
     const s = new BrowserWindow({ width: 450, height: 766, useContentSize: true, show: false });
     await s.loadURL(base + `settings.html?lang=${lang}&theme=${theme}`);
     await sleep(800);
     const sjs = (c) => s.webContents.executeJavaScript(c);
     if (lang === 'ru' && theme === 'dark') {
-      await sjs(`window.__init({ theme: 'dark', micNoiseSuppression: false, whisperModel: 'small' })`); await sleep(100);
-      check('Settings: the switch off as saved', (await sjs(`document.getElementById('noise-check').checked`)) === false);
-      await sjs(`document.getElementById('noise-check').click(); document.getElementById('save-settings-btn').click()`);
-      check('ticked and saved: micNoiseSuppression = true', (await sjs('window.__savedSettings.micNoiseSuppression')) === true);
+      check('Settings: no microphone switch', (await sjs(`!document.getElementById('noise-check')`)) === true);
       const need = await sjs(`Math.ceil(document.querySelector('.settings-actions').getBoundingClientRect().bottom + 20)`);
       check('Settings fit a 14\" laptop at 125 % (766 px: 816 less 50)', need <= 766, `needs ${need}`);
-      check('the switch explains itself on hover', (await sjs(`document.getElementById('noise-row').title`)) === i18n.stringsFor('ru')['settings.noiseSuppressionHint']);
+      console.log('   settings: height needed =', need);
     }
     await s.webContents.capturePage();
     fs.writeFileSync(path.join(OUT, `mic-settings-${lang}-${theme}.png`), (await s.webContents.capturePage()).toPNG());

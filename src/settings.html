@@ -112,9 +112,6 @@
         .account-left.empty { color: #e06c75; }
         .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
         .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
-        /* A setting that is a tick: the box, then its name; its hint under it. */
-        .setting.stacked > label.check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 0; cursor: pointer; }
-        .check-row input { margin: 0; accent-color: var(--accent-color); cursor: pointer; }
         /* The folder for recordings and texts: its path (the start cut with "…"
            when long — the end is the part that tells), change, open. */
         .folder-box {
@@ -210,14 +207,6 @@
                 <div class="setting-hint" id="quality-hint"></div>
             </div>
 
-            <!-- Chromium's processing for calls (noise suppression, automatic gain,
-                 echo cancellation): off by default — the voice as it is. Applies
-                 to the next recording after Save. -->
-            <div class="setting stacked">
-                <!-- What it means, on hover: a line of its own did not fit a laptop screen. -->
-                <label class="check-row" id="noise-row"><input type="checkbox" id="noise-check"> <span data-i18n="settings.noiseSuppression">Шумоподавление микрофона</span></label>
-            </div>
-
             <!-- Where every recording and the saved texts go (Downloads\Audiator by
                  default). Another folder applies on Save; files already there stay. -->
             <div class="setting stacked">
@@ -292,9 +281,6 @@
                 });
 
                 // The microphone's processing for calls: for the next recording, after Save.
-                document.getElementById('noise-check').addEventListener('change', (e) => {
-                    currentSettings.micNoiseSuppression = e.target.checked;
-                });
 
                 // --- Save and Cancel ---
                 saveSettingsBtn.addEventListener('click', () => {
@@ -339,7 +325,6 @@
                     opacitySlider.value = initialSettings.opacity || 0.8;
                     fontSizeSlider.value = initialSettings.fontSize || 16;
                     fontSizeValue.textContent = `${initialSettings.fontSize || 16}px`;
-                    document.getElementById('noise-check').checked = !!initialSettings.micNoiseSuppression;
                 });
 
                 window.settingsApi.receive('settings-loaded', (settings) => {
@@ -349,7 +334,6 @@
                     opacitySlider.value = settings.opacity || 0.8;
                     fontSizeSlider.value = settings.fontSize || 16;
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
-                    document.getElementById('noise-check').checked = !!settings.micNoiseSuppression;
                     applyTheme(settings.theme); // Apply theme to settings window itself
                     renderQuality();
                     renderFolder();
@@ -386,7 +370,6 @@
                             }
                         }
                         languageSelect.value = i18n.lang;
-                        document.getElementById('noise-row').title = strings['settings.noiseSuppressionHint'] || '';
                         renderVersion();
                     });
                 }

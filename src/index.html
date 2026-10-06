@@ -542,9 +542,9 @@
     <div id="app-menu" class="dropdown-menu hidden">
         <div class="dropdown-menu-item" id="settings-btn" data-i18n="menu.settings">Настройки</div>
         <div class="dropdown-menu-item" id="save-all-btn" data-i18n="menu.saveAll">Сохранить весь текст</div>
-        <div class="dropdown-menu-item" id="transcribe-file-btn" data-i18n="menu.transcribeFile">Распознать аудиофайл…</div>
+        <!-- Hidden: in the backlog (user's decision 2026-10-06); the code stays. -->
+        <div class="dropdown-menu-item" id="transcribe-file-btn" data-i18n="menu.transcribeFile" hidden>Распознать аудиофайл…</div>
         <div class="dropdown-menu-item" id="clear-all-btn" data-i18n="menu.clearHistory">Очистить историю</div>
-        <div class="dropdown-menu-item" id="contact-btn" data-i18n="menu.contact">Написать нам</div>
         <div class="dropdown-menu-item" id="exit-btn" data-i18n="menu.exit">Выход</div>
     </div>
 
@@ -1403,10 +1403,6 @@
             window.api.openSettings();
             appMenu.classList.add('hidden');
         });
-        document.getElementById('contact-btn').addEventListener('click', () => {
-            window.api.openSupport();
-            appMenu.classList.add('hidden');
-        });
 
         clearAllBtn.addEventListener('click', async () => {
             appMenu.classList.add('hidden');
@@ -1865,17 +1861,18 @@
         let micStarting = false;     // the microphone is being opened
         let stopWhenStarted = false; // the user asked to stop before it was open
 
-        // The microphone as it is, by default. Chromium's processing for calls
-        // (noise suppression, automatic gain, echo cancellation — on unless
-        // asked otherwise) dulled the voice: measured 2026-10-05, about 8 dB
-        // less above 12 kHz than older recordings, and a pumping level. The
-        // engine hears just as well without it. Settings turn it on for noisy
-        // places. As many channels as the microphone gives (two for a laptop's
-        // microphone array); the sound is encoded at 128 kbit/s either way.
-        let micProcessing = false;
+        // The microphone with Chromium's noise suppression and automatic gain —
+        // what every recording had until 2026-10-05. Tried without them on the
+        // user's laptop (a two-microphone array) the next night: speech 3 dB
+        // quieter and far less even (-15 to -32 dBFS), the background in pauses
+        // 13 dB louder (-47 against -60 dBFS), loud words clipping — worse to
+        // listen to, and the transcription gains nothing. Echo cancellation
+        // stays off: nothing here plays sound, and it must never take out sound
+        // the user is recording from the computer's speakers. Mono (what the
+        // processing gives), Opus at 128 kbit/s (~1 MB a minute); the processing
+        // costs a few per cent of one core. User's decision 2026-10-06: no switch.
         const micConstraints = () => ({ audio: {
-            echoCancellation: micProcessing, noiseSuppression: micProcessing, autoGainControl: micProcessing,
-            channelCount: { ideal: 2 },
+            echoCancellation: false, noiseSuppression: true, autoGainControl: true,
         } });
         recordBtn.addEventListener('click', async () => {
             if (micStarting || (mediaRecorder && mediaRecorder.state === 'recording')) return;
@@ -1990,7 +1987,6 @@
         // --- Settings Listener ---
         window.api.onSettingsUpdated((settings) => {
             applyI18n(); // the language may have changed with these settings
-            micProcessing = !!settings.micNoiseSuppression; // for the next recording
             if (settings.theme === 'light') {
                 document.body.classList.add('light-theme');
             } else {
@@ -2002,7 +1998,6 @@
 
         // --- Apply initial settings on page load ---
         window.api.getSettings().then(initialSettings => {
-            micProcessing = !!(initialSettings && initialSettings.micNoiseSuppression);
             if (initialSettings && initialSettings.theme) {
                 if (initialSettings.theme === 'light') {
                     document.body.classList.add('light-theme');
