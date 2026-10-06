@@ -118,7 +118,7 @@ const codeFor = async (email) => {
   await sup.js(`document.querySelectorAll('.topic input')[1].click(); document.getElementById('text').value = 'После второй записи не вставляется текст'; document.getElementById('send').click();`);
   for (let i = 0; i < 40 && !(await sup.js(`!document.getElementById('done').classList.contains('hidden')`)); i++) await sleep(250);
   const doneText = await sup.js(`document.getElementById('done-text').textContent`);
-  check('sent: number and answer time shown', /^Обращение №\d+ отправлено\. Ответим на tester@example\.com в течение 5 рабочих дней с адреса audiatorr@gmail\.com — загляните и в «Спам»\.$/.test(doneText), doneText);
+  check('sent: number and answer time shown', /^Обращение №\d+ отправлено\. Ответим на tester@example\.com в течение 5 дней с адреса audiatorr@gmail\.com — загляните и в «Спам»\.$/.test(doneText), doneText);
   await sup.shot('app-5-support-sent.png');
   check('the letter to support: topic, number, who, plan, due', /to support@example\.com: \[Баг\] #\d+ · tester@example\.com · бесплатный · ответить до/.test(serverLog));
   check('the letter carries the client card and the app version', /Клиент: tester@example\.com — новый, бесплатный/.test(serverLog) && /Программа: \d+\.\d+\.\d+, Windows/.test(serverLog));
