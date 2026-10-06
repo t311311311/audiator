@@ -36,7 +36,7 @@
             flex-grow: 1;
         }
         .setting {
-            margin-bottom: 11px;
+            margin-bottom: 8px; /* 8: the recording device's line under it still fits a 14" laptop (766 px) */
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -72,7 +72,7 @@
         .quality-list { display: flex; flex-direction: column; gap: 4px; }
         .quality-row {
             margin: 0; /* a <label>: not the spacing of the setting labels */
-            display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer;
+            display: flex; align-items: center; gap: 8px; padding: 3px 8px; cursor: pointer;
             background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
         }
         .quality-row.chosen { border-color: var(--accent-color); }
@@ -95,7 +95,7 @@
         button.quality-delete:hover { opacity: 1; color: #e06c75; }
         span.quality-delete { cursor: inherit; }
         .setting-hint {
-            margin-top: 6px;
+            margin-top: 3px;
             font-size: 0.8em;
             opacity: 0.75;
             line-height: 1.35;
@@ -199,17 +199,18 @@
                 <input type="range" id="opacity-slider" min="0.2" max="1.0" step="0.05">
             </div>
 
-            <!-- What to record: the microphone, the computer's own sound (whatever
-                 plays: a video, a call, a game — taken digitally), or both. What
-                 it means, and the headphones advice for calls, on hover. Applies
-                 to the next recording after Save. -->
-            <div class="setting">
-                <label for="source-select" data-i18n="settings.source">Что записывать</label>
+            <!-- The recording device: the microphone, the computer's own sound
+                 (whatever plays: a video, a call, a game — taken digitally), or
+                 both; a short line under it says which (user's wording,
+                 2026-10-06). Applies to the next recording after Save. -->
+            <div class="setting stacked">
+                <label for="source-select" data-i18n="settings.source">Выбрать устройство для записи</label>
                 <select id="source-select">
                     <option value="mic" data-i18n="settings.sourceMic">Микрофон</option>
                     <option value="system" data-i18n="settings.sourceSystem">Звук компьютера</option>
                     <option value="both" data-i18n="settings.sourceBoth">Микрофон + звук компьютера</option>
                 </select>
+                <div class="setting-hint" id="source-hint"></div>
             </div>
 
             <!-- The speech model. A model not yet on this computer is downloaded
@@ -276,8 +277,16 @@
                     applyTheme(e.target.value); // Apply theme to settings window itself
                 });
 
+                // The line under the recording device: what the chosen one records.
+                function renderSourceHint() {
+                    const v = document.getElementById('source-select').value;
+                    document.getElementById('source-hint').textContent = ({
+                        mic: strings['settings.sourceMicHint'], system: strings['settings.sourceSystemHint'], both: strings['settings.sourceBothHint'],
+                    })[v] || '';
+                }
                 document.getElementById('source-select').addEventListener('change', (e) => {
                     currentSettings.recordSource = e.target.value; // for the next recording, after Save
+                    renderSourceHint();
                 });
 
                 fontFamilySelect.addEventListener('change', (e) => {
@@ -340,6 +349,7 @@
                     themeSelect.value = initialSettings.theme || 'dark';
                     setFontFamily(initialSettings.fontFamily);
                     document.getElementById('source-select').value = initialSettings.recordSource || 'mic';
+                    renderSourceHint();
                     opacitySlider.value = initialSettings.opacity || 0.8;
                     fontSizeSlider.value = initialSettings.fontSize || 16;
                     fontSizeValue.textContent = `${initialSettings.fontSize || 16}px`;
@@ -350,6 +360,7 @@
                     themeSelect.value = settings.theme || 'dark';
                     setFontFamily(settings.fontFamily);
                     document.getElementById('source-select').value = settings.recordSource || 'mic';
+                    renderSourceHint();
                     opacitySlider.value = settings.opacity || 0.8;
                     fontSizeSlider.value = settings.fontSize || 16;
                     fontSizeValue.textContent = `${settings.fontSize || 16}px`;
@@ -389,7 +400,7 @@
                             }
                         }
                         languageSelect.value = i18n.lang;
-                        document.getElementById('source-select').title = strings['settings.sourceHint'] || '';
+                        renderSourceHint();
                         renderVersion();
                     });
                 }

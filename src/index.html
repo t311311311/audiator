@@ -823,11 +823,33 @@
                 bars[i].style.backgroundColor = v > 0.8 ? 'var(--record-color)' : '';
             }
         }
+        // The loudest sample of the recording, every channel at the device's rate
+        // (not the 16 kHz copy for the engine, which smooths peaks away): from it
+        // a quiet recording is made louder to play (recordingGain).
+        const PEAK_WORKLET = `
+            class PeakMeter extends AudioWorkletProcessor {
+                constructor() { super(); this.peak = 0; this.port.onmessage = () => this.port.postMessage(this.peak); }
+                process(inputs) {
+                    for (const ch of inputs[0] || []) for (let i = 0; i < ch.length; i++) { const v = Math.abs(ch[i]); if (v > this.peak) this.peak = v; }
+                    return true;
+                }
+            }
+            registerProcessor('peak-meter', PeakMeter);`;
+        let _peakNode = null;
         function startLevelMeter(mediaStream) {
             try {
                 stopLevelMeter();
                 _meterCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const src = _meterCtx.createMediaStreamSource(mediaStream);
+                const ctx = _meterCtx;
+                const url = URL.createObjectURL(new Blob([PEAK_WORKLET], { type: 'application/javascript' }));
+                ctx.audioWorklet.addModule(url).then(() => {
+                    URL.revokeObjectURL(url);
+                    if (_meterCtx !== ctx) return; // stopped meanwhile
+                    _peakNode = new AudioWorkletNode(ctx, 'peak-meter');
+                    src.connect(_peakNode);
+                    _peakNode.connect(ctx.destination); // silent: it writes nothing; connected so it keeps running
+                }).catch((e) => console.error('peak meter failed', e));
                 const analyser = _meterCtx.createAnalyser();
                 analyser.fftSize = 512;
                 src.connect(analyser);
@@ -846,10 +868,19 @@
                 }, 33); // ~30fps keeps the meter feeling instant
             } catch (e) { console.error('level meter failed', e); }
         }
+        // -> a promise of the recording's peak (0..1, null if unknown).
         function stopLevelMeter() {
             drawButtonMeter(0); // flat again for the next recording
             if (_meterTimer) { clearInterval(_meterTimer); _meterTimer = null; }
-            if (_meterCtx) { try { _meterCtx.close(); } catch (e) {} _meterCtx = null; }
+            const ctx = _meterCtx, node = _peakNode;
+            _meterCtx = null; _peakNode = null;
+            const peak = node ? new Promise((resolve) => {
+                node.port.onmessage = (e) => resolve(e.data);
+                node.port.postMessage('peak');
+                setTimeout(() => resolve(null), 500);
+            }) : Promise.resolve(null);
+            peak.then(() => { if (ctx) ctx.close().catch(() => {}); });
+            return peak;
         }
         if (window.api && window.api.onHotkeyToggleRecord) {
             window.api.onHotkeyToggleRecord(() => {
@@ -1881,6 +1912,19 @@
             echoCancellation: false, noiseSuppression: true, autoGainControl: true,
         } });
 
+        // A quiet recording plays louder: its loudest moment is brought up to
+        // -1.5 dBFS (never past it, so nothing clips), by up to 24 dB — written
+        // as the Opus header's output gain, which players apply; the sound
+        // itself, and what the engine got, are untouched. The computer's sound
+        // is recorded as loud as it played (the browser's or the video's own
+        // volume): the user's test of it peaked at -17 dBFS, "you have to strain
+        // to hear even at 100 %" (2026-10-06).
+        function recordingGain(peak) {
+            if (!(peak > 0)) return 0;
+            const db = -1.5 - 20 * Math.log10(peak);
+            return db >= 1 ? Math.min(24, Math.round(db * 10) / 10) : 0;
+        }
+
         // --- What to record (Settings): the microphone, the computer's own
         // sound, or both (user's wish 2026-10-06) ---
         // The computer's sound is whatever plays on it — a video, a browser, a
@@ -1976,8 +2020,9 @@
                     clearInterval(limitTimer);
                     const seconds = startedAt ? (Date.now() - startedAt) / 1000 : 0;
                     // The last piece came before this: the file is finished (made seekable).
+                    const gain = recordingGain(await (recorder._peak || Promise.resolve(null)));
                     const saved = written.then(() => begun)
-                        .then((b) => (b && b.file ? window.api.recordingEnd(b.id, b.file) : b))
+                        .then((b) => (b && b.file ? window.api.recordingEnd(b.id, b.file, gain) : b))
                         .catch((e) => ({ error: e.message }));
                     const wav = capture ? await capture.finish().catch((e) => { console.error('capture', e); return null; }) : null;
                     source.release();
@@ -2023,10 +2068,12 @@
         });
 
         stopBtn.addEventListener('click', () => {
+            // The meter stops here, not in onstop: a new recording may already be metering.
+            const peak = stopLevelMeter();
             if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder._peak = peak; // for its loudness (recordingGain)
                 mediaRecorder.stop();
             }
-            stopLevelMeter(); // here, not in onstop: a new recording may already be metering
             stopBtn.classList.add('hidden');
             recordBtn.classList.remove('hidden');
         });

@@ -139,7 +139,7 @@ function float64(v) {
 
 // --- The rewrite -------------------------------------------------------------
 
-function rewrite(buf) {
+function rewrite(buf, gainDb = 0) {
   const ebml = header(buf, 0);
   if (!ebml || ebml.id !== ID.EBML || ebml.end < 0 || ebml.end > buf.length) return null;
   const seg = header(buf, ebml.end);
@@ -191,7 +191,7 @@ function rewrite(buf) {
   }
   infoParts.push(el(ID.Duration, float64(duration)));
   const infoEl = el(ID.Info, Buffer.concat(infoParts));
-  const tracksEl = buf.subarray(tracks.start, tracks.end);
+  const tracksEl = withGain(buf.subarray(tracks.start, tracks.end), gainDb);
   const otherEls = others.map((o) => buf.subarray(o.start, o.end));
 
   // Positions are counted from the start of the Segment's content. Every
@@ -233,9 +233,23 @@ function rewrite(buf) {
 // bytes: a Buffer or Uint8Array with a WebM recording. rewriteSeekable gives
 // { data: the seekable file, seconds: its length }; makeSeekable just the
 // file. Both give null if it could not be read (keep the original then).
-function rewriteSeekable(bytes) {
+// The Opus setup (OpusHead, in the track's CodecPrivate) has an "output gain"
+// that every decoder applies (Q7.8 dB, RFC 7845; checked in VLC, which the
+// user plays recordings with: +12 dB set -> +11.3 dB heard, the rest clipped by
+// its own peak). A quiet recording is made louder there: no re-encoding, the
+// same file size, no cost. The gain is set, not added: a second pass keeps it.
+function withGain(tracksEl, gainDb) {
+  if (!gainDb) return tracksEl;
+  const at = tracksEl.indexOf(Buffer.from('OpusHead'));
+  if (at < 0 || at + 19 > tracksEl.length) return tracksEl;
+  const out = Buffer.from(tracksEl);
+  out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(gainDb * 256))), at + 16);
+  return out;
+}
+
+function rewriteSeekable(bytes, gainDb = 0) {
   try {
-    return rewrite(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+    return rewrite(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), gainDb);
   } catch (e) {
     return null;
   }

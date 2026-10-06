@@ -7,7 +7,7 @@
 //   node_modules\.bin\electron tests\e2e\webm-seek-e2e.js      (LENGTHS=3,40 seconds)
 const { app, BrowserWindow } = require('electron');
 const path = require('path'), fs = require('fs'), os = require('os');
-const { makeSeekable } = require('C:/Test01/tray-translator/src/webm-seekable.js');
+const { makeSeekable, rewriteSeekable } = require('C:/Test01/tray-translator/src/webm-seekable.js');
 // The files stay for a listen in other players (VLC, Media Player): the folder is printed at the end.
 const OUT = path.join(os.tmpdir(), 'audiator-webm-seek');
 const LENGTHS = (process.env.LENGTHS || '3,40').split(',').map(Number);
@@ -103,6 +103,12 @@ app.whenReady().then(async () => {
     check(`${seconds} s: cut-off recording still rewritten and playable`, !!(c && isFinite(c.duration) && c.duration > seconds * 0.5), JSON.stringify(c));
   }
   check('not a WebM: gives up (null), the caller keeps the original', makeSeekable(Buffer.from('RIFF....WAVEfmt ')) === null);
+  // Louder to play: the Opus header's output gain (Q7.8 dB), set once and kept by a later pass.
+  { const raw = fs.readFileSync(path.join(OUT, `raw-${LENGTHS[0]}.webm`));
+    const g = rewriteSeekable(raw, 12.5).data; const at = g.indexOf(Buffer.from('OpusHead'));
+    const again = makeSeekable(g);
+    check('a gain of +12.5 dB goes into the Opus header, and stays through another pass', at > 0 && g.readInt16LE(at + 16) === 3200 &&
+      again.readInt16LE(again.indexOf(Buffer.from('OpusHead')) + 16) === 3200 && g.length === makeSeekable(raw).length, String(at > 0 && g.readInt16LE(at + 16))); }
   console.log('files: ' + OUT);
   console.log(failed ? `${failed} FAILED` : 'ALL PASS');
   app.exit(failed ? 1 : 0);

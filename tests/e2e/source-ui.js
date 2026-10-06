@@ -17,13 +17,14 @@ const I18N = (lang) => JSON.stringify({ lang, languages: i18n.LANGUAGES, strings
 
 const mainStub = `<script>
   const noop = () => {}; window.__cb = {}; window.__wav = []; window.__asked = { mic: [], sys: [] }; window.__tracks = [];
-  window.__refuse = false; window.__started = 0;
+  window.__refuse = false; window.__started = 0; window.__gains = [];
   window.api = new Proxy({ getI18n: () => Promise.resolve(${I18N('ru')}),
     getSettings: () => Promise.resolve({ theme: 'dark', recordSource: 'mic' }), onSettingsUpdated: (cb) => { window.__cb.settings = cb; },
     getEngineStatus: () => Promise.resolve({ state: 'ready', translate: { installed: ['en'], queue: [], failed: {} } }),
     translateCatalog: () => Promise.resolve([]), getAccount: () => Promise.resolve({ signedIn: true, limited: false }),
     loadHistory: () => Promise.resolve([]), pendingList: () => Promise.resolve([]), transcribed: () => Promise.resolve({ copied: false }),
-    recordingStarted: () => { window.__started++; }, recordingBegin: () => Promise.resolve(null),
+    recordingStarted: () => { window.__started++; }, recordingBegin: () => Promise.resolve({ id: 'p', file: 'C:/x/audio_1.webm' }),
+    recordingEnd: (id, file, gainDb) => { window.__gains.push(gainDb); return Promise.resolve({ file, seconds: 2, id }); },
     transcribe: async (blob) => { window.__wav.push(new Uint8Array(await blob.arrayBuffer())); return { success: true, text: 'ok', language: 'ru' }; },
   }, { get: (t, k) => (k in t ? t[k] : noop) });
   const tone = async (hz, channels) => { const c = new AudioContext(); const o = c.createOscillator(); o.frequency.value = hz;
@@ -90,6 +91,9 @@ app.whenReady().then(async () => {
   check('Microphone: only the microphone, with its processing', asked.mic.length === 1 && asked.sys.length === 0 && asked.mic[0].audio.noiseSuppression === true);
   check('...the engine hears the microphone (440 Hz)', p.mic > 0.2 && p.sys < 0.01, JSON.stringify(p));
   check('...closed after the recording', await allClosed());
+  // The tone peaks at 0.3 (-10.5 dBFS): brought up to -1.5 dBFS, +9 dB in the Opus header.
+  check('a quiet recording is made louder to play: +9 dB for a peak of -10.5 dBFS', Math.abs((await js('window.__gains[0]')) - 9) < 0.3,
+    String(await js('window.__gains[0]')));
 
   // Computer sound
   await mode('system');
@@ -132,9 +136,18 @@ app.whenReady().then(async () => {
       JSON.stringify(opts) === JSON.stringify([`mic:${L['settings.sourceMic']}`, `system:${L['settings.sourceSystem']}`, `both:${L['settings.sourceBoth']}`]), JSON.stringify(opts));
     if (lang === 'ru' && theme === 'dark') {
       await sjs(`window.__init({ theme: 'dark', recordSource: 'mic', whisperModel: 'small' })`); await sleep(100);
-      check('Settings: what is saved is shown; what it means on hover', (await sjs(`document.getElementById('source-select').value`)) === 'mic' &&
-        (await sjs(`document.getElementById('source-select').title`)) === L['settings.sourceHint']);
-      await sjs(`const sel = document.getElementById('source-select'); sel.value = 'both'; sel.dispatchEvent(new Event('change')); document.getElementById('save-settings-btn').click();`);
+      check('Settings: "Выбрать устройство для записи", what is saved shown, its line under it (no hover text)',
+        (await sjs(`document.querySelector('label[for=source-select]').textContent`)) === L['settings.source'] &&
+        (await sjs(`document.getElementById('source-select').value`)) === 'mic' &&
+        (await sjs(`document.getElementById('source-hint').textContent`)) === L['settings.sourceMicHint'] &&
+        (await sjs(`document.getElementById('source-select').title`)) === '');
+      const lines = [];
+      for (const v of ['system', 'both']) {
+        await sjs(`{ const sel = document.getElementById('source-select'); sel.value = '${v}'; sel.dispatchEvent(new Event('change')); }`);
+        lines.push(await sjs(`document.getElementById('source-hint').textContent`));
+      }
+      check('...the line follows the choice', JSON.stringify(lines) === JSON.stringify([L['settings.sourceSystemHint'], L['settings.sourceBothHint']]), JSON.stringify(lines));
+      await sjs(`{ const sel = document.getElementById('source-select'); sel.value = 'both'; sel.dispatchEvent(new Event('change')); document.getElementById('save-settings-btn').click(); }`);
       check('picked and saved: recordSource = both', (await sjs('window.__saved.recordSource')) === 'both');
       const need = await sjs(`Math.ceil(document.querySelector('.settings-actions').getBoundingClientRect().bottom + 20)`);
       check('Settings fit a 14" laptop at 125 % (766 px)', need <= 766, `needs ${need}`);
