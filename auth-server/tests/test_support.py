@@ -56,21 +56,20 @@ def test_a_message_is_kept_and_mailed_with_a_telling_subject(client, mailbox):
         assert t.category == "payment" and t.plan == "free" and t.mailed and t.status == "new"
 
 
-@pytest.mark.parametrize("category,plan,within", [
-    ("payment", "free", "48h"), ("bug", "free", "5wd"), ("bug", "commercial", "2wd"),
-    ("account", "free", "5wd"), ("idea", "commercial", None)])
-def test_answer_times_follow_the_rules(category, plan, within):
-    assert support.answer_within(category, plan) == within
+@pytest.mark.parametrize("category,within", [
+    ("payment", "48h"), ("bug", "5d"), ("account", "5d"), ("idea", None)])
+def test_answer_times_follow_the_rules(category, within):
+    assert support.answer_within(category) == within
 
 
-def test_working_days_skip_the_weekend(client, mailbox, monkeypatch):
+def test_five_days_are_plain_days_whatever_the_plan(client, mailbox, monkeypatch):
     _, letters = mailbox
     h = signed_in(client, mailbox)
     monkeypatch.setattr(support, "_utcnow", lambda: datetime(2026, 10, 9, 10, 0))  # a Friday
     r = write(client, h, "bug")
-    assert r.json()["due_at"] == "2026-10-16T10:00:00Z", "5 working days from Friday: next Friday"
-    assert "ответить до 16.10 10:00 UTC" in letters[-1]["subject"]
-    assert support._working_days_later(datetime(2026, 10, 9), 2) == datetime(2026, 10, 13), "Fri + 2 = Tue"
+    assert r.json()["answer_within"] == "5d"
+    assert r.json()["due_at"] == "2026-10-14T10:00:00Z", "5 days from Friday: Wednesday, the weekend counts"
+    assert "ответить до 14.10 10:00 UTC" in letters[-1]["subject"]
 
 
 def test_ideas_have_no_deadline(client, mailbox):
