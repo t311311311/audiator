@@ -15,7 +15,7 @@
 const ID = {
   EBML: 0x1A45DFA3, Segment: 0x18538067,
   SeekHead: 0x114D9B74, Seek: 0x4DBB, SeekID: 0x53AB, SeekPosition: 0x53AC,
-  Info: 0x1549A966, Duration: 0x4489, Tracks: 0x1654AE6B,
+  Info: 0x1549A966, TimecodeScale: 0x2AD7B1, Duration: 0x4489, Tracks: 0x1654AE6B,
   Cluster: 0x1F43B675, Timecode: 0xE7, SimpleBlock: 0xA3, BlockGroup: 0xA0, Block: 0xA1,
   Cues: 0x1C53BB6B, CuePoint: 0xBB, CueTime: 0xB3, CueTrackPositions: 0xB7,
   CueTrack: 0xF7, CueClusterPosition: 0xF1, Void: 0xEC,
@@ -181,9 +181,11 @@ function rewrite(buf) {
 
   // Info as it was, with the length (in place of one already there).
   const infoParts = [];
+  let scale = 1000000; // nanoseconds per time unit (1 ms unless the file says otherwise)
   for (let p = info.dataStart; p < info.end;) {
     const c = header(buf, p);
     if (!c || c.end < 0 || c.end > info.end) return null;
+    if (c.id === ID.TimecodeScale) scale = readUint(buf, c.dataStart, c.end) || scale;
     if (c.id !== ID.Duration) infoParts.push(buf.subarray(c.start, c.end));
     p = c.end;
   }
@@ -220,21 +222,27 @@ function rewrite(buf) {
   const cues = el(ID.Cues, Buffer.concat(cuePoints));
   if (seekHead.length !== seekHeadSize || cues.length !== cuesSize) return null;
 
-  return Buffer.concat([
+  const data = Buffer.concat([
     buf.subarray(0, ebml.end),
     idBytes(ID.Segment), sizeMin(at),
     seekHead, infoEl, tracksEl, ...otherEls, cues, ...clusterEls,
   ]);
+  return { data, seconds: duration * scale / 1e9 };
 }
 
-// bytes: a Buffer or Uint8Array with a WebM recording. Returns the seekable
-// file as a Buffer, or null if it could not be read (keep the original then).
-function makeSeekable(bytes) {
+// bytes: a Buffer or Uint8Array with a WebM recording. rewriteSeekable gives
+// { data: the seekable file, seconds: its length }; makeSeekable just the
+// file. Both give null if it could not be read (keep the original then).
+function rewriteSeekable(bytes) {
   try {
     return rewrite(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
   } catch (e) {
     return null;
   }
 }
+function makeSeekable(bytes) {
+  const r = rewriteSeekable(bytes);
+  return r ? r.data : null;
+}
 
-module.exports = { makeSeekable };
+module.exports = { makeSeekable, rewriteSeekable };

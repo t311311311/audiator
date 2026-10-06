@@ -4,6 +4,7 @@ const fs = require('fs');
 const Store = require('electron-store');
 const i18n = require('./i18n');
 const account = require('./account');
+const pending = require('./pending');
 
 // --- Initialize Settings Store ---
 const store = new Store({
@@ -673,6 +674,7 @@ app.on('ready', async () => {
     sendAccount(v); // the main window clears its history on a sign-out
     if (wasSignedIn && !v.signedIn) {
       saveHistory([]); // the kept history goes with the account
+      pending.clear(); // and its untranscribed recordings (their files stay in the folder)
       queue.clear(); // no barrels of the old account
       offeredId = null;
       refreshOverlay();
@@ -920,22 +922,96 @@ app.on('ready', async () => {
   });
 
   // --- The user's files: every recording, and texts by the Save button ---
-  // In the folder from Settings, DownloadsAudiator by default (recordings.js).
+  // In the folder from Settings, Downloads\Audiator by default (recordings.js).
   // They are the user's own: never deleted, at sign-out or ever.
   const recordings = require('./recordings');
   const saveFolder = () => store.get('saveFolder') || path.join(app.getPath('downloads'), 'Audiator');
-  // A recording as soon as it stops — before transcription, so a failure
-  // there does not lose it. Answers { file } or { error }.
-  ipcMain.handle('recording-save', async (event, { audio, when }) => {
+  const email = () => account.view().email || null;
+
+  // --- Recordings are written as they are made, and queued until transcribed ---
+  // (pending.js). The sound goes to its file every second while recording, so
+  // a crash or a closed program keeps it; the recording stays in the queue
+  // until its text is in the history, and the next start finishes the job.
+  pending.load(app.getPath('userData'));
+  // A recording starts: its file and its place in the queue. -> { id, file } or { error }.
+  ipcMain.handle('recording-begin', async (event, { when }) => {
     try {
-      return { file: await recordings.saveRecording(saveFolder(), audio, when) };
+      const file = await recordings.beginRecording(saveFolder(), when);
+      const it = pending.add(email(), { file, when, state: 'recording' });
+      return { id: it.id, file };
     } catch (e) {
-      console.error('[recordings] not saved:', e.message);
+      console.error('[recordings] could not start a file:', e.message);
       return { error: e.message };
     }
   });
-  // No speech in it after all: that file is taken back (only one this run wrote).
-  ipcMain.handle('recording-discard', (event, file) => recordings.discardRecording(file).catch(() => false));
+  // By the file, not the queue: a sign-out empties the queue, yet the file of
+  // a recording already going is still the user's and is written to the end.
+  // Only a file this run began takes sound (recordings.appendChunk).
+  ipcMain.on('recording-chunk', (event, { file, bytes }) => { recordings.appendChunk(file, bytes); });
+  // It stopped: the last sound in, the file made seekable; waiting for its text.
+  ipcMain.handle('recording-end', async (event, { id, file }) => {
+    if (!recordings.isRecording(file)) return { error: 'unknown recording' };
+    const seconds = await recordings.finishRecording(file).catch((e) => {
+      console.error('[recordings] could not finish', path.basename(file), e.message); return 0; });
+    pending.update(id, { state: 'queued', seconds });
+    return { file, seconds, id };
+  });
+  // Its text is in the history (or it failed for good): out of the queue.
+  ipcMain.handle('pending-done', (event, id) => { pending.remove(id); return true; });
+  // No speech in it after all: its file is taken back — only one the program
+  // made for this account; never a file the user picked.
+  ipcMain.handle('recording-discard', (event, file) => {
+    const it = pending.find((x) => x.file === file);
+    return recordings.discardRecording(file, !!(it && it.own)).catch(() => false);
+  });
+  // At start: what is left to transcribe, oldest first. A recording cut off
+  // mid-way (the program closed or crashed while recording) is first made
+  // whole from what reached the disk; one whose file is gone is dropped.
+  ipcMain.handle('pending-list', async () => {
+    if (!account.signedIn()) return [];
+    const out = [];
+    for (const it of pending.items(email())) {
+      if (!fs.existsSync(it.file)) { pending.remove(it.id); continue; }
+      if (it.state === 'recording') {
+        const seconds = await recordings.repairRecording(it.file).catch(() => 0);
+        if (!seconds) { pending.remove(it.id); continue; } // nothing readable was recorded
+        pending.update(it.id, { state: 'queued', seconds });
+      }
+      out.push(pending.find((x) => x.id === it.id));
+    }
+    return out.sort((x, y) => String(x.when).localeCompare(String(y.when)));
+  });
+  // Menu "Transcribe an audio file…": a recording picked in the folder. It is
+  // queued like any other (a closed program finishes it next time), but never
+  // deleted, even with no speech in it. -> { id, file, when } or null.
+  const picked = new Set(); // files the user picked this run: those may be read
+  ipcMain.handle('audio-file-choose', async (event) => {
+    let file = process.env.AUDIATOR_TEST_PICK || null; // the stands cannot click a system dialog
+    if (!file) {
+      const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+        title: tr('menu.transcribeFile'), defaultPath: saveFolder(), properties: ['openFile'],
+        filters: [{ name: tr('dlg.filterRecording'), extensions: ['webm'] }],
+      });
+      if (r.canceled || !r.filePaths.length) return null;
+      file = r.filePaths[0];
+    }
+    if (!/\.webm$/i.test(file) || !fs.existsSync(file)) return null;
+    picked.add(file);
+    // Its time: from its name (audio_135607_051026.webm), else when it was last written.
+    const m = /audio_(\d\d)(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)/i.exec(path.basename(file));
+    const when = m ? new Date(2000 + +m[6], +m[5] - 1, +m[4], +m[1], +m[2], +m[3]) : fs.statSync(file).mtime;
+    return { file, when: when.toISOString() };
+  });
+  ipcMain.handle('pending-add-file', (event, { file, when, seconds }) => {
+    if (!picked.has(file)) return null;
+    const it = pending.add(email(), { file, when, seconds, own: false });
+    return { id: it.id };
+  });
+  // The sound of a queued or picked recording, to be decoded for the engine.
+  ipcMain.handle('recording-read', async (event, file) => {
+    if (!picked.has(file) && !pending.find((x) => x.file === file)) return null;
+    return fs.promises.readFile(file).catch(() => null);
+  });
   // [{ text, when, audio }] -> one file each; { files, folder } or { error }.
   ipcMain.handle('texts-save', async (event, items) => {
     try {

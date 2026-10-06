@@ -24,7 +24,9 @@ const mainStub = `<script>
     translateCatalog: () => Promise.resolve([]), getAccount: () => Promise.resolve({ signedIn: true, limited: false }),
     loadHistory: () => Promise.resolve([]), transcribed: () => Promise.resolve({ copied: false }),
     transcribe: async (blob) => { window.__wav.push(new Uint8Array(await blob.arrayBuffer())); return { success: true, text: 'ok', language: 'ru' }; },
-    saveRecording: async (blob) => { window.__webm.push(new Uint8Array(await blob.arrayBuffer())); return { file: 'C:/x/audio_1.webm' }; },
+    recordingBegin: () => Promise.resolve({ id: 'p' + window.__webm.length, file: 'C:/x/audio_' + window.__webm.push([]) + '.webm' }),
+    recordingChunk: (file, blob) => { window.__webm[window.__webm.length - 1].push(blob); },
+    recordingEnd: (id, file) => Promise.resolve({ file, seconds: 1, id }),
   }, { get: (t, k) => (k in t ? t[k] : noop) });
   // A two-channel microphone: a 440 Hz tone (amplitude 0.6) on the left, silence on the right.
   navigator.mediaDevices.getUserMedia = async (c) => { window.__asked.push(c);
@@ -79,7 +81,7 @@ app.whenReady().then(async () => {
   // A sine of amplitude 0.6 has RMS 0.424; its average with silence, 0.212.
   check('the engine gets both channels as one (their average), not just the left', Math.abs(rms.rms - 0.212) < 0.04, JSON.stringify(rms));
   // The saved recording: two channels, made seekable as before.
-  const webm = Buffer.from(await js(`Array.from(window.__webm[0])`));
+  const webm = Buffer.from(await js(`new Blob(window.__webm[0]).arrayBuffer().then((b) => Array.from(new Uint8Array(b)))`));
   const chIdx = webm.indexOf(Buffer.from([0x9F, 0x81]));
   check('the recording keeps both channels', chIdx > 0 && webm[chIdx + 2] === 2, `channels byte: ${chIdx > 0 ? webm[chIdx + 2] : '-'}`);
   check('...and is made seekable', !!makeSeekable(webm));

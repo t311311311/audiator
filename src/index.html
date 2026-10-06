@@ -542,6 +542,7 @@
     <div id="app-menu" class="dropdown-menu hidden">
         <div class="dropdown-menu-item" id="settings-btn" data-i18n="menu.settings">Настройки</div>
         <div class="dropdown-menu-item" id="save-all-btn" data-i18n="menu.saveAll">Сохранить весь текст</div>
+        <div class="dropdown-menu-item" id="transcribe-file-btn" data-i18n="menu.transcribeFile">Распознать аудиофайл…</div>
         <div class="dropdown-menu-item" id="clear-all-btn" data-i18n="menu.clearHistory">Очистить историю</div>
         <div class="dropdown-menu-item" id="contact-btn" data-i18n="menu.contact">Написать нам</div>
         <div class="dropdown-menu-item" id="exit-btn" data-i18n="menu.exit">Выход</div>
@@ -612,6 +613,9 @@
         <button class="control-button icon-button" id="copy-btn" title="Копировать" data-i18n-title="title.copyLatest">&#128203;</button> <!-- Clipboard -->
     </div>
 
+    <!-- A saved recording back to sound for the engine (WebCodecs): finishing a
+         transcription after a restart, or a file picked from the menu. -->
+    <script src="webm-decode.js"></script>
     <script>
         // --- Interface language (AUD-33) ---
         // Strings come from the main process (i18n.js). S() falls back to the
@@ -650,7 +654,8 @@
                 b.style.fontSize = size + 'px';
             }
         }
-        applyI18n().then(() => restoreHistory());
+        // The history first, then what is left to transcribe (it goes in among it by time).
+        applyI18n().then(() => restoreHistory()).then(() => resumePending());
 
         // --- DOM Elements ---
         const closeBtn = document.getElementById('close-btn');
@@ -992,7 +997,12 @@
             check.addEventListener('change', updateTranslateTitle);
             originalCopy.actions.appendChild(check);
             newEntry.appendChild(originalCopy.row);
-            historyContainer.insertBefore(newEntry, historyContainer.firstChild);
+            // In its place by time, newest first: a new recording goes on top; one
+            // finished after a restart, or a file picked, goes in among the others.
+            const iso = newEntry.dataset.isoTimestamp;
+            const older = [...historyContainer.querySelectorAll('.history-entry')]
+                .find((e) => (e.dataset.isoTimestamp || '') < iso);
+            historyContainer.insertBefore(newEntry, older || null);
             updateScrollButtons(); // Update scroll buttons visibility
             return { originalTextField, originalCopy, check, play };
         }
@@ -1007,7 +1017,7 @@
         // Once its file is there, the entry gets ▶ (and the file goes into the
         // kept history with it).
         function showPlay(entry) {
-            (entry._saved || Promise.resolve(null)).then((r) => {
+            return (entry._saved || Promise.resolve(null)).then((r) => {
                 if (!r || !r.file) return;
                 entry.dataset.audio = r.file;
                 const play = entry.querySelector('.entry-play');
@@ -1016,8 +1026,8 @@
         }
         // No speech after all: that file goes again (only one this run wrote).
         function dropRecordingFile(entry) {
-            (entry._saved || Promise.resolve(null)).then((r) => {
-                if (r && r.file) window.api.discardRecording(r.file);
+            return (entry._saved || Promise.resolve(null)).then((r) => {
+                if (r && r.file) return window.api.discardRecording(r.file);
             });
         }
         async function openRecording(entry) {
@@ -1044,6 +1054,11 @@
             }).filter(Boolean);
         }
         let historySaveTimer = null;
+        function flushHistory() { // now, not in 0.3 s
+            if (!historyReady) return;
+            clearTimeout(historySaveTimer);
+            window.api.saveHistory(historySnapshot());
+        }
         new MutationObserver(() => {
             if (!historyReady) return;
             clearTimeout(historySaveTimer);
@@ -1105,29 +1120,78 @@
         function stopProgress(field) {
             if (progressField === field) progressField = null;
         }
-        // blob: the recording as the user keeps it (webm); wav: the same
-        // for the engine (startPcmCapture), or null if it could not be taken.
-        function queueTranscription(blob, jobId, withinLimit, wav, seconds = 0) {
-            uncountedSeconds += seconds; // spent, until its text comes and the account counts it
-            const when = new Date(); // the entry's time, and its files' names
-            const pending = addPendingEntry(when);
-            // Its file now, before transcription: a failure there does not lose
-            // the recording. (Stopped the instant it began: nothing to keep.)
-            const entry = pending.originalTextField.closest('.history-entry');
-            entry._saved = blob.size && window.api.saveRecording
-                ? window.api.saveRecording(blob, when.toISOString()).catch((e) => ({ error: e.message }))
-                : Promise.resolve(null);
-            entry._saved.then((r) => {
-                if (r && r.error) showToast(`${S('toast.audioFailed')}: ${r.error}`, 6000);
-            });
+        // Into the line of transcriptions: `work(gen)` runs when its turn comes
+        // (not after a sign-out); meanwhile it says it is waiting, and its
+        // seconds count as spent until the account has counted them.
+        function enqueue(pending, seconds, work) {
+            uncountedSeconds += seconds;
             if (transcribing++ > 0) pending.originalTextField.textContent = S('status.queued');
             const gen = session;
             transcribeChain = transcribeChain
                 // Recordings made before a sign-out are not transcribed after it.
-                .then(() => (gen === session ? handleTranscription(blob, jobId, pending, gen, withinLimit, wav) : null))
+                .then(() => (gen === session ? work(gen) : null))
                 .finally(() => { uncountedSeconds = Math.max(0, uncountedSeconds - seconds); renderAccount(); })
                 .catch((e) => console.error('transcription queue', e)) // keep the chain going
                 .finally(() => { transcribing = Math.max(0, transcribing - 1); });
+        }
+        // A recording just made. blob: the recording as the user keeps it
+        // (webm); wav: the same for the engine (startPcmCapture), or null if it
+        // could not be taken; when: its start; saved: its file, being finished
+        // -> { file, seconds, id } (or { error }).
+        function queueTranscription(blob, jobId, withinLimit, wav, seconds, when, saved) {
+            const pending = addPendingEntry(when);
+            const entry = pending.originalTextField.closest('.history-entry');
+            entry._saved = saved || Promise.resolve(null);
+            entry._saved.then((r) => {
+                if (r && r.error) showToast(`${S('toast.audioFailed')}: ${r.error}`, 6000);
+            });
+            enqueue(pending, seconds, (gen) => handleTranscription(blob, jobId, pending, gen, withinLimit, wav));
+        }
+
+        // --- Recordings left untranscribed: finished now ---
+        // A recording from the queue on disk (the program was closed or crashed
+        // before its text came, or while it was being made), or a file the user
+        // picked: it goes into the history at its own time, its sound read from
+        // its file when its turn comes (webm-decode.js). Its text goes into the
+        // history only — not onto the clipboard or the bar: the user is busy
+        // with something else by then — and a note says it is there.
+        function queueFromFile(item, wavReady = null) {
+            const pending = addPendingEntry(new Date(item.when));
+            const entry = pending.originalTextField.closest('.history-entry');
+            entry._saved = Promise.resolve({ file: item.file, id: item.id });
+            pending.originalTextField.textContent = S('status.queued');
+            enqueue(pending, item.seconds || 0, async (gen) => {
+                let wav = wavReady;
+                if (!wav) {
+                    try {
+                        const bytes = await window.api.readRecording(item.file);
+                        if (!bytes) throw new Error(S('toast.fileMissing'));
+                        wav = (await AudiatorAudio.webmToWav(bytes)).wav;
+                    } catch (e) {
+                        console.error('recording not readable', item.file, e);
+                        pending.originalTextField.classList.remove('pending');
+                        pending.originalTextField.textContent = `${S('error.readRecording')}: ${e.message}`;
+                        pending.originalTextField.dataset.state = 'error';
+                        showPlay(entry);
+                        if (item.id) window.api.pendingDone(item.id); // not again and again
+                        return;
+                    }
+                }
+                if (gen !== session) return;
+                return handleTranscription(wav, null, pending, gen, true, wav, { fromFile: true });
+            });
+        }
+        // At start: what the queue on disk still holds. One whose text already
+        // reached the history (closed just between the two) is not done twice.
+        async function resumePending() {
+            if (!window.api.pendingList) return;
+            const items = await window.api.pendingList().catch(() => []);
+            const known = new Set([...historyContainer.querySelectorAll('.history-entry')]
+                .map((e) => e.dataset.audio).filter(Boolean));
+            for (const it of items) {
+                if (known.has(it.file)) window.api.pendingDone(it.id);
+                else queueFromFile(it);
+            }
         }
 
         // The engine is given the recording as a plain 16 kHz mono WAV, taken
@@ -1246,7 +1310,9 @@
             translateBtn.disabled = !done;
         }
 
-        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit, wav) {
+        // opts.fromFile: a recording finished from its file (queueFromFile) — no
+        // barrel on the bar and nothing on the clipboard; a note when its text is in.
+        async function handleTranscription(blob, jobId, { originalTextField, originalCopy, check }, gen, withinLimit, wav, opts = {}) {
             const entry = originalTextField.closest('.history-entry');
             originalTextField.textContent = S('status.transcribing'); // its turn now
             progressField = originalTextField;
@@ -1270,13 +1336,17 @@
                 originalCopy.btn.hidden = !result.text;
                 check.hidden = !result.text;
                 // Its recording: ▶ with a text; with no speech it is not kept.
-                if (result.text) showPlay(entry); else dropRecordingFile(entry);
+                if (result.text) await showPlay(entry); else await dropRecordingFile(entry);
 
-                // Hand the transcript to the queue: on the clipboard at once when
-                // this window is in front, otherwise when its barrel's turn comes.
-                // An empty one just takes its barrel away.
-                const handed = await window.api.transcribed(jobId, result.text || '');
-                if (handed && handed.copied && document.hasFocus()) showToast(S('toast.copied'));
+                if (opts.fromFile) {
+                    if (result.text) showToast(S('toast.resumed').replace('{t}', formatStamp(new Date(entry.dataset.isoTimestamp))), 5000);
+                } else {
+                    // Hand the transcript to the queue: on the clipboard at once when
+                    // this window is in front, otherwise when its barrel's turn comes.
+                    // An empty one just takes its barrel away.
+                    const handed = await window.api.transcribed(jobId, result.text || '');
+                    if (handed && handed.copied && document.hasFocus()) showToast(S('toast.copied'));
+                }
 
             } catch (error) {
                 console.error('Transcription error:', error);
@@ -1285,7 +1355,7 @@
                 const errorMessage = error.reason ? error.message : `${S('error.transcribe')}: ${error.message}`;
                 originalTextField.textContent = errorMessage;
                 originalTextField.dataset.state = 'error';
-                showPlay(entry); // the recording is kept: it can be listened to
+                await showPlay(entry); // the recording is kept: it can be listened to
 
                 // Log detailed error information for debugging
                 if (error.stack) {
@@ -1298,10 +1368,18 @@
                 }
                 // Take the barrel away, or the bar would sit there saying it is
                 // still transcribing.
-                if (window.api.transcribeFailed) window.api.transcribeFailed(jobId);
+                if (window.api.transcribeFailed && !opts.fromFile) window.api.transcribeFailed(jobId);
             } finally {
                 stopProgress(originalTextField);
                 updateActionButtons(); // this one is now "the latest"
+                // Done with, one way or another: out of the queue on disk — once the
+                // history with its text is saved, so closing in between loses nothing.
+                // (Closed while it was being transcribed: it stays, for the next start.)
+                const r = await (entry._saved || Promise.resolve(null)).catch(() => null);
+                if (r && r.id && gen === session && window.api.pendingDone) {
+                    flushHistory();
+                    window.api.pendingDone(r.id);
+                }
             }
         }
 
@@ -1740,6 +1818,32 @@
             }
         });
 
+        // Menu "Распознать аудиофайл…": a recording from the folder (one whose
+        // text was lost, or to hear it out again) goes into the history at its
+        // time. On the free plan it needs the minutes for its whole length.
+        document.getElementById('transcribe-file-btn').addEventListener('click', async () => {
+            appMenu.classList.add('hidden');
+            const picked = await window.api.chooseAudioFile();
+            if (!picked) return;
+            let decoded;
+            try {
+                const bytes = await window.api.readRecording(picked.file);
+                if (!bytes) throw new Error(S('toast.fileMissing'));
+                decoded = await AudiatorAudio.webmToWav(bytes);
+            } catch (e) {
+                showToast(`${S('error.readRecording')}: ${e.message}`, 6000);
+                return;
+            }
+            const left = freeSecondsLeft();
+            if (decoded.seconds > left) {
+                showToast(S('error.fileTooLong').replace('{need}', formatLeft(Math.ceil(decoded.seconds / 60) * 60))
+                    .replace('{left}', formatLeft(Math.max(0, left))), 6000);
+                return;
+            }
+            const queued = await window.api.pendingAddFile(picked.file, picked.when, decoded.seconds);
+            queueFromFile({ id: queued && queued.id, file: picked.file, when: picked.when, seconds: decoded.seconds }, decoded.wav);
+        });
+
         saveAllBtn.addEventListener('click', () => {
             const textToSave = gatherAllText();
             if (textToSave) { 
@@ -1796,23 +1900,42 @@
                 const jobId = ++jobCounter;
                 mediaRecorder = recorder;
 
-                recorder.ondataavailable = (event) => { chunks.push(event.data); };
+                // Its file from the start, and the sound into it every second
+                // while recording: a program closed or crashed mid-recording
+                // keeps what was said until then, and the next start transcribes
+                // it (pending.js). Its time is when it started: the entry's date
+                // and the file's name.
+                const when = new Date();
+                const begun = window.api.recordingBegin
+                    ? window.api.recordingBegin(when.toISOString()).catch((e) => ({ error: e.message }))
+                    : Promise.resolve(null);
+                let written = Promise.resolve(); // the pieces go out one after another, in order
+                recorder.ondataavailable = (event) => {
+                    chunks.push(event.data);
+                    written = written.then(() => begun)
+                        .then((b) => (b && b.file ? window.api.recordingChunk(b.file, event.data) : null))
+                        .catch((e) => console.error('a piece of the recording was not written', e));
+                };
                 let capture = null; // the same sound as WAV for the engine (startPcmCapture)
                 let startedAt = 0, limitTimer = null;
                 recorder.onstop = async () => {
                     clearInterval(limitTimer);
                     const seconds = startedAt ? (Date.now() - startedAt) / 1000 : 0;
+                    // The last piece came before this: the file is finished (made seekable).
+                    const saved = written.then(() => begun)
+                        .then((b) => (b && b.file ? window.api.recordingEnd(b.id, b.file) : b))
+                        .catch((e) => ({ error: e.message }));
                     const wav = capture ? await capture.finish().catch((e) => { console.error('capture', e); return null; }) : null;
                     stream.getTracks().forEach(track => track.stop());
                     if (gen !== session) return;
                     if (window.api.recordingStopped) window.api.recordingStopped(jobId);
-                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit, wav, seconds);
+                    queueTranscription(new Blob(chunks, { type: 'audio/webm' }), jobId, withinLimit, wav, seconds, when, saved);
                 };
 
                 recordBtn.classList.add('hidden');
                 stopBtn.classList.remove('hidden');
 
-                recorder.start();
+                recorder.start(1000); // a piece every second, written as it comes
                 try {
                     capture = await startPcmCapture(stream);
                 } catch (e) {
