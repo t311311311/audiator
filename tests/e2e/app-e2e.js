@@ -32,7 +32,13 @@ function connect(url) {
   const send = (method, params = {}) => new Promise((r) => { const i = ++id; wait.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
   return new Promise((resolve) => ws.onopen = () => resolve({
     js: async (expr) => { const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); return r.result && r.result.result ? r.result.result.value : r; },
-    shot: async (name) => { const r = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(OUT, name), Buffer.from(r.result.data, 'base64')); console.log('saved', name); },
+    // A snapshot can hang when the window is not being painted (screen off, another window over it,
+    // seen at night 2026-10-06): skipped after 5 s, the checks go on.
+    shot: async (name) => {
+      const r = await Promise.race([send('Page.captureScreenshot', { format: 'png' }), new Promise((res) => setTimeout(() => res(null), 5000))]);
+      if (!r || !r.result) { console.log('snapshot skipped (window not painted):', name); return; }
+      fs.writeFileSync(path.join(OUT, name), Buffer.from(r.result.data, 'base64')); console.log('saved', name);
+    },
     close: () => ws.close(),
     send,
   }));
@@ -100,7 +106,7 @@ const codeFor = async (email) => {
   check('history has the two texts', (await main.js(`document.querySelectorAll('.history-entry').length`)) === 2);
 
   // 2b. "Написать нам" from the menu: a topic, a message, sent to support.
-  await main.js(`document.getElementById('contact-btn').click()`);
+  await main.js(`window.api.openSupport()`);
   const sup = await page('support.html');
   await sleep(700);
   check('support window: answer goes to the account email', (await sup.js(`document.getElementById('email').textContent`)) === 'tester@example.com');
@@ -157,7 +163,7 @@ const codeFor = async (email) => {
   check('typing replaces the offered email', (await login2.js(`document.getElementById('email').value`)) === 'other@example.com',
     JSON.stringify(await login2.js(`document.getElementById('email').value`)));
   check('sign out: history cleared', (await main.js(`document.querySelectorAll('.history-entry').length + '|' + document.body.innerText.includes('секрет')`)) === '0|false');
-  check('sign out: save buttons off again', await main.js(`document.getElementById('save-audio-btn').disabled && document.getElementById('translate-btn').disabled`));
+  check('sign out: save buttons off again', await main.js(`document.getElementById('save-btn').disabled && document.getElementById('translate-btn').disabled`));
   check('sign out: settings closed', !(await targets()).some((t) => t.url.endsWith('/settings.html')));
   check('sign out: session gone', (() => { const a = JSON.parse(fs.readFileSync(path.join(tmp, 'userData', 'account.json'), 'utf8')); return !a.token && !a.tokenEnc; })());
 
