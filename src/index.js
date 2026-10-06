@@ -13,6 +13,7 @@ const store = new Store({
     fontSize: 16,
     fontFamily: 'Arial, sans-serif', // a value from the Settings list
     whisperModel: 'small', // recognition quality: base | small | large-v3-turbo
+    micNoiseSuppression: false, // the microphone as it is; Chromium's call processing only when asked
   }
 });
 
@@ -813,7 +814,7 @@ app.on('ready', async () => {
     settingsWindow = new BrowserWindow({
       width: 450,
       // Inside the frame (useContentSize): language row (AUD-33), quality list,
-      // the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
+      // the microphone switch, the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
       // than the screen: the page scrolls instead of the buttons going missing.
       height: Math.min(760, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
