@@ -83,7 +83,8 @@ app.whenReady().then(async () => {
   // The saved recording: two channels, made seekable as before.
   const webm = Buffer.from(await js(`new Blob(window.__webm[0]).arrayBuffer().then((b) => Array.from(new Uint8Array(b)))`));
   const chIdx = webm.indexOf(Buffer.from([0x9F, 0x81]));
-  check('the recording keeps the channels it was given', chIdx > 0 && webm[chIdx + 2] === 2, `channels byte: ${chIdx > 0 ? webm[chIdx + 2] : '-'}`);
+  // A microphone alone goes into the file in mono (what a microphone with its processing gives; 2026-10-06).
+  check('a microphone alone is recorded in mono', chIdx > 0 && webm[chIdx + 2] === 1, `channels byte: ${chIdx > 0 ? webm[chIdx + 2] : '-'}`);
   check('...and is made seekable', !!makeSeekable(webm));
   // How much of the recording the engine got: the saved file against the WAV.
   const fixed = makeSeekable(webm); const di = fixed.indexOf(Buffer.from([0x44, 0x89, 0x01, 0, 0, 0, 0, 0, 0, 0x08]));

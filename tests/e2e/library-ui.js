@@ -116,7 +116,7 @@ app.whenReady().then(async () => {
   const piecesBefore = calls.chunks.filter((c) => c.at < calls.end[0].at - 300);
   check('its file begins with it; the sound goes in every second while recording',
     calls.begin.length === 1 && piecesBefore.length >= 2 && calls.chunks.every((c) => /audio_135601/.test(c.file)) && calls.end.length === 1,
-    `begin ${calls.begin.length}, pieces ${calls.chunks.length} (${piecesBefore.length} before the stop), end ${calls.end.length}`);
+    `begin ${calls.begin.length}, pieces ${calls.chunks.length} (${piecesBefore.length} before the stop), end ${calls.end.length}; ms from the start: ${calls.chunks.map((c) => c.at - Date.parse(calls.begin[0])).join("/")}, end ${calls.end[0] && calls.end[0].at - Date.parse(calls.begin[0])}`);
   check('its time is the entry\'s time — when it started (one name for audio and text)',
     calls.begin[0] === await js(`document.querySelector('.history-entry').dataset.isoTimestamp`));
   check('no ▶ while transcribing; still in the queue', (await js(`document.querySelector('.history-entry .entry-play').hidden`)) && calls.done.length === 0);

@@ -1936,41 +1936,104 @@
         // nothing of the screen is captured and it costs nothing.
         let recordSource = 'mic';
         const SYSTEM_AUDIO = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 };
+        async function openSystemSound() {
+            let st;
+            try {
+                st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: SYSTEM_AUDIO });
+            } catch (e) {
+                throw Object.assign(new Error(S('error.systemAudio')), { cause: e });
+            }
+            st.getVideoTracks().forEach((t) => { t.stop(); st.removeTrack(t); });
+            if (!st.getAudioTracks().length) throw new Error(S('error.systemAudio'));
+            return st;
+        }
+        // The devices Windows records from and plays to by default now.
+        async function defaultDevices() {
+            const list = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+            const label = (kind) => (list.find((d) => d.kind === kind && d.deviceId === 'default') || {}).label || '';
+            return { mic: label('audioinput'), sys: label('audiooutput') };
+        }
         // -> { stream, release() }: the sound to record, and what closes it all.
+        // The sources go through a small mixer, and the recording takes the
+        // mixer's output: a source can then be swapped mid-recording without
+        // a break in the file. That is needed when Windows changes the device
+        // (user, 2026-10-06: wired headphones plugged in during a recording —
+        // the computer's sound stopped, as Windows now played to "Наушники"
+        // and the capture stayed on "Динамики"; unplugged — the microphone
+        // stopped, its headset microphone gone): when the default device
+        // changes, or a source ends, it is opened again on the device Windows
+        // uses now. The gap is a fraction of a second.
         async function openSource() {
-            let mic = null, sys = null, mix = null;
+            const kinds = recordSource === 'both' ? ['sys', 'mic'] : [recordSource === 'system' ? 'sys' : 'mic'];
+            const mix = new AudioContext();
+            const out = mix.createMediaStreamDestination();
+            out.channelCount = kinds.includes('sys') ? 2 : 1; // the computer's sound in stereo, a microphone alone in mono
+            let into = out;
+            if (kinds.length > 1) {
+                // Both: the microphone in the middle, the computer's sound as it
+                // is; only peaks over -3 dBFS (a loud moment in both at once) are
+                // held down, so the mix never clips.
+                const limiter = mix.createDynamicsCompressor();
+                limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
+                limiter.attack.value = 0.003; limiter.release.value = 0.25;
+                limiter.connect(out);
+                into = limiter;
+            }
+            const parts = {};      // kind -> { stream, node }
+            const busy = {};       // kind -> being opened again
+            let closed = false;
+            const open = (kind) => (kind === 'mic' ? navigator.mediaDevices.getUserMedia(micConstraints()) : openSystemSound());
+            const attach = (kind, st) => {
+                const node = mix.createMediaStreamSource(st);
+                node.connect(into);
+                const old = parts[kind];
+                parts[kind] = { stream: st, node };
+                if (old) { old.node.disconnect(); old.stream.getTracks().forEach((t) => t.stop()); }
+                // A device taken away ends its track (stop() by the page does not).
+                st.getAudioTracks().forEach((t) => t.addEventListener('ended', () => reopen(kind)));
+            };
+            async function reopen(kind) {
+                if (closed || busy[kind]) return;
+                busy[kind] = true;
+                try {
+                    const st = await open(kind);
+                    if (closed) st.getTracks().forEach((t) => t.stop());
+                    else attach(kind, st);
+                } catch (e) {
+                    console.error('could not open again', kind, e);
+                    if (!closed) showToast(kind === 'sys' ? S('error.systemAudio') : S('error.microphone'), 5000);
+                } finally {
+                    busy[kind] = false;
+                }
+            }
+            // Which devices are the default ones, learnt in the background: asking
+            // Windows before starting held the recording back ~0.4 s (measured).
+            let known = null;
+            defaultDevices().then((d) => { if (!known) known = d; });
+            let settle = null;
+            const onDeviceChange = () => {
+                clearTimeout(settle);
+                settle = setTimeout(async () => { // Windows sends several changes for one plug
+                    if (closed) return;
+                    const now = await defaultDevices();
+                    for (const kind of kinds) if (!known || now[kind] !== known[kind]) reopen(kind);
+                    known = now;
+                }, 700);
+            };
+            navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
             const release = () => {
-                for (const st of [mic, sys]) if (st) st.getTracks().forEach((t) => t.stop());
-                if (mix) mix.close().catch(() => {});
+                closed = true;
+                clearTimeout(settle);
+                navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange);
+                for (const p of Object.values(parts)) p.stream.getTracks().forEach((t) => t.stop());
+                mix.close().catch(() => {});
             };
             try {
-                if (recordSource !== 'mic') {
-                    try {
-                        sys = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: SYSTEM_AUDIO });
-                    } catch (e) {
-                        throw Object.assign(new Error(S('error.systemAudio')), { cause: e });
-                    }
-                    sys.getVideoTracks().forEach((t) => { t.stop(); sys.removeTrack(t); });
-                    if (!sys.getAudioTracks().length) throw new Error(S('error.systemAudio'));
-                }
-                if (recordSource !== 'system') mic = await navigator.mediaDevices.getUserMedia(micConstraints());
+                for (const kind of kinds) attach(kind, await open(kind)); // the computer's sound first: refused, the microphone is not opened
             } catch (e) {
                 release();
                 throw e;
             }
-            if (!(mic && sys)) return { stream: mic || sys, release };
-            // Both: one stereo track — the microphone in the middle, the
-            // computer's sound as it is; only peaks over -3 dBFS (a loud moment
-            // in both at once) are held down, so the mix never clips.
-            mix = new AudioContext();
-            const out = mix.createMediaStreamDestination();
-            out.channelCount = 2;
-            const limiter = mix.createDynamicsCompressor();
-            limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
-            limiter.attack.value = 0.003; limiter.release.value = 0.25;
-            mix.createMediaStreamSource(mic).connect(limiter);
-            mix.createMediaStreamSource(sys).connect(limiter);
-            limiter.connect(out);
             mix.resume().catch(() => {});
             return { stream: out.stream, release };
         }
@@ -2056,12 +2119,13 @@
                 if (stopWhenStarted) stopBtn.click();
             } catch (err) {
                 console.error('could not open what to record', err, err && err.cause);
-                if (recordSource !== 'mic') {
-                    // The computer's sound could not be had: say so, nothing is recorded.
-                    const why = err && err.cause && err.cause.message;
-                    showToast(why ? `${err.message}: ${why}` : String(err && err.message), 6000);
-                    if (window.api.limitReached) window.api.limitReached(); // brings this window up (hotkey)
-                }
+                // The computer's sound or the microphone could not be had: say
+                // which and why; nothing is recorded.
+                const message = String((err && err.message) || err);
+                const why = err && err.cause && err.cause.message;
+                showToast(message.startsWith(S('error.systemAudio')) ? (why ? `${message}: ${why}` : message)
+                                                                      : `${S('error.microphone')}: ${message}`, 6000);
+                if (window.api.limitReached) window.api.limitReached(); // brings this window up (hotkey)
             } finally {
                 micStarting = false;
             }
