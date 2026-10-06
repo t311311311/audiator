@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage, shell, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, globalShortcut, screen, clipboard, safeStorage, shell, session, desktopCapturer, nativeTheme } = require('electron');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -9,9 +10,9 @@ const pending = require('./pending');
 // --- Initialize Settings Store ---
 const store = new Store({
   defaults: {
-    theme: 'dark',
+    theme: 'system', // system (as in Windows, followed live) | dark | light
     opacity: 0.8, // Default to 80% opaque
-    fontSize: 16,
+    fontSize: 14, // the transcript's text (user's choice of default, 2026-10-06)
     fontFamily: 'Arial, sans-serif', // a value from the Settings list
     whisperModel: 'small', // recognition quality: base | small | large-v3-turbo
     recordSource: 'mic', // what to record: mic | system (the computer's own sound) | both
@@ -264,12 +265,21 @@ const refreshOverlay = () => {
 };
 
 // Function to send settings to all windows
+// The theme as the windows apply it: "system" follows Windows (its "app mode",
+// light or dark). Windows get the settings with the theme resolved and the
+// choice itself beside it (themeChoice — what Settings shows and saves).
+const resolveTheme = (t) => (t === 'light' || t === 'dark' ? t : (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
+const forPages = (s) => ({ ...s, themeChoice: s.theme || 'system', theme: resolveTheme(s.theme) });
+
 function broadcastSettings() {
-  const settings = store.get();
+  const settings = forPages(store.get());
   BrowserWindow.getAllWindows().forEach(win => {
     win.webContents.send('settings-updated', settings);
   });
 }
+// Windows switched between light and dark: so do the windows, if they follow it.
+nativeTheme.on('updated', () => { if (resolveTheme(store.get('theme')) !== lastTheme) { lastTheme = resolveTheme(store.get('theme')); broadcastSettings(); } });
+let lastTheme = null;
 
 const createWindow = () => {
   // Create the browser window.
@@ -303,7 +313,10 @@ const createWindow = () => {
 
 // --- Interface language (AUD-33) ---
 // The user's choice wins; until they make one, follow the OS language.
-const currentLang = () => i18n.resolveLanguage(store.get('language'), app.getLocale());
+// Not chosen in Settings: the first of the user's Windows languages the app has
+// (their language list, then the display language) — on the user's computer
+// Windows shows English but lists Russian first: Russian.
+const currentLang = () => i18n.resolveLanguage(store.get('language'), [...app.getPreferredSystemLanguages(), app.getLocale()]);
 const tr = (key) => i18n.t(currentLang(), key);
 
 // The tray menu is built once, so it has to be rebuilt when the language changes.
@@ -354,9 +367,23 @@ function wavSeconds(data) {
 // session is): the file copied elsewhere is unreadable. Gone on sign-out and
 // with "Clear history" (the page sends an empty list).
 const HISTORY_MAX = 1000;
-const historyFile = () => path.join(app.getPath('userData'), 'history.dat');
+// One file per account (its email, hashed, in the name): signing out hides
+// the history, signing in to the same account here brings it back (user's
+// decision 2026-10-06; it was erased at sign-out). Another account never sees
+// it; the file is encrypted for this Windows user.
+const historyFile = () => {
+  const email = String(account.view().email || '').toLowerCase();
+  const key = crypto.createHash('sha256').update(email).digest('hex').slice(0, 16);
+  return path.join(app.getPath('userData'), `history-${key}.dat`);
+};
+// Before 2026-10-06 the one history.dat was the signed-in account's.
+function adoptOldHistory() {
+  const old = path.join(app.getPath('userData'), 'history.dat');
+  try { if (fs.existsSync(old) && !fs.existsSync(historyFile())) fs.renameSync(old, historyFile()); } catch (e) { /* stays */ }
+}
 
 function loadHistory() {
+  adoptOldHistory();
   let raw;
   try { raw = fs.readFileSync(historyFile()); } catch (e) { return []; }
   try {
@@ -405,7 +432,7 @@ const showLoginWindow = () => {
     maximizable: false,
     title: tr('login.windowTitle'),
     icon: iconPath,
-    backgroundColor: store.get('theme') === 'light' ? '#fafafa' : '#282c34', // no white flash
+    backgroundColor: resolveTheme(store.get('theme')) === 'light' ? '#fafafa' : '#282c34', // no white flash
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'login-preload.js'),
@@ -438,7 +465,7 @@ const showSupportWindow = (lang) => {
     maximizable: false,
     title: i18n.t(lang, 'support.windowTitle'),
     icon: iconPath,
-    backgroundColor: store.get('theme') === 'light' ? '#fafafa' : '#282c34',
+    backgroundColor: resolveTheme(store.get('theme')) === 'light' ? '#fafafa' : '#282c34',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'support-preload.js'),
@@ -457,7 +484,7 @@ const showSupportWindow = (lang) => {
 let termsWindow = null;
 const showTermsWindow = (lang) => {
   lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
-  const theme = store.get('theme') === 'light' ? 'light' : 'dark';
+  const theme = resolveTheme(store.get('theme'));
   if (termsWindow && !termsWindow.isDestroyed()) {
     // Open already, perhaps in another language: show it in this one.
     termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang, theme } });
@@ -673,7 +700,7 @@ app.on('ready', async () => {
     lastSent = JSON.stringify(v);
     sendAccount(v); // the main window clears its history on a sign-out
     if (wasSignedIn && !v.signedIn) {
-      saveHistory([]); // the kept history goes with the account
+      // The kept history stays, for this account's next sign-in here (the window empties itself).
       pending.clear(); // and its untranscribed recordings (their files stay in the folder)
       queue.clear(); // no barrels of the old account
       offeredId = null;
@@ -763,12 +790,12 @@ app.on('ready', async () => {
 
   // Handle requests from renderer to get current settings
   ipcMain.handle('get-current-settings', () => {
-    return store.get();
+    return forPages(store.get());
   });
 
   // Handle requests from settings window to get initial settings
   ipcMain.handle('get-initial-settings', () => {
-    return store.get();
+    return forPages(store.get());
   });
 
   // Handle requests to get app version
@@ -827,7 +854,7 @@ app.on('ready', async () => {
       modal: false,
       frame: true, // Restore standard frame with title bar
       title: '', // Empty title to remove text from title bar
-      backgroundColor: currentStoredSettings.theme === 'light' ? '#e4e6eb' : '#3e4452', // Match theme color
+      backgroundColor: resolveTheme(currentStoredSettings.theme) === 'light' ? '#e4e6eb' : '#3e4452', // Match theme color
       webPreferences: {
         preload: path.join(__dirname, 'settings-preload.js'),
         contextIsolation: true,
@@ -836,7 +863,7 @@ app.on('ready', async () => {
     });
 
     // Set backgroundColor based on current theme to prevent flashing
-    if (currentStoredSettings.theme === 'light') {
+    if (resolveTheme(currentStoredSettings.theme) === 'light') {
       settingsWindow.setBackgroundColor('#fafafa'); // Light theme background
     } else {
       settingsWindow.setBackgroundColor('#282c34'); // Dark theme background
@@ -848,7 +875,7 @@ app.on('ready', async () => {
     // Send initial settings as soon as the page loads
     settingsWindow.webContents.once('did-finish-load', () => {
       // Apply the theme immediately to prevent flashing
-      if (currentStoredSettings.theme === 'light') {
+      if (resolveTheme(currentStoredSettings.theme) === 'light') {
         settingsWindow.webContents.executeJavaScript(`
           if (!document.body.classList.contains('light-theme')) {
             document.body.classList.add('light-theme');
@@ -861,7 +888,7 @@ app.on('ready', async () => {
       }
 
       // Then send the full settings
-      settingsWindow.webContents.send('initial-settings', currentStoredSettings);
+      settingsWindow.webContents.send('initial-settings', forPages(currentStoredSettings));
     });
 
     settingsWindow.on('closed', () => {
@@ -874,7 +901,7 @@ app.on('ready', async () => {
 
   // Sends the *pending* settings to the settings window
   ipcMain.on('get-settings', (event) => {
-    event.sender.send('settings-loaded', pendingSettings);
+    event.sender.send('settings-loaded', forPages(pendingSettings));
   });
 
   // Updates pending settings and applies real-time changes to main window
@@ -884,11 +911,12 @@ app.on('ready', async () => {
       mainWindow.setOpacity(value);
     }
     // Inform main window about real-time preview changes
-    mainWindow.webContents.send('settings-updated', pendingSettings);
+    mainWindow.webContents.send('settings-updated', forPages(pendingSettings));
   });
 
   // Saves all pending settings and closes the window
   ipcMain.on('save-all-settings', (event, settingsToSave) => {
+    delete settingsToSave.themeChoice; // the page's view of the theme, not a setting
     const previousModel = store.get('whisperModel');
     for (const key in settingsToSave) {
       store.set(key, settingsToSave[key]);
