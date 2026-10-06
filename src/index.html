@@ -709,8 +709,14 @@
         // Each account has its own 24 hours, from its first use: how long
         // until they renew, rounded up to the minute (null: none running yet).
         function untilReset() {
-            if (!acct || !acct.resetsAt) return null;
+            if (!acct || !acct.resetsAt || windowOver()) return null;
             return formatLeft(Math.max(60, Math.ceil((acct.resetsAt - Date.now()) / 60000) * 60));
+        }
+        // The 24 hours have just ended: all the time is back at once — not up to a
+        // minute later, when the main process next looks (it showed the old
+        // count and "обновление через 1 мин", and would not start a recording).
+        function windowOver() {
+            return !!(acct && acct.resetsAt && Date.now() >= acct.resetsAt);
         }
         // "Осталось 43 мин, обновление через 4 ч 41 мин" — in plain sight,
         // not only on hover: not everyone would think of hovering.
@@ -738,7 +744,7 @@
         let uncountedSeconds = 0;
         function freeSecondsLeft() {
             if (!(acct && acct.signedIn && acct.limited)) return Infinity;
-            return acct.remaining - uncountedSeconds;
+            return (windowOver() ? acct.limit : acct.remaining) - uncountedSeconds;
         }
         function limitReached() {
             return freeSecondsLeft() <= 0;
