@@ -13,6 +13,7 @@ promise. Plain days, not working days: whose holidays would count, with
 users all over the world (user's decision 2026-10-06).
 """
 import logging
+import os
 from datetime import timedelta
 from typing import Optional
 
@@ -39,6 +40,13 @@ CATEGORIES = {
 }
 MAX_TEXT = 5000
 PER_HOUR = 5
+# Letters go to our own inbox only, but through the same Gmail mailbox as the
+# sign-in codes (about 500 a day in all): an account writes at most PER_DAY
+# messages a day, and the server mails at most MAIL_PER_DAY of them. Past that a
+# message is still kept, only not mailed — admin.py tickets marks it — so
+# nothing anyone writes is lost.
+PER_DAY = int(os.environ.get("SUPPORT_PER_DAY", "20"))
+MAIL_PER_DAY = int(os.environ.get("SUPPORT_MAIL_PER_DAY", "100"))
 
 
 def answer_within(category: str) -> Optional[str]:
@@ -71,9 +79,10 @@ def write_to_support(req: SupportRequest, authorization: Optional[str] = Header(
         raise _err(400, "empty_text")
     if len(text) > MAX_TEXT:
         raise _err(400, "too_long", max=MAX_TEXT)
-    ok, retry = rate.check(f"support:{u.id}", PER_HOUR, 3600)
-    if not ok:
-        raise _err(429, "too_many_requests", retry_after=retry)
+    for key, limit, window in ((f"support:{u.id}", PER_HOUR, 3600), (f"support-day:{u.id}", PER_DAY, 86400)):
+        ok, retry = rate.check(key, limit, window)
+        if not ok:
+            raise _err(429, "too_many_requests", retry_after=retry)
 
     now = _utcnow()
     with Session() as s:
@@ -104,10 +113,14 @@ def write_to_support(req: SupportRequest, authorization: Optional[str] = Header(
         ])
         s.commit()
         ticket_id, due_at = t.id, t.due_at
-        try:
-            mailer.send(mailer.support_inbox(), subject, body, reply_to=user.email)
-            t.mailed = True
-            s.commit()
-        except Exception as e:  # noqa: BLE001 — kept anyway; the admin lists show it
-            log.warning("support #%s not mailed: %s", ticket_id, e)
+        if not rate.check("support-mail-day", MAIL_PER_DAY, 86400)[0]:
+            log.warning("support #%s kept, not mailed: the cap of %s letters a day is reached",
+                        ticket_id, MAIL_PER_DAY)
+        else:
+            try:
+                mailer.send(mailer.support_inbox(), subject, body, reply_to=user.email)
+                t.mailed = True
+                s.commit()
+            except Exception as e:  # noqa: BLE001 — kept anyway; the admin lists show it
+                log.warning("support #%s not mailed: %s", ticket_id, e)
     return {"id": ticket_id, "answer_within": within, "due_at": _iso(due_at), "reply_to": u.email}

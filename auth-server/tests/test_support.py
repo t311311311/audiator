@@ -100,6 +100,35 @@ def test_only_signed_in_users_write_and_not_too_often(client, mailbox):
     assert r.status_code == 429 and r.json()["detail"]["error"] == "too_many_requests"
 
 
+def test_an_account_writes_at_most_twenty_a_day(client, mailbox, monkeypatch):
+    """Five an hour, but not five every hour all day: the letters share the
+    Gmail mailbox (about 500 a day) with the sign-in codes."""
+    h = signed_in(client, mailbox)
+    now = [1_000_000.0]
+    monkeypatch.setattr(support.rate.time, "time", lambda: now[0])
+    for hour in range(4):
+        for _ in range(support.PER_HOUR):
+            assert write(client, h).status_code == 200
+        now[0] += 3601
+    r = write(client, h)
+    assert r.status_code == 429 and r.json()["detail"]["retry_after"] > 3600, "the daily cap, not the hourly one"
+    now[0] += 86400
+    assert write(client, h).status_code == 200, "a day later again"
+
+
+def test_past_the_servers_daily_cap_a_message_is_kept_not_mailed(client, mailbox, monkeypatch, caplog):
+    _, letters = mailbox
+    monkeypatch.setattr(support, "MAIL_PER_DAY", 2)
+    h = signed_in(client, mailbox)
+    caplog.set_level("WARNING", logger="audiator")
+    ids = [write(client, h).json()["id"] for _ in range(3)]
+    assert len(letters) == 2, "two mailed, the third not"
+    with accounts_db.Session() as s:
+        assert [t.mailed for t in s.query(accounts_db.SupportTicket).order_by(accounts_db.SupportTicket.id)] == [
+            True, True, False], "all three kept"
+    assert f"support #{ids[2]} kept, not mailed: the cap of 2 letters a day is reached" in caplog.text
+
+
 def test_kept_even_when_the_mail_fails(client, mailbox, monkeypatch, caplog):
     h = signed_in(client, mailbox)
 
