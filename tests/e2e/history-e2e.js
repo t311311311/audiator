@@ -1,6 +1,6 @@
 // Scratch: the history kept between runs, in the real app (its own data folder).
 const { spawn } = require('child_process');
-const path = require('path'), fs = require('fs'), os = require('os');
+const path = require('path'), fs = require('fs'), os = require('os'), crypto = require('crypto');
 const ROOT = 'C:/Test01/tray-translator';
 const PORT = 3113, DBG = 9338;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aud-hist-'));
@@ -41,7 +41,8 @@ const texts = (main) => main.js(`[...document.querySelectorAll('.history-entry')
 (async () => {
   server = spawn(path.join(ROOT, '.venv/Scripts/python.exe'), ['-m', 'uvicorn', 'main:app', '--port', String(PORT)], {
     cwd: path.join(ROOT, 'auth-server'), windowsHide: true,
-    env: { ...process.env, PYTHONUTF8: '1', SMTP_HOST: '', MAIL_DEV_PRINT: '1',
+    // The second account is an admin: one free account per computer would refuse it.
+    env: { ...process.env, PYTHONUTF8: '1', SMTP_HOST: '', MAIL_DEV_PRINT: '1', ADMIN_EMAILS: 'other@example.com',
            ACCOUNTS_DATABASE_URL: 'sqlite:///' + path.join(tmp, 'a.db').split(path.sep).join('/') } });
   server.stdout.on('data', (d) => { serverLog += d; }); server.stderr.on('data', (d) => { serverLog += d; });
   for (let i = 0; i < 100 && !/Uvicorn running/.test(serverLog); i++) await sleep(200);
@@ -62,7 +63,9 @@ const texts = (main) => main.js(`[...document.querySelectorAll('.history-entry')
   await sleep(1600);
   const before = await texts(main);
   await quit(main);
-  const file = path.join(ud, 'history.dat');
+  // One file per account: its email, hashed, in the name (2026-10-06).
+  const fileOf = (email) => path.join(ud, `history-${crypto.createHash('sha256').update(email).digest('hex').slice(0, 16)}.dat`);
+  const file = fileOf('hist@example.com');
   const raw = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
   check('kept in a file when the app closed', raw.length > 0, raw.length + ' bytes');
   check('the file is encrypted (no text in it)', !raw.toString('utf8').includes('первая') && !raw.toString('latin1').includes('third'));
@@ -78,12 +81,35 @@ const texts = (main) => main.js(`[...document.querySelectorAll('.history-entry')
   check('"no speech" entries are not kept', !after.includes(await main.js(`S('status.noText')`)), before);
   check('the date is the original one', (await main.js(`document.querySelector('.history-entry').dataset.isoTimestamp`)) < new Date(Date.now() - 2000).toISOString());
 
-  // sign out: the history goes, file too
-  await main.js(`window.api.openSettings()`);
-  const settings = await page('settings.html'); await sleep(800);
-  settings.js(`window.settingsApi.signOut()`).catch(() => {}); // (the button asks a system dialog first)
-  await sleep(2000);
-  check('sign out: the kept history is deleted', !fs.existsSync(file));
+  // Sign out: the history leaves the window but stays, for this account, on this
+  // computer; another account sees none of it; the first one back gets it back.
+  const signIn = async (email) => {
+    const lg = await page('login.html'); await sleep(800);
+    const from = serverLog.length;
+    await lg.js(`(() => { document.getElementById('email').value = '${email}'; const a = document.getElementById('accept'); if (!a.checked) a.click();
+      document.getElementById('get-code').click(); })()`);
+    let c; for (let i = 0; i < 50 && !(c = (serverLog.slice(from).match(new RegExp('sign-in code for ' + email.replace(/[.]/g, '\\.') + ': (\\d{6})')) || [])[1]); i++) await sleep(100);
+    await lg.js(`const c = document.getElementById('code'); c.value = '${c}'; c.dispatchEvent(new Event('input'));`);
+    await sleep(2500);
+  };
+  const signOut = async () => {
+    await main.js(`window.api.openSettings()`);
+    const st = await page('settings.html'); await sleep(800);
+    st.js(`window.settingsApi.signOut()`).catch(() => {}); // (the button asks a system dialog first)
+    await sleep(2000);
+  };
+  await signOut();
+  check('sign out: the history leaves the window', (await main.js(`document.querySelectorAll('.history-entry').length`)) === 0);
+  check('...but stays on this computer for this account (encrypted)', fs.existsSync(file) && fs.readFileSync(file).length === raw.length);
+  await signIn('other@example.com');
+  check('another account signs in: none of the first one\'s history', (await texts(main)) === '', await texts(main));
+  await main.js(`(() => { const p = addPendingEntry(); const o = p.originalTextField; o.classList.remove('pending'); o.textContent = 'запись другого'; p.check.hidden = false; })()`);
+  await sleep(1200);
+  check('...its own history in its own file', fs.existsSync(fileOf('other@example.com')));
+  await signOut();
+  await signIn('hist@example.com');
+  check('the first account back: its history is back, as it was', (await texts(main)) === after, await texts(main));
+  await main.js(`document.getElementById('clear-all-btn').click()`).catch(() => {}); // (a system dialog asks first)
   console.log(failed ? `${failed} FAILED` : 'ALL PASS');
   done(failed ? 1 : 0);
 })().catch((e) => { console.log('ERROR', e); done(1); });

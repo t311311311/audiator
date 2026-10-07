@@ -28,6 +28,8 @@ const STRINGS = {
     'translate.to': 'Translate to:',
     'translate.search': 'Add a language…',
     'translate.builtIn': 'built in',
+    'translate.hideBuiltIn': 'Remove from the list (English is built in and takes no space)',
+    'translate.showBuiltIn': 'Put back in the list',
     'translate.clickToTranslate': 'Translate the latest text (or the selected ones) into this language — the Translate button will use it from now on',
     'translate.needLanguage': 'To translate this text, install:',
     'translate.noLang': 'The language of this text is unknown — record it again',
@@ -65,7 +67,7 @@ const STRINGS = {
     'settings.folderChange': 'Change…',
     'settings.folderOpen': 'Open',
     'settings.source': 'Choose the recording device',
-    'settings.sourceMic': 'Microphone',
+    'settings.sourceMic': 'Microphone (default)',
     'settings.sourceSystem': 'Computer sound',
     'settings.sourceBoth': 'Microphone + computer sound',
     'settings.sourceMicHint': 'Recording from the microphone',
@@ -95,6 +97,8 @@ const STRINGS = {
     'settings.title': 'Settings',
     'settings.language': 'Language',
     'settings.theme': 'Theme',
+    'settings.themeSystem': 'As in Windows (default)',
+    'settings.default': 'default',
     'settings.themeDark': 'Dark',
     'settings.themeLight': 'Light',
     'settings.font': 'Font',
@@ -227,6 +231,8 @@ const STRINGS = {
     'translate.to': 'Перевести на:',
     'translate.search': 'Добавить язык…',
     'translate.builtIn': 'встроен',
+    'translate.hideBuiltIn': 'Убрать из списка (английский встроен и места не занимает)',
+    'translate.showBuiltIn': 'Вернуть в список',
     'translate.clickToTranslate': 'Перевести последний текст (или отмеченные) на этот язык — дальше кнопка «Перевести» будет переводить на него',
     'translate.needLanguage': 'Чтобы перевести этот текст, установите:',
     'translate.noLang': 'Язык этого текста неизвестен — запишите его заново',
@@ -264,7 +270,7 @@ const STRINGS = {
     'settings.folderChange': 'Изменить…',
     'settings.folderOpen': 'Открыть',
     'settings.source': 'Выбрать устройство для записи',
-    'settings.sourceMic': 'Микрофон',
+    'settings.sourceMic': 'Микрофон (по умолчанию)',
     'settings.sourceSystem': 'Звук компьютера',
     'settings.sourceBoth': 'Микрофон + звук компьютера',
     'settings.sourceMicHint': 'Запись с микрофона',
@@ -292,6 +298,8 @@ const STRINGS = {
     'settings.title': 'Настройки',
     'settings.language': 'Язык',
     'settings.theme': 'Тема',
+    'settings.themeSystem': 'Как в Windows (по умолчанию)',
+    'settings.default': 'по умолчанию',
     'settings.themeDark': 'Тёмная',
     'settings.themeLight': 'Светлая',
     'settings.font': 'Шрифт',
@@ -422,6 +430,8 @@ const STRINGS = {
     'translate.to': '翻译为：',
     'translate.search': '添加语言…',
     'translate.builtIn': '内置',
+    'translate.hideBuiltIn': '从列表中移除（英语为内置，不占空间）',
+    'translate.showBuiltIn': '放回列表',
     'translate.clickToTranslate': '将最新文本（或选中的文本）翻译成此语言——之后“翻译”按钮将使用此语言',
     'translate.needLanguage': '要翻译此文本，请安装：',
     'translate.noLang': '此文本的语言未知 — 请重新录音',
@@ -459,7 +469,7 @@ const STRINGS = {
     'settings.folderChange': '更改…',
     'settings.folderOpen': '打开',
     'settings.source': '选择录音设备',
-    'settings.sourceMic': '麦克风',
+    'settings.sourceMic': '麦克风（默认）',
     'settings.sourceSystem': '电脑声音',
     'settings.sourceBoth': '麦克风 + 电脑声音',
     'settings.sourceMicHint': '从麦克风录音',
@@ -487,6 +497,8 @@ const STRINGS = {
     'settings.title': '设置',
     'settings.language': '语言',
     'settings.theme': '主题',
+    'settings.themeSystem': '跟随 Windows（默认）',
+    'settings.default': '默认',
     'settings.themeDark': '深色',
     'settings.themeLight': '浅色',
     'settings.font': '字体',
@@ -611,11 +623,16 @@ const STRINGS = {
 
 // The stored choice wins; otherwise follow the OS language, falling back to
 // English for anything we do not ship.
-function resolveLanguage(stored, osLocale) {
+// The language chosen in Settings; else the first of the system's languages
+// (a locale, or a list of them in order of preference) the app has; else English.
+function resolveLanguage(stored, osLocales) {
   if (stored && STRINGS[stored]) return stored;
-  const l = String(osLocale || '').toLowerCase();
-  if (l.startsWith('ru')) return 'ru';
-  if (l.startsWith('zh')) return 'zh';
+  for (const loc of [].concat(osLocales || [])) {
+    const l = String(loc || '').toLowerCase();
+    if (l.startsWith('ru')) return 'ru';
+    if (l.startsWith('zh')) return 'zh';
+    if (l.startsWith('en')) return 'en';
+  }
   return FALLBACK;
 }
 

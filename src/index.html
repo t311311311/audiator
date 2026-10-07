@@ -14,7 +14,7 @@
             --accent-color: #61afef;
             --record-color: #e06c75;
             --main-font-family: 'Arial', sans-serif;
-            --main-font-size: 16px;
+            --main-font-size: 14px;
         }
 
         body.light-theme {
@@ -727,7 +727,10 @@
         }
         function renderAccount(v) {
             if (v && acct && acct.signedIn && !v.signedIn) clearForSignOut();
+            const signedInNow = !!(v && v.signedIn && acct && !acct.signedIn);
             if (v) acct = v;
+            if (acct && acct.signedIn && prefsFor !== accountKey()) loadTranslatePrefs();
+            if (signedInNow) onSignedIn();
             const el = document.getElementById('minutes-left');
             const show = !!(acct && acct.signedIn && acct.limited);
             el.classList.toggle('hidden', !show);
@@ -1073,6 +1076,14 @@
             else if (r && r.error) showToast(`${S('toast.openFailed')}: ${r.error}`, 5000);
         }
 
+        // Signed in again (another account, or the same one back): its own history
+        // — kept on this computer for each account (user's decision 2026-10-06) —
+        // and whatever it left untranscribed.
+        function onSignedIn() {
+            historyReady = false;
+            restoreHistory().then(() => resumePending());
+        }
+
         // --- The history, kept between runs ---
         // The texts and translations go to the main process (which keeps them
         // encrypted on this computer, the last 1000) a moment after anything in
@@ -1314,6 +1325,8 @@
         let session = 0; // bumped at sign-out; work from before it is dropped
         function clearForSignOut() {
             session++;
+            historyReady = false; // the window empties: that is not this account's history being cleared
+            clearTranslatePrefs();
             const texts = [...historyContainer.querySelectorAll('.original-text, .translated-text')]
                 .map((e) => e.textContent.trim()).filter(Boolean);
             // Dropped in onstop; a microphone still opening is closed as soon as it opens.
@@ -1490,14 +1503,13 @@
         // beside the button opens the list to pick another. Not chosen yet, or
         // deleted since: the Translate button opens the list.
         let tpDefault = null;
-        try { tpDefault = localStorage.getItem('translateDefault'); } catch (e) {}
         const installedLangs = () => (tpState && tpState.installed) || ['en'];
         const LANG_CODE = { pb: 'PT-BR', zt: 'ZH-TW' };
         function setDefaultLang(code) {
             tpDefault = code;
             try {
-                if (code) localStorage.setItem('translateDefault', code);
-                else localStorage.removeItem('translateDefault');
+                if (code) localStorage.setItem(prefName('translateDefault'), code);
+                else localStorage.removeItem(prefName('translateDefault'));
             } catch (e) {}
             renderTranslateButton();
         }
@@ -1653,10 +1665,49 @@
         let tpNeed = [];        // languages the last translation needed
         // Favourite languages (a per-computer preference): listed first.
         let tpFavorites = new Set();
-        try { tpFavorites = new Set(JSON.parse(localStorage.getItem('translateFavorites') || '[]')); } catch (e) {}
+        let tpHidden = new Set(); // built-in languages taken off the list (English)
+        // The translation preferences (favourites, the default language, English
+        // off the list) belong to the account, on this computer: another account
+        // signing in here starts with none; the first one gets its own back.
+        let prefsFor = null; // the account whose preferences are loaded
+        function accountKey() {
+            const e = String((acct && acct.email) || '').toLowerCase();
+            let h = 5381;
+            for (let i = 0; i < e.length; i++) h = ((h * 33) ^ e.charCodeAt(i)) >>> 0;
+            return e ? h.toString(36) : '';
+        }
+        const prefName = (name) => (accountKey() ? `${name}:${accountKey()}` : name);
+        function loadTranslatePrefs() {
+            const read = (name, fallback) => {
+                try {
+                    let v = localStorage.getItem(prefName(name));
+                    if (v === null && accountKey()) {
+                        // Kept per computer before 2026-10-06: the first account to come takes them.
+                        v = localStorage.getItem(name);
+                        if (v !== null) { localStorage.setItem(prefName(name), v); localStorage.removeItem(name); }
+                    }
+                    return v === null ? fallback : v;
+                } catch (e) { return fallback; }
+            };
+            try { tpFavorites = new Set(JSON.parse(read('translateFavorites', '[]'))); } catch (e) { tpFavorites = new Set(); }
+            try { tpHidden = new Set(JSON.parse(read('translateHidden', '[]'))); } catch (e) { tpHidden = new Set(); }
+            tpDefault = read('translateDefault', null);
+            prefsFor = accountKey();
+            renderTranslatePanel();
+        }
+        function clearTranslatePrefs() {
+            tpFavorites = new Set(); tpHidden = new Set(); tpDefault = null; prefsFor = null;
+            renderTranslatePanel();
+        }
+        function setHidden(code, hidden) {
+            if (hidden) tpHidden.add(code); else tpHidden.delete(code);
+            try { localStorage.setItem(prefName('translateHidden'), JSON.stringify([...tpHidden])); } catch (e) {}
+            if (hidden && code === tpDefault) setDefaultLang(null); // Translate asks again
+            renderTranslatePanel();
+        }
         function toggleFavorite(code) {
             if (tpFavorites.has(code)) tpFavorites.delete(code); else tpFavorites.add(code);
-            try { localStorage.setItem('translateFavorites', JSON.stringify([...tpFavorites])); } catch (e) {}
+            try { localStorage.setItem(prefName('translateFavorites'), JSON.stringify([...tpFavorites])); } catch (e) {}
             renderTranslatePanel();
             tpInstalled.scrollTop = 0; // favourites are at the top: show them
         }
@@ -1713,7 +1764,7 @@
             // on top); then English; then the rest by name.
             const starOrder = [...tpFavorites];
             const rank = (c) => (tpFavorites.has(c) ? 0 : c === 'en' ? 1 : 2);
-            const installed = (t.installed || ['en']).slice().sort((a, b) =>
+            const installed = (t.installed || ['en']).filter((c) => !tpHidden.has(c)).sort((a, b) =>
                 rank(a) - rank(b) ||
                 (rank(a) === 0 ? starOrder.indexOf(a) - starOrder.indexOf(b) : langName(a).localeCompare(langName(b))));
 
@@ -1739,7 +1790,14 @@
                 });
                 row.appendChild(name);
                 if (code === 'en') {
-                    row.append(el('span', 'tp-size', S('translate.builtIn')), el('span', 'tp-icon'));
+                    // English has no files of its own (the other languages are pairs
+                    // with it): it can only be taken off the list, and found again.
+                    row.appendChild(el('span', 'tp-size', S('translate.builtIn')));
+                    const off = el('button', 'tp-icon tp-delete', '\u2715');
+                    off.type = 'button';
+                    off.title = S('translate.hideBuiltIn');
+                    off.addEventListener('click', () => setHidden('en', true));
+                    row.appendChild(off);
                 } else {
                     row.appendChild(el('span', 'tp-size', mbText(sizeOf(code))));
                     const del = el('button', 'tp-icon tp-delete', '\u2715');
@@ -1816,6 +1874,19 @@
                 if (!all.length && !rows.length) tpResults.appendChild(el('div', 'tp-empty', S('translate.noResults')));
             }
             rows.forEach((code) => tpResults.appendChild(offerRow(code)));
+            // English taken off the list comes back from the search.
+            if (q && tpHidden.has('en') && [langName('en'), langName('en', 'en'), 'english', 'en'].some((n) => n.toLowerCase().includes(q))) {
+                const row = el('div', 'tp-row');
+                row.append(el('span', 'tp-name', langName('en')), el('span', 'tp-size', S('translate.builtIn')));
+                const back = el('button', 'tp-icon tp-download', '+');
+                back.type = 'button';
+                back.title = S('translate.showBuiltIn');
+                back.addEventListener('click', () => { setHidden('en', false); tpSearch.value = ''; renderTranslatePanel(); });
+                row.appendChild(back);
+                tpResults.insertBefore(row, tpResults.firstChild);
+                const none = tpResults.querySelector('.tp-empty');
+                if (none) none.remove();
+            }
             // Once every language a translation needed is in, its note goes.
             if (tpNeed.length && tpNeed.every((c) => installed.includes(c))) { tpNeed = []; hideTranslateNote(); }
             // Three rows per list on their own; two each once downloads or
@@ -2167,7 +2238,7 @@
             } else {
                 document.body.classList.remove('light-theme');
             }
-            document.documentElement.style.setProperty('--main-font-size', `${settings.fontSize || 16}px`);
+            document.documentElement.style.setProperty('--main-font-size', `${settings.fontSize || 14}px`);
             document.documentElement.style.setProperty('--main-font-family', settings.fontFamily || 'Arial, sans-serif');
         });
 
@@ -2180,7 +2251,7 @@
                 } else {
                     document.body.classList.remove('light-theme');
                 }
-                document.documentElement.style.setProperty('--main-font-size', `${initialSettings.fontSize || 16}px`);
+                document.documentElement.style.setProperty('--main-font-size', `${initialSettings.fontSize || 14}px`);
                 document.documentElement.style.setProperty('--main-font-family', initialSettings.fontFamily || 'Arial, sans-serif');
             }
             // The strings may have arrived before the font did; re-fit for the real font.

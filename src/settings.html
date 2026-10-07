@@ -170,6 +170,7 @@
         <div class="setting">
             <label for="theme-select" data-i18n="settings.theme">Тема</label>
             <select id="theme-select">
+                <option value="system" data-i18n="settings.themeSystem">Как в Windows (по умолчанию)</option>
                 <option value="dark" data-i18n="settings.themeDark">Темная</option>
                 <option value="light" data-i18n="settings.themeLight">Светлая</option>
             </select>
@@ -329,42 +330,48 @@
                 }
 
                 // --- Load Initial Settings ---
+                // "system": as Windows is now (light or dark apps), and on the fly when it changes.
+                const darkWindows = window.matchMedia('(prefers-color-scheme: dark)');
                 function applyTheme(theme) {
-                    if (theme === 'light') {
-                        document.body.classList.add('light-theme');
-                    } else {
-                        document.body.classList.remove('light-theme');
-                    }
+                    const light = theme === 'light' || (theme === 'system' && !darkWindows.matches);
+                    document.body.classList.toggle('light-theme', light);
+                }
+                darkWindows.addEventListener('change', () => { if (currentSettings.theme === 'system') applyTheme('system'); });
+                // The main process sends the theme resolved and the choice beside it:
+                // the page works with the choice (what is shown, what Save keeps).
+                function takeSettings(s) {
+                    const c = { ...s, theme: s.themeChoice || s.theme || 'system' };
+                    delete c.themeChoice;
+                    return c;
                 }
 
                 // Handle initial settings received from main process
                 window.settingsApi.onInitialSettings((initialSettings) => {
                     // Apply theme immediately to prevent flashing
-                    applyTheme(initialSettings.theme);
-
                     // Store initial settings
-                    currentSettings = { ...initialSettings };
+                    currentSettings = takeSettings(initialSettings);
+                    applyTheme(currentSettings.theme);
 
                     // Update UI elements with initial values
-                    themeSelect.value = initialSettings.theme || 'dark';
+                    themeSelect.value = currentSettings.theme;
                     setFontFamily(initialSettings.fontFamily);
                     document.getElementById('source-select').value = initialSettings.recordSource || 'mic';
                     renderSourceHint();
                     opacitySlider.value = initialSettings.opacity || 0.8;
-                    fontSizeSlider.value = initialSettings.fontSize || 16;
-                    fontSizeValue.textContent = `${initialSettings.fontSize || 16}px`;
+                    fontSizeSlider.value = initialSettings.fontSize || 14;
+                    fontSizeValue.textContent = `${initialSettings.fontSize || 14}px`;
                 });
 
                 window.settingsApi.receive('settings-loaded', (settings) => {
-                    currentSettings = { ...settings };
-                    themeSelect.value = settings.theme || 'dark';
+                    currentSettings = takeSettings(settings);
+                    themeSelect.value = currentSettings.theme;
                     setFontFamily(settings.fontFamily);
                     document.getElementById('source-select').value = settings.recordSource || 'mic';
                     renderSourceHint();
                     opacitySlider.value = settings.opacity || 0.8;
-                    fontSizeSlider.value = settings.fontSize || 16;
-                    fontSizeValue.textContent = `${settings.fontSize || 16}px`;
-                    applyTheme(settings.theme); // Apply theme to settings window itself
+                    fontSizeSlider.value = settings.fontSize || 14;
+                    fontSizeValue.textContent = `${settings.fontSize || 14}px`;
+                    applyTheme(currentSettings.theme); // Apply theme to settings window itself
                     renderQuality();
                     renderFolder();
                 });
@@ -470,7 +477,7 @@
                         radio.addEventListener('change', () => chooseQuality(m));
                         const name = document.createElement('span');
                         name.className = 'quality-name';
-                        name.textContent = qualityName(m);
+                        name.textContent = qualityName(m) + (m === 'small' ? ` (${strings['settings.default']})` : '');
                         const size = document.createElement('span');
                         size.className = 'quality-size';
                         size.textContent = info.size ? formatSize(info.size) : '';
