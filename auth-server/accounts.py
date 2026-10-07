@@ -54,6 +54,12 @@ WINDOW = timedelta(hours=24)
 TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-10-04")
 CODE_TRIES = 5
 TOKEN_DAYS = 30
+# Codes go out through one Gmail mailbox (about 500 letters a day), and the host
+# blocks the server for good on a spam complaint: whatever bots try, an address
+# gets at most CODE_PER_EMAIL_DAY codes a day and the server sends at most
+# CODE_PER_DAY in all. In memory, like the other limits (rate.py).
+CODE_PER_EMAIL_DAY = int(os.environ.get("CODE_PER_EMAIL_DAY", "10"))
+CODE_PER_DAY = int(os.environ.get("CODE_PER_DAY", "300"))
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 DEVICE_RE = re.compile(r"^[0-9a-f]{32,128}$")
@@ -187,10 +193,15 @@ def request_code(req: CodeRequest, request: Request):
     domain = email.rsplit("@", 1)[1]
     if domain in DISPOSABLE:
         raise _err(400, "disposable_email")
-    # Against bots and mail floods; a person needs one or two.
-    for key, limit in ((f"code-ip:{_client_ip(request)}", 20), (f"code-email:{email}", 5)):
-        ok, retry = rate.check(key, limit, 3600)
+    # Against bots and mail floods; a person needs one or two. The server-wide
+    # cap comes last, so requests turned away by the others do not use it up.
+    for key, limit, window in ((f"code-ip:{_client_ip(request)}", 20, 3600), (f"code-email:{email}", 5, 3600),
+                               (f"code-email-day:{email}", CODE_PER_EMAIL_DAY, 86400),
+                               ("code-all-day", CODE_PER_DAY, 86400)):
+        ok, retry = rate.check(key, limit, window)
         if not ok:
+            if key == "code-all-day":
+                log.warning("sign-in codes: the cap of %s a day is reached", CODE_PER_DAY)
             raise _err(429, "too_many_requests", retry_after=retry)
 
     code = f"{secrets.randbelow(10 ** 6):06d}"
