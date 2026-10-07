@@ -87,10 +87,10 @@ if [ -d "$APP/src/.git" ]; then
   as_app git -C "$APP/src" fetch -q origin "$BRANCH"
   as_app git -C "$APP/src" checkout -q -B "$BRANCH" "origin/$BRANCH"
 else
-  # Only auth-server/ is needed on the server: a sparse, blobless clone.
+  # Only the server and its admin script are needed: a sparse, blobless clone.
   as_app git clone -q --filter=blob:none --sparse --branch "$BRANCH" "$REPO" "$APP/src"
-  as_app git -C "$APP/src" sparse-checkout set auth-server
 fi
+as_app git -C "$APP/src" sparse-checkout set auth-server scripts
 as_app git -C "$APP/src" log --oneline -1
 [ -x "$APP/venv/bin/python" ] || as_app python3 -m venv "$APP/venv"
 as_app "$APP/venv/bin/pip" install -q --upgrade pip
@@ -153,6 +153,51 @@ systemctl daemon-reload
 systemctl enable -q audiator-auth
 systemctl restart audiator-auth
 
+say "digest of the messages to support, every hour; audiator-admin"
+# Messages to support are not mailed one by one: support_digest.py sends one
+# letter at 10 new, and a morning digest (DIGEST_HOUR_UTC, 05:00 = 09:00 GMT+4).
+cat > /etc/systemd/system/audiator-digest.service <<EOF
+[Unit]
+Description=Audiator: digest of the messages to support
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=audiator
+Group=audiator
+WorkingDirectory=$APP/src/auth-server
+EnvironmentFile=$ENVF
+Environment=PYTHONUTF8=1
+ExecStart=$APP/venv/bin/python support_digest.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$DATA
+EOF
+cat > /etc/systemd/system/audiator-digest.timer <<'EOF'
+[Unit]
+Description=Audiator: digest of the messages to support, every hour
+
+[Timer]
+OnCalendar=hourly
+
+[Install]
+WantedBy=timers.target
+EOF
+# scripts/admin.py with the server's settings and data, as the audiator user.
+cat > /usr/local/bin/audiator-admin <<EOF
+#!/bin/sh
+# Audiator admin on the server:
+#   audiator-admin tickets | ticket N | ticket N answered | accounts | client EMAIL
+exec systemd-run --quiet --pipe --wait --collect -p User=audiator -p EnvironmentFile=$ENVF \\
+  -p WorkingDirectory=$APP/src/auth-server -E PYTHONUTF8=1 \\
+  $APP/venv/bin/python $APP/src/scripts/admin.py "\$@"
+EOF
+chmod 755 /usr/local/bin/audiator-admin
+systemctl daemon-reload
+systemctl enable -q --now audiator-digest.timer
+
 say "daily backup of the databases, 14 kept"
 cat > /usr/local/sbin/audiator-backup <<'EOF'
 #!/bin/sh
@@ -213,5 +258,6 @@ sleep 3
 systemctl is-active audiator-auth
 curl -s -o /dev/null -w 'accounts server on 127.0.0.1:3000: HTTP %{http_code}\n' http://127.0.0.1:3000/docs
 /usr/local/sbin/audiator-backup && ls -l "$BACKUPS"
-systemctl list-timers audiator-backup.timer --no-pager | sed -n '1,2p'
+systemctl list-timers audiator-backup.timer audiator-digest.timer --no-pager | sed -n '1,3p'
+audiator-admin tickets
 echo "done"

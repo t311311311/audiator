@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """Messages to support from the app ("Написать нам").
 
-The user picks a topic and writes; the message is kept (support_tickets) and
-mailed to the support inbox. The subject says the topic, the number, who
-wrote, their plan and by when to answer — so the inbox sorts itself — and
-the letter carries the client's card (clients.py). "Reply" in the mail
-program answers the user directly.
+The user picks a topic and writes; the message is kept (support_tickets).
+It is not mailed on its own: the inbox gets digests of new messages
+(support_digest.py, every hour — user's decision 2026-10-07), so a flood of
+messages costs a few letters, not one each from the Gmail mailbox the sign-in
+codes go out through (about 500 a day in all).
 
 Answer times are the ones in the rules (src/terms.html, section 6):
 payments 48 hours; everything else 5 days, whatever the plan; ideas — no
 promise. Plain days, not working days: whose holidays would count, with
 users all over the world (user's decision 2026-10-06).
 """
-import logging
 import os
 from datetime import timedelta
 from typing import Optional
@@ -21,13 +20,11 @@ from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
 import clients
-import mailer
 import rate
 from accounts import _auth, _err, _iso, _utcnow
 from accounts_db import Session, SupportTicket, User
 
 router = APIRouter(prefix="/api/v2")
-log = logging.getLogger("audiator")
 
 # Topic -> how the owner sees it in the inbox. Recognition and translation
 # are third-party components, provided as they are (the rules name them), so
@@ -40,13 +37,8 @@ CATEGORIES = {
 }
 MAX_TEXT = 5000
 PER_HOUR = 5
-# Letters go to our own inbox only, but through the same Gmail mailbox as the
-# sign-in codes (about 500 a day in all): an account writes at most PER_DAY
-# messages a day, and the server mails at most MAIL_PER_DAY of them. Past that a
-# message is still kept, only not mailed — admin.py tickets marks it — so
-# nothing anyone writes is lost.
+# Five an hour, but not five every hour all day.
 PER_DAY = int(os.environ.get("SUPPORT_PER_DAY", "20"))
-MAIL_PER_DAY = int(os.environ.get("SUPPORT_MAIL_PER_DAY", "100"))
 
 
 def answer_within(category: str) -> Optional[str]:
@@ -93,34 +85,6 @@ def write_to_support(req: SupportRequest, authorization: Optional[str] = Header(
                           app_version=(req.app_version or "")[:40] or None, os=(req.os or "")[:80] or None,
                           created_at=now, due_at=_due(within, now), status="new", mailed=False)
         s.add(t)
-        s.flush()
-        due = f"ответить до {t.due_at:%d.%m %H:%M} UTC" if t.due_at else "без срока"
-        subject = (f"[{CATEGORIES[t.category]}] #{t.id} · {user.email} · "
-                   f"{clients.PLAN_RU.get(plan, plan)} · {due}")
-        body = "\n".join([
-            f"Обращение #{t.id} — {CATEGORIES[t.category]}",
-            f"От: {user.email}",
-            f"Срок ответа: {due}",
-            f"Программа: {t.app_version or '—'}, {t.os or '—'}",
-            "",
-            text,
-            "",
-            "— " * 20,
-            clients.card(s, user),
-            "",
-            "Ответ: кнопка «Ответить» в почте — письмо уйдёт клиенту.",
-            f"Отметить отвеченным: python scripts\\admin.py ticket {t.id} answered",
-        ])
         s.commit()
         ticket_id, due_at = t.id, t.due_at
-        if not rate.check("support-mail-day", MAIL_PER_DAY, 86400)[0]:
-            log.warning("support #%s kept, not mailed: the cap of %s letters a day is reached",
-                        ticket_id, MAIL_PER_DAY)
-        else:
-            try:
-                mailer.send(mailer.support_inbox(), subject, body, reply_to=user.email)
-                t.mailed = True
-                s.commit()
-            except Exception as e:  # noqa: BLE001 — kept anyway; the admin lists show it
-                log.warning("support #%s not mailed: %s", ticket_id, e)
     return {"id": ticket_id, "answer_within": within, "due_at": _iso(due_at), "reply_to": u.email}

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Messages to support ("Написать нам"): kept, mailed to the inbox with a
-subject that says the topic, the number, who and by when; the client's card
-in the letter; answer times from the rules."""
+"""Messages to support ("Написать нам"): kept, not mailed one by one; the inbox
+gets digests (support_digest.py) — at ten new or every morning — each message
+with who, topic, plan, answer time, the start of the text and a reply link;
+answer times from the rules."""
 from datetime import datetime, timedelta
 
 import pytest
@@ -11,16 +12,19 @@ import accounts_db
 import clients
 import mailer
 import support
+import support_digest
 
 DEV = "c" * 64
+MORNING = datetime(2026, 10, 9, support_digest.HOUR_UTC, 0)   # the hour of the morning digest
+NOON = datetime(2026, 10, 9, (support_digest.HOUR_UTC + 7) % 24, 0)
 
 
 @pytest.fixture
 def mailbox(monkeypatch):
     codes, letters = {}, []
     monkeypatch.setattr(mailer, "send_code", lambda email, code, lang="en": codes.__setitem__(email, code))
-    monkeypatch.setattr(mailer, "send", lambda to, subject, body, reply_to="": letters.append(
-        {"to": to, "subject": subject, "body": body, "reply_to": reply_to}))
+    monkeypatch.setattr(mailer, "send", lambda to, subject, body, reply_to="", html="": letters.append(
+        {"to": to, "subject": subject, "body": body, "reply_to": reply_to, "html": html}))
     monkeypatch.setenv("SUPPORT_TO", "support@example.com")
     return codes, letters
 
@@ -38,22 +42,86 @@ def write(client, headers, category="bug", text="Не вставляется т�
                                                 "os": "Windows 10.0.26200"}, headers=headers)
 
 
-def test_a_message_is_kept_and_mailed_with_a_telling_subject(client, mailbox):
+def tickets():
+    with accounts_db.Session() as s:
+        return s.query(accounts_db.SupportTicket).order_by(accounts_db.SupportTicket.id).all()
+
+
+def test_a_message_is_kept_not_mailed_on_its_own(client, mailbox):
     _, letters = mailbox
     h = signed_in(client, mailbox)
     r = write(client, h, "payment", "Оплатил 3 USDT, тариф не включился. Транзакция 0xabc")
     assert r.status_code == 200
     body = r.json()
     assert body["answer_within"] == "48h" and body["reply_to"] == "ivan@mail.ru" and body["id"] > 0
+    assert not letters, "no letter per message: digests only"
+    (t,) = tickets()
+    assert t.category == "payment" and t.plan == "free" and t.status == "new" and not t.mailed
+
+
+def test_the_digest_says_who_what_by_when_and_how_to_answer(client, mailbox):
+    _, letters = mailbox
+    h = signed_in(client, mailbox)
+    tid = write(client, h, "payment", "Оплатил 3 USDT, тариф не включился. <b>Транзакция</b> 0xabc").json()["id"]
+    assert support_digest.run(force=True).startswith("Audiator: новых обращений 1")
     (letter,) = letters
-    assert letter["to"] == "support@example.com" and letter["reply_to"] == "ivan@mail.ru"
-    assert letter["subject"].startswith(f"[Оплата] #{body['id']} · ivan@mail.ru · бесплатный · ответить до ")
+    assert letter["to"] == "support@example.com"
+    assert f"#{tid} · Оплата · ivan@mail.ru · бесплатный · ответить до " in letter["body"]
     assert "Оплатил 3 USDT, тариф не включился" in letter["body"]
-    assert "Клиент: ivan@mail.ru — новый, бесплатный" in letter["body"], "the client's card comes along"
     assert "Программа: 1.0.8, Windows 10.0.26200" in letter["body"]
-    with accounts_db.Session() as s:
-        t = s.query(accounts_db.SupportTicket).one()
-        assert t.category == "payment" and t.plan == "free" and t.mailed and t.status == "new"
+    assert f"mailto:ivan@mail.ru?subject=Re%3A%20Audiator%20%23{tid}" in letter["body"]
+    assert f'href="mailto:ivan@mail.ru?subject=Re%3A%20Audiator%20%23{tid}">Ответить</a>' in letter["html"]
+    assert "&lt;b&gt;Транзакция&lt;/b&gt;" in letter["html"], "the client's text is shown, never run, in the HTML"
+    assert "audiator-admin ticket N" in letter["body"]
+    assert tickets()[0].mailed, "in one digest only"
+    assert support_digest.run(force=True) is None and len(letters) == 1
+
+
+def test_a_digest_at_ten_new_whatever_the_hour(client, mailbox, monkeypatch):
+    _, letters = mailbox
+    monkeypatch.setattr(support, "PER_HOUR", 20)   # ten messages from one account, for the test
+    h = signed_in(client, mailbox)
+    for _ in range(9):
+        write(client, h)
+    assert support_digest.run(now=NOON) is None and not letters, "nine — wait"
+    write(client, h)
+    assert support_digest.run(now=NOON) == "Audiator: новых обращений 10"
+    assert len(letters) == 1 and all(t.mailed for t in tickets())
+
+
+def test_the_morning_digest_with_what_is_new_and_what_is_due(client, mailbox, monkeypatch):
+    _, letters = mailbox
+    h = signed_in(client, mailbox)
+    now = MORNING
+    monkeypatch.setattr(support, "_utcnow", lambda: now - timedelta(days=4, hours=12))
+    old = write(client, h, "bug", "Старое").json()["id"]           # due in 12 hours
+    support_digest.run(force=True)                                  # was in a digest already
+    monkeypatch.setattr(support, "_utcnow", lambda: now - timedelta(hours=3))
+    new = write(client, h, "idea", "Новое").json()["id"]
+    letters.clear()
+    assert support_digest.run(now=NOON) is None, "one new at noon — wait for the morning"
+    subject = support_digest.run(now=now)
+    assert subject == "Audiator: утренняя сводка — новых 1, срок подходит или прошёл 1"
+    body = letters[-1]["body"]
+    assert f"#{new} · Предложение" in body and "без срока" in body
+    assert f"#{old} · Баг" in body and body.index("Срок подходит") < body.index(f"#{old}")
+
+
+def test_no_letter_when_there_is_nothing(client, mailbox):
+    _, letters = mailbox
+    assert support_digest.run(now=MORNING) is None and support_digest.run(force=True) is None
+    assert not letters
+
+
+def test_a_digest_that_fails_is_tried_again(client, mailbox, monkeypatch):
+    h = signed_in(client, mailbox)
+    write(client, h)
+
+    def broken(*a, **k):
+        raise RuntimeError("SMTP is down")
+    monkeypatch.setattr(mailer, "send", broken)
+    assert support_digest.main(["--now"]) == 1
+    assert not tickets()[0].mailed, "still new — goes into the next digest"
 
 
 @pytest.mark.parametrize("category,within", [
@@ -63,13 +131,11 @@ def test_answer_times_follow_the_rules(category, within):
 
 
 def test_five_days_are_plain_days_whatever_the_plan(client, mailbox, monkeypatch):
-    _, letters = mailbox
     h = signed_in(client, mailbox)
     monkeypatch.setattr(support, "_utcnow", lambda: datetime(2026, 10, 9, 10, 0))  # a Friday
     r = write(client, h, "bug")
     assert r.json()["answer_within"] == "5d"
     assert r.json()["due_at"] == "2026-10-14T10:00:00Z", "5 days from Friday: Wednesday, the weekend counts"
-    assert "ответить до 14.10 10:00 UTC" in letters[-1]["subject"]
 
 
 def test_ideas_have_no_deadline(client, mailbox):
@@ -77,7 +143,8 @@ def test_ideas_have_no_deadline(client, mailbox):
     h = signed_in(client, mailbox)
     r = write(client, h, "idea", "Добавьте сербский язык")
     assert r.json()["answer_within"] is None and r.json()["due_at"] is None
-    assert letters[-1]["subject"].endswith("· без срока")
+    support_digest.run(force=True)
+    assert "Предложение · ivan@mail.ru · бесплатный · без срока" in letters[-1]["body"]
 
 
 @pytest.mark.parametrize("payload,error", [
@@ -101,8 +168,7 @@ def test_only_signed_in_users_write_and_not_too_often(client, mailbox):
 
 
 def test_an_account_writes_at_most_twenty_a_day(client, mailbox, monkeypatch):
-    """Five an hour, but not five every hour all day: the letters share the
-    Gmail mailbox (about 500 a day) with the sign-in codes."""
+    """Five an hour, but not five every hour all day."""
     h = signed_in(client, mailbox)
     now = [1_000_000.0]
     monkeypatch.setattr(support.rate.time, "time", lambda: now[0])
@@ -114,33 +180,6 @@ def test_an_account_writes_at_most_twenty_a_day(client, mailbox, monkeypatch):
     assert r.status_code == 429 and r.json()["detail"]["retry_after"] > 3600, "the daily cap, not the hourly one"
     now[0] += 86400
     assert write(client, h).status_code == 200, "a day later again"
-
-
-def test_past_the_servers_daily_cap_a_message_is_kept_not_mailed(client, mailbox, monkeypatch, caplog):
-    _, letters = mailbox
-    monkeypatch.setattr(support, "MAIL_PER_DAY", 2)
-    h = signed_in(client, mailbox)
-    caplog.set_level("WARNING", logger="audiator")
-    ids = [write(client, h).json()["id"] for _ in range(3)]
-    assert len(letters) == 2, "two mailed, the third not"
-    with accounts_db.Session() as s:
-        assert [t.mailed for t in s.query(accounts_db.SupportTicket).order_by(accounts_db.SupportTicket.id)] == [
-            True, True, False], "all three kept"
-    assert f"support #{ids[2]} kept, not mailed: the cap of 2 letters a day is reached" in caplog.text
-
-
-def test_kept_even_when_the_mail_fails(client, mailbox, monkeypatch, caplog):
-    h = signed_in(client, mailbox)
-
-    def broken(*a, **k):
-        raise RuntimeError("SMTP is down")
-    monkeypatch.setattr(mailer, "send", broken)
-    caplog.set_level("WARNING", logger="audiator")
-    r = write(client, h)
-    assert r.status_code == 200
-    with accounts_db.Session() as s:
-        assert s.query(accounts_db.SupportTicket).one().mailed is False
-    assert f"support #{r.json()['id']} not mailed" in caplog.text
 
 
 def test_what_kind_of_client(client, mailbox):

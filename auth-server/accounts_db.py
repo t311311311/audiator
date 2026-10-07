@@ -101,8 +101,8 @@ class Payment(Base):
 
 
 class SupportTicket(Base):
-    """A message to support from the app ("Написать нам"): kept here and
-    mailed to the support inbox, the subject saying what and from whom."""
+    """A message to support from the app ("Написать нам"): kept here; the
+    support inbox gets it in a digest (support_digest.py), and then mailed is set."""
     __tablename__ = "support_tickets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
