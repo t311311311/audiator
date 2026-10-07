@@ -1,11 +1,14 @@
 // Scratch: drive the real app through sign-in over the DevTools protocol.
 //   node app-e2e.js
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path'), fs = require('fs'), os = require('os');
 const ROOT = 'C:/Test01/tray-translator';
 const OUT = __dirname;
 const PORT = 3107, DBG = 9333;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aud-app-'));
+// The server's settings, shared with the support digest run against its database.
+const serverEnv = { ...process.env, PYTHONUTF8: '1', SMTP_HOST: '', MAIL_DEV_PRINT: '1', SUPPORT_TO: 'support@example.com',
+                    ACCOUNTS_DATABASE_URL: 'sqlite:///' + path.join(tmp, 'accounts.db').replace(/\\/g, '/') };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let server, appProc, serverLog = '', appLog = '';
 let failed = 0;
@@ -54,9 +57,7 @@ const codeFor = async (email) => {
 
 (async () => {
   server = spawn(path.join(ROOT, '.venv/Scripts/python.exe'), ['-m', 'uvicorn', 'main:app', '--port', String(PORT)], {
-    cwd: path.join(ROOT, 'auth-server'), windowsHide: true,
-    env: { ...process.env, PYTHONUTF8: '1', SMTP_HOST: '', MAIL_DEV_PRINT: '1', SUPPORT_TO: 'support@example.com',
-           ACCOUNTS_DATABASE_URL: 'sqlite:///' + path.join(tmp, 'accounts.db').replace(/\\/g, '/') },
+    cwd: path.join(ROOT, 'auth-server'), windowsHide: true, env: serverEnv,
   });
   server.stdout.on('data', (d) => { serverLog += d; });
   server.stderr.on('data', (d) => { serverLog += d; });
@@ -120,8 +121,15 @@ const codeFor = async (email) => {
   const doneText = await sup.js(`document.getElementById('done-text').textContent`);
   check('sent: number and answer time shown', /^Обращение №\d+ отправлено\. Ответим на tester@example\.com в течение 5 дней с адреса audiatorr@gmail\.com — загляните и в «Спам»\.$/.test(doneText), doneText);
   await sup.shot('app-5-support-sent.png');
-  check('the letter to support: topic, number, who, plan, due', /to support@example\.com: \[Баг\] #\d+ · tester@example\.com · бесплатный · ответить до/.test(serverLog));
-  check('the letter carries the client card and the app version', /Клиент: tester@example\.com — новый, бесплатный/.test(serverLog) && /Программа: \d+\.\d+\.\d+, Windows/.test(serverLog));
+  check('no letter per message (digests only)', !/to support@example\.com/.test(serverLog));
+  // The hourly digest (support_digest.py), run now against this server's database.
+  const digest = spawnSync(path.join(ROOT, '.venv/Scripts/python.exe'), ['support_digest.py', '--now'], {
+    cwd: path.join(ROOT, 'auth-server'), windowsHide: true, encoding: 'utf8', env: serverEnv });
+  const letter = digest.stdout || '';
+  check('the digest to support: number, topic, who, plan, due', /to support@example\.com: Audiator: новых обращений 1/.test(letter)
+    && /#\d+ · Баг · tester@example\.com · бесплатный · ответить до/.test(letter), (digest.stderr || '').slice(-300));
+  check('the digest carries the text, the app version and a reply link', /После второй записи не вставляется текст/.test(letter)
+    && /Программа: \d+\.\d+\.\d+, Windows/.test(letter) && /mailto:tester@example\.com\?subject=Re%3A%20Audiator%20%23\d+/.test(letter));
   await sup.js(`document.getElementById('close').click()`).catch(() => {});
   await sleep(400);
   check('support window closes', !(await targets()).some((t) => t.url.split('?')[0].endsWith('/support.html')));

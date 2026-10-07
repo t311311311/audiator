@@ -54,9 +54,9 @@ def support_inbox() -> str:
     return os.environ.get("SUPPORT_TO") or os.environ.get("SMTP_USER") or ""
 
 
-def send(to: str, subject: str, body: str, reply_to: str = "") -> None:
+def send(to: str, subject: str, body: str, reply_to: str = "", html: str = "") -> None:
     """Send a plain-text letter. reply_to: where "Reply" in the mail program
-    answers (a user's message to support: to the user)."""
+    answers. html: the same letter for mail programs that show HTML (links)."""
     if not configured():
         if not dev_print():
             raise RuntimeError("SMTP is not configured (SMTP_HOST, SMTP_USER, SMTP_PASSWORD)")
@@ -73,6 +73,8 @@ def send(to: str, subject: str, body: str, reply_to: str = "") -> None:
     if reply_to:
         msg["Reply-To"] = reply_to
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     context = ssl.create_default_context()
     if port == 465:
         with smtplib.SMTP_SSL(host, port, context=context, timeout=20) as s:

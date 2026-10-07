@@ -23,7 +23,9 @@ Accounts by email (step 4, accounts.db):
 Clients and support (the same card support letters carry):
   .venv\\Scripts\\python.exe scripts\\admin.py client ivan@mail.ru         # who the client is
   .venv\\Scripts\\python.exe scripts\\admin.py tickets [--all]             # messages to support
+  .venv\\Scripts\\python.exe scripts\\admin.py ticket 17                   # the whole message
   .venv\\Scripts\\python.exe scripts\\admin.py ticket 17 answered
+On the server the same as: ssh audiator audiator-admin tickets (deploy/setup-server.sh).
 """
 import argparse
 import hashlib
@@ -230,19 +232,30 @@ def cmd_tickets(args):
             due = f"ПРОСРОЧЕНО ({t.due_at:%d.%m %H:%M})"
         else:
             due = f"до {t.due_at:%d.%m %H:%M}"
-        mail = "" if t.mailed else "  [письмо не ушло]"
+        mail = "" if t.mailed else "  [ещё не было в сводке]"
         print(f"#{t.id:<4} {t.status:9} {t.category:12} {email:30} {due:26} {t.text[:50]!r}{mail}")
 
 
 def cmd_ticket(args):
+    """The whole message and who wrote it; with a status — mark it."""
     import accounts_db
+    import clients
     with accounts_db.Session() as s:
         t = s.get(accounts_db.SupportTicket, args.id)
         if t is None:
             sys.exit(f"нет обращения #{args.id}")
-        t.status = args.status
-        s.commit()
-    print(f"#{args.id}: {args.status}")
+        if args.status:
+            t.status = args.status
+            s.commit()
+            print(f"#{args.id}: {args.status}")
+            return
+        u = s.get(accounts_db.User, t.user_id)
+        due = f"до {t.due_at:%d.%m %H:%M} UTC" if t.due_at else "без срока"
+        print(f"#{t.id} · {t.category} · {t.status} · {u.email} · {t.created_at:%Y-%m-%d %H:%M} UTC · ответить {due}")
+        print(f"Программа: {t.app_version or '—'}, {t.os or '—'}\n")
+        print(t.text)
+        print("\n" + "— " * 20)
+        print(clients.card(s, u))
 
 
 def cmd_left(args):
@@ -322,9 +335,9 @@ def main():
     tk = sub.add_parser("tickets", help="обращения в поддержку (по умолчанию — без ответа)")
     tk.add_argument("--all", action="store_true", help="все, включая отвеченные")
     tk.set_defaults(func=cmd_tickets)
-    t1 = sub.add_parser("ticket", help="отметить обращение")
+    t1 = sub.add_parser("ticket", help="обращение целиком; со статусом — отметить")
     t1.add_argument("id", type=int)
-    t1.add_argument("status", choices=("answered", "closed", "new"))
+    t1.add_argument("status", nargs="?", choices=("answered", "closed", "new"))
     t1.set_defaults(func=cmd_ticket)
 
     # Accounts by email (step 4).
