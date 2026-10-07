@@ -94,6 +94,34 @@ def test_a_file_left_from_yesterday_is_turned_over_at_start(tmp_path):
     h.close()
 
 
+def test_a_file_that_vanishes_while_tidying_is_skipped(tmp_path, monkeypatch):
+    """Background workers compress and delete files while another one tidies:
+    a file found a moment ago may be gone by the time it is looked at. Before
+    this fix that killed the worker (FileNotFoundError), about 1 run in 15 of
+    the flood test below."""
+    h = log_setup.CappedFileHandler(str(tmp_path), background=False)
+    kept = tmp_path / "server-2026-10-05_000000.log.gz"
+    kept.write_bytes(b"x")
+    gone = str(tmp_path / "server-2026-10-05_010000.log")  # compressed and removed meanwhile
+    found = log_setup.glob.glob
+    monkeypatch.setattr(log_setup.glob, "glob", lambda pattern: found(pattern) + [gone])
+    assert h.archives() == [str(kept)]
+
+    # server.log turned over by a request between "is it there" and "how big".
+    real_getsize = os.path.getsize
+
+    def getsize(path):
+        if path == h.baseFilename:
+            raise FileNotFoundError(path)
+        return real_getsize(path)
+
+    monkeypatch.setattr(log_setup.os.path, "getsize", getsize)
+    h._tidy()
+    assert kept.exists()
+    h.close()
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_a_flood_from_many_threads(tmp_path):
     """A "pump": requests from many threads at once, small limits so the files
     turn over constantly; compression in the background, as on the server."""

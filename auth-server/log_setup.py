@@ -112,9 +112,15 @@ class CappedFileHandler(logging.FileHandler):
         self._tidy()
 
     def archives(self):
-        """The old files, oldest first."""
-        files = glob.glob(os.path.join(self.dir, f"{self.stem}-*.log*"))
-        return sorted(files, key=lambda f: (os.path.getmtime(f), f))
+        """The old files, oldest first. A file another worker has just compressed
+        or deleted is skipped."""
+        stamped = []
+        for f in glob.glob(os.path.join(self.dir, f"{self.stem}-*.log*")):
+            try:
+                stamped.append((os.path.getmtime(f), f))
+            except OSError:
+                pass
+        return [f for _, f in sorted(stamped)]
 
     def _tidy(self):
         cutoff = time.time() - self.keep_days * 86400
@@ -127,7 +133,10 @@ class CappedFileHandler(logging.FileHandler):
                     files.append((f, os.path.getsize(f)))
             except OSError:
                 pass
-        current = os.path.getsize(self.baseFilename) if os.path.exists(self.baseFilename) else 0
+        try:
+            current = os.path.getsize(self.baseFilename)
+        except OSError:
+            current = 0  # not reopened yet, or turned over by a request just now
         total = current + sum(size for _, size in files)
         while files and total > self.max_total:
             f, size = files.pop(0)
