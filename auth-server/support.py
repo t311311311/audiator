@@ -8,8 +8,9 @@ the letter carries the client's card (clients.py). "Reply" in the mail
 program answers the user directly.
 
 Answer times are the ones in the rules (src/terms.html, section 6):
-payments 48 hours; paid plans 2 working days; free 5 working days; ideas —
-no promise.
+payments 48 hours; everything else 5 days, whatever the plan; ideas — no
+promise. Plain days, not working days: whose holidays would count, with
+users all over the world (user's decision 2026-10-06).
 """
 import logging
 from datetime import timedelta
@@ -40,27 +41,17 @@ MAX_TEXT = 5000
 PER_HOUR = 5
 
 
-def _working_days_later(start, days):
-    d, left = start, days
-    while left:
-        d += timedelta(days=1)
-        if d.weekday() < 5:
-            left -= 1
-    return d
-
-
-def answer_within(category: str, plan: str) -> Optional[str]:
-    """48h | 2wd | 5wd | None (ideas: read, no promise)."""
+def answer_within(category: str) -> Optional[str]:
+    """48h | 5d | None (ideas: read, no promise)."""
     if category == "idea":
         return None
     if category == "payment":
         return "48h"
-    return "5wd" if plan == "free" else "2wd"
+    return "5d"
 
 
 def _due(within: Optional[str], now):
-    return {"48h": now + timedelta(hours=48), "2wd": _working_days_later(now, 2),
-            "5wd": _working_days_later(now, 5)}.get(within)
+    return {"48h": now + timedelta(hours=48), "5d": now + timedelta(days=5)}.get(within)
 
 
 class SupportRequest(BaseModel):
@@ -88,7 +79,7 @@ def write_to_support(req: SupportRequest, authorization: Optional[str] = Header(
     with Session() as s:
         user = s.get(User, u.id)
         plan = clients.plan_of(user)
-        within = answer_within(req.category, plan)
+        within = answer_within(req.category)
         t = SupportTicket(user_id=user.id, category=req.category, text=text, plan=plan,
                           app_version=(req.app_version or "")[:40] or None, os=(req.os or "")[:80] or None,
                           created_at=now, due_at=_due(within, now), status="new", mailed=False)
