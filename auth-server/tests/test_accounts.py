@@ -92,6 +92,34 @@ def test_codes_are_rate_limited_per_email(client, mailbox):
     assert r.status_code == 429 and r.json()["detail"]["error"] == "too_many_requests"
 
 
+def test_an_address_gets_at_most_ten_codes_a_day(client, mailbox, monkeypatch):
+    """Five an hour, but not five every hour all day: someone else's mailbox
+    cannot be flooded through us (the host blocks the server on a complaint)."""
+    now = [1_000_000.0]
+    monkeypatch.setattr(accounts.rate.time, "time", lambda: now[0])
+    for hour in range(2):
+        for _ in range(5):
+            assert client.post("/api/v2/auth/code", json={"email": "a@b.com"}).status_code == 200
+        now[0] += 3601
+    r = client.post("/api/v2/auth/code", json={"email": "a@b.com"})
+    assert r.status_code == 429 and r.json()["detail"]["error"] == "too_many_requests"
+    assert r.json()["detail"]["retry_after"] > 3600, "the daily cap, not the hourly one"
+    assert client.post("/api/v2/auth/code", json={"email": "c@d.com"}).status_code == 200, "others still can"
+    now[0] += 86400
+    assert client.post("/api/v2/auth/code", json={"email": "a@b.com"}).status_code == 200, "a day later again"
+
+
+def test_the_server_sends_no_more_than_its_daily_cap(client, mailbox, monkeypatch, caplog):
+    monkeypatch.setattr(accounts, "CODE_PER_DAY", 3)
+    for i in range(3):
+        assert client.post("/api/v2/auth/code", json={"email": f"u{i}@b.com"}).status_code == 200
+    with caplog.at_level("WARNING", logger="audiator"):
+        r = client.post("/api/v2/auth/code", json={"email": "u3@b.com"})
+    assert r.status_code == 429 and r.json()["detail"]["error"] == "too_many_requests"
+    assert "u3@b.com" not in mailbox
+    assert "cap of 3 a day is reached" in caplog.text, "the owner sees it in the logs"
+
+
 def test_one_free_account_per_computer(client, mailbox):
     assert sign_in(client, mailbox, "first@b.com", DEV_A).status_code == 200
     r = sign_in(client, mailbox, "second@b.com", DEV_A)
