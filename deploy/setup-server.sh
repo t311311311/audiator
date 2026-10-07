@@ -195,6 +195,14 @@ exec systemd-run --quiet --pipe --wait --collect -p User=audiator -p Environment
   $APP/venv/bin/python $APP/src/scripts/admin.py "\$@"
 EOF
 chmod 755 /usr/local/bin/audiator-admin
+# The digest by hand: audiator-digest --now (whatever is new, right away).
+cat > /usr/local/bin/audiator-digest <<EOF
+#!/bin/sh
+exec systemd-run --quiet --pipe --wait --collect -p User=audiator -p EnvironmentFile=$ENVF \\
+  -p WorkingDirectory=$APP/src/auth-server -E PYTHONUTF8=1 \\
+  $APP/venv/bin/python support_digest.py "\$@"
+EOF
+chmod 755 /usr/local/bin/audiator-digest
 systemctl daemon-reload
 systemctl enable -q --now audiator-digest.timer
 
