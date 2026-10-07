@@ -16,7 +16,12 @@ const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
 
-const SERVER = process.env.AUDIATOR_ACCOUNTS_URL || 'http://127.0.0.1:3000';
+// The accounts server: the one on the internet in the installed app (HOSTKEY,
+// deploy/setup-server.sh); the one `npm start` brings up on this computer
+// (local-backend.js) while developing. AUDIATOR_ACCOUNTS_URL overrides either:
+// the test stands, or a check against the real server from `npm start`.
+const SERVER = process.env.AUDIATOR_ACCOUNTS_URL
+  || (app.isPackaged ? 'https://audiator.duckdns.org' : 'http://127.0.0.1:3000');
 // The rules shown in the sign-in window (src/terms/); ticking them accepts
 // this version, and the server lets no one in without it.
 const TERMS_VERSION = '2026-10-04';
