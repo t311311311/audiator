@@ -909,6 +909,7 @@ app.on('ready', async () => {
       modal: false,
       frame: true, // Restore standard frame with title bar
       title: '', // Empty title to remove text from title bar
+      icon: iconPath, // like every other window (without it: electron.exe's own icon, AUD-53)
       backgroundColor: resolveTheme(currentStoredSettings.theme) === 'light' ? '#e4e6eb' : '#3e4452', // Match theme color
       webPreferences: {
         preload: path.join(__dirname, 'settings-preload.js'),
