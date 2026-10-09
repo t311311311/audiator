@@ -48,6 +48,8 @@ class User(Base):
     # Lifetime unlimited use, granted by hand (the owner, friends, testers).
     unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
     paid_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # commercial plan
+    # USDT paid and not yet spent on a period (billing.py): it pays the next one.
+    balance: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String, default="active")         # active | blocked
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -91,13 +93,18 @@ class Payment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[float] = mapped_column(Float)                      # the price asked
     currency: Mapped[str] = mapped_column(String, default="USDT-BEP20")
     tx_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True, unique=True)
-    status: Mapped[str] = mapped_column(String, default="pending")   # pending | paid | expired
+    status: Mapped[str] = mapped_column(String, default="pending")   # pending | paid | expired | failed
     period: Mapped[str] = mapped_column(String)                       # month | year | donation
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # How it was paid: xrocket (an invoice in Telegram) | bep20 (to the address).
+    provider: Mapped[str] = mapped_column(String, default="bep20")
+    invoice_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)   # xRocket's
+    pay_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    credited: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # what reached the balance
 
 
 class SupportTicket(Base):

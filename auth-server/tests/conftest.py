@@ -23,7 +23,9 @@ os.environ["ADMIN_EMAILS"] = "owner@example.com"
 # Never mail anyone from the tests. Set empty rather than removed: main.py loads
 # auth-server/.env, which only fills variables that are not set at all, and
 # that file holds the real mailbox.
-for _k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "MAIL_DEV_PRINT"):
+for _k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "MAIL_DEV_PRINT",
+           # nor reach xRocket: the same .env holds the real app's tokens
+           "XROCKET_TOKEN", "XROCKET_WEBHOOK_TOKEN", "PUBLIC_URL"):
     os.environ[_k] = ""
 os.environ["AUDIATOR_SECRET_KEY"] = "test-secret-not-the-real-one"
 os.environ["PAYMENTS_ENABLED"] = "0"

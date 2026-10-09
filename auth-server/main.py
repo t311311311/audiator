@@ -63,6 +63,9 @@ app.include_router(accounts_router)
 # Messages to support from the app ("Написать нам"), mailed to the inbox.
 from support import router as support_router  # noqa: E402
 app.include_router(support_router)
+# Paying for the plan: xRocket invoices, the balance (payments.py, billing.py).
+from payments import router as payments_router  # noqa: E402
+app.include_router(payments_router)
 
 TRIAL_DAYS = 14
 SUBSCRIPTION_PRICES = {
