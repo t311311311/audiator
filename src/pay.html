@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <title>Audiator</title>
     <!-- Paying for the plan (owner's decision 2026-10-09): an xRocket invoice,
-         paid in Telegram from the payer's xRocket wallet, xRocket's fee on top.
+         paid in Telegram from the payer's xRocket wallet; xRocket's fee is ours.
+         Opened from Settings and modal to them (AUD-44). No lines about the plan
+         now or how it is paid above the prices (owner, AUD-45); "xRocket 🚀"
+         with its rocket everywhere (AUD-46).
          The invoice opens in Telegram; this window asks our server every few
          seconds until the payment comes (auth-server/payments.py). Below the
          button: how to top up an empty xRocket wallet, in three steps, with the
@@ -26,8 +29,7 @@
             margin: 0; padding: 18px 22px; font-size: 13px; user-select: none;
         }
         .screen { height: 100%; display: flex; flex-direction: column; }
-        h1 { font-size: 18px; margin: 0 0 4px; }
-        .now { opacity: 0.8; margin: 0 0 14px; line-height: 1.45; }
+        h1 { font-size: 18px; margin: 0 0 14px; }
         .periods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         /* A month and a year: a card each, everything in its middle. */
         .period {
@@ -39,9 +41,8 @@
         .period input { display: none; }
         .period .name { font-weight: 600; opacity: 0.85; }
         .period .price { font-size: 20px; font-weight: 600; }
-        .how { font-size: 12px; opacity: 0.75; line-height: 1.45; margin: 12px 0 0; }
         .primary {
-            width: 100%; margin-top: 12px; padding: 9px; font: inherit; font-size: 14px; font-weight: 600;
+            width: 100%; margin-top: 14px; padding: 9px; font: inherit; font-size: 14px; font-weight: 600;
             color: #fff; background: var(--accent-color); border: none; border-radius: 6px; cursor: pointer;
         }
         .primary:disabled { opacity: 0.55; cursor: default; }
@@ -90,27 +91,25 @@
 <body>
     <div id="form" class="screen">
         <h1 data-i18n="pay.title">Оплатить тариф</h1>
-        <p class="now" id="now"></p>
         <div class="periods" id="periods" role="radiogroup"></div>
-        <p class="how" data-i18n="pay.how">Оплата в Telegram с кошелька xRocket.</p>
         <button class="primary" id="pay" data-i18n="pay.button">Оплатить в Telegram</button>
         <div class="error" id="error"></div>
         <div class="steps">
-            <h2 data-i18n="pay.stepsTitle">Нет USDT в xRocket? Три шага:</h2>
+            <h2 data-i18n="pay.stepsTitle">Нет USDT в xRocket 🚀? Три шага:</h2>
             <ol>
                 <!-- "xRocket" in step 1 is a link: the owner's referral link, as the button below. -->
                 <li><span id="step1"></span></li>
                 <li><span data-i18n="pay.step2">Пополните кошелёк по СБП.</span></li>
                 <li><span data-i18n="pay.step3">Вернитесь сюда и нажмите «Оплатить в Telegram».</span></li>
             </ol>
-            <button class="secondary" id="topup" data-i18n="pay.topUpButton">Пополнить кошелёк xRocket</button>
+            <button class="secondary" id="topup" data-i18n="pay.topUpButton">Пополнить кошелёк xRocket 🚀</button>
         </div>
         <div class="foot"><a href="#" id="terms" data-i18n="pay.terms">Правила оплаты</a></div>
     </div>
     <div id="waiting" class="screen state hidden">
         <div class="spinner"></div>
         <h2 data-i18n="pay.waitingTitle">Ждём оплату</h2>
-        <p data-i18n="pay.waiting">Счёт на оплату открылся в Telegram, в боте @xRocket. Нажмите там «Оплатить» — оплата появится здесь сама.</p>
+        <p data-i18n="pay.waiting">Счёт на оплату открылся в Telegram, в боте @xRocket 🚀. Нажмите там «Оплатить» — оплата появится здесь сама.</p>
         <p class="small" id="valid"></p>
         <div class="actions">
             <button class="secondary" id="again" data-i18n="pay.openAgain">Открыть счёт снова</button>
@@ -143,14 +142,6 @@
         const fmtUsdt = (n) => Number(n || 0).toLocaleString(document.documentElement.lang, { maximumFractionDigits: 2 });
         function show(which) {
             for (const id of ['form', 'waiting', 'result']) $(id).classList.toggle('hidden', id !== which);
-        }
-
-        function renderNow() {
-            if (!account || !account.signedIn) return;
-            let text = account.plan === 'commercial' && account.paidUntil
-                ? S('pay.now.paid', { d: fmtDate(account.paidUntil) }) : S('pay.now.free');
-            if (account.balance > 0) text += ' ' + S('pay.balance', { b: fmtUsdt(account.balance) });
-            $('now').textContent = text;
         }
 
         function renderPeriods() {
@@ -230,10 +221,10 @@
         $('again').addEventListener('click', () => { if (current) window.payApi.openInvoice(current.url); });
         // Back to the form: the invoice stays valid in Telegram until it expires;
         // paying it then still counts (the server settles it when asked next).
-        $('back').addEventListener('click', () => { stopPolling(); renderNow(); show('form'); });
+        $('back').addEventListener('click', () => { stopPolling(); show('form'); });
         $('result-btn').addEventListener('click', () => {
             if ($('result-btn').dataset.action === 'close') window.payApi.close();
-            else { current = null; renderNow(); show('form'); }
+            else { current = null; show('form'); }
         });
         $('topup').addEventListener('click', () => window.payApi.topUp());
         $('terms').addEventListener('click', (e) => { e.preventDefault(); window.payApi.openTerms(document.documentElement.lang); });
@@ -251,10 +242,9 @@
             const [before, after] = S('pay.step1').split('{xrocket}');
             const link = document.createElement('a');
             link.href = '#';
-            link.textContent = 'xRocket';
+            link.textContent = 'xRocket 🚀';
             link.addEventListener('click', (e) => { e.preventDefault(); window.payApi.topUp(); });
             $('step1').replaceChildren(before, link, after || '');
-            renderNow();
             renderPeriods();
         }
         window.payApi.onSettingsUpdated((settings) => {
@@ -264,7 +254,6 @@
         window.payApi.onAccountUpdated((v) => {
             if (!v || !v.signedIn) { stopPolling(); window.payApi.close(); return; } // signed out
             account = v;
-            renderNow();
         });
 
         (async () => {

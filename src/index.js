@@ -480,14 +480,21 @@ const showSupportWindow = (lang) => {
 
 // Paying for the plan (pay.html): an xRocket invoice, paid in Telegram; the
 // window asks the server until the payment comes (auth-server/payments.py).
+// Modal to Settings, where it is opened from: Settings wait until it closes
+// (owner 2026-10-09, AUD-44).
 let payWindow = null;
+const PAY_H = 470; // inside the frame; tests/e2e/pay-ui.js opens it the same and checks the form fits
 const showPayWindow = (lang) => {
   lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
   if (payWindow && !payWindow.isDestroyed()) { payWindow.focus(); return; }
+  const parent = settingsWindow && !settingsWindow.isDestroyed() ? settingsWindow : undefined;
   payWindow = new BrowserWindow({
+    parent,
+    modal: !!parent,
     width: 440,
-    height: 540, // the form with the three top-up steps needs 521 (ru, en)
+    height: PAY_H, // the form with the three top-up steps (tests/e2e/pay-ui.js checks it fits)
     useContentSize: true,
+    minimizable: false,
     resizable: false,
     maximizable: false,
     title: i18n.t(lang, 'pay.windowTitle'),
