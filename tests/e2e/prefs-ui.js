@@ -98,7 +98,8 @@ app.whenReady().then(async () => {
   w.destroy();
 
   // --- Settings ---
-  const s = new BrowserWindow({ width: 450, height: 770, useContentSize: true, show: false });
+  const SETTINGS_H = Number(/const SETTINGS_H = (\d+)/.exec(fs.readFileSync(path.join(ROOT, 'index.js'), 'utf8'))[1]);
+  const s = new BrowserWindow({ width: 450, height: SETTINGS_H, useContentSize: true, show: false }); // as index.js opens it
   await s.loadURL(base + 'settings.html'); await sleep(900);
   const sjs = (c) => s.webContents.executeJavaScript(c);
   await sjs(`window.__init({ whisperModel: 'small', opacity: 0.8 })`); await sleep(200); // a fresh install: nothing chosen yet
@@ -118,7 +119,8 @@ app.whenReady().then(async () => {
   check('...saved as "system" (not the colour it showed)', (await sjs('window.__saved.theme')) === 'system' && !('themeChoice' in (await sjs('window.__saved'))));
   check('Device: "Микрофон (по умолчанию)" chosen', (await sjs(`document.getElementById('source-select').selectedOptions[0].textContent`)) === R['settings.sourceMic'] &&
     R['settings.sourceMic'].includes('(по умолчанию)'));
-  const quality = await sjs(`[...document.querySelectorAll('.quality-name')].map((n) => n.textContent)`);
+  // The quality list is a drop-down since AUD-48: "name · size ✓" per entry.
+  const quality = await sjs(`[...document.querySelectorAll('#quality-select option')].map((o) => o.textContent.split(' \u00B7 ')[0])`);
   check('Quality: "Стандарт (по умолчанию)", the others without', JSON.stringify(quality) === JSON.stringify([R['quality.fast'], `${R['quality.standard']} (${R['settings.default']})`, R['quality.accurate']]), JSON.stringify(quality));
   check('Font size 14 by default, no mark', (await sjs(`document.getElementById('font-size-slider').value + '|' + document.getElementById('font-size-value').textContent`)) === '14|14px');
   await s.webContents.capturePage();

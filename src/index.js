@@ -37,6 +37,10 @@ if (require('electron-squirrel-startup')) {
 let tray = null;
 let mainWindow = null;
 let settingsWindow = null;
+// Inside the frame. Everything needs 683 px (ru, en) and 693 (zh) since the
+// quality list became a drop-down (AUD-48; was 763); tests/e2e/settings-ui.js
+// opens it the same and checks it fits without a gap.
+const SETTINGS_H = 698;
 let overlayWindow = null;
 
 // --- Recording overlay ("barrels") -------------------------------------------
@@ -896,7 +900,7 @@ app.on('ready', async () => {
       // Inside the frame (useContentSize): language row (AUD-33), quality list,
       // what to record, the folder for recordings, account. On a small screen (a 14" laptop at 150 % has 720 px) no taller
       // than the screen: the page scrolls instead of the buttons going missing.
-      height: Math.min(770, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
+      height: Math.min(SETTINGS_H, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workAreaSize.height - 50),
       useContentSize: true,
       resizable: false,
       minimizable: false, // Prevent minimizing

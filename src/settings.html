@@ -57,6 +57,23 @@
             outline: 2px solid white;
             outline-offset: 0px;
         }
+        /* The sliders in the window's colours, not Chromium's own violet (owner,
+           2026-10-09, AUD-49): a thin track in the border colour, the part up
+           to the value in the accent colour (--fill, set by paintRange), a
+           round accent thumb. */
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            background: transparent; border: none; padding: 0; height: 18px; cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 4px; border-radius: 2px;
+            background: linear-gradient(to right, var(--accent-color) 0 var(--fill, 50%), var(--border-color) var(--fill, 50%) 100%);
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; border: none;
+            background: var(--accent-color);
+        }
         #font-size-slider-wrapper {
             display: flex;
             align-items: center;
@@ -65,42 +82,24 @@
         #font-size-slider {
             margin-right: 10px;
         }
-        /* Recognition quality: a label above a full-width list of the models,
-           with an explanation under it. */
+        /* A label above a full-width drop-down, with a line under it: what to
+           record, and the recognition quality. */
         .setting.stacked { flex-direction: column; align-items: stretch; }
         .setting.stacked > label { margin-bottom: 6px; }
-        .quality-list { display: flex; flex-direction: column; gap: 4px; }
-        .quality-row {
-            margin: 0; /* a <label>: not the spacing of the setting labels */
-            display: flex; align-items: center; gap: 8px; padding: 3px 8px; cursor: pointer;
-            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
-        }
-        .quality-row.chosen { border-color: var(--accent-color); }
-        .quality-row input { margin: 0; accent-color: var(--accent-color); cursor: pointer; }
-        .quality-name { flex: 1 1 auto; }
-        .quality-size { opacity: 0.75; font-size: 0.9em; white-space: nowrap; }
-        .quality-mark { width: 12px; text-align: center; cursor: default; }
-        /* Lights up green on hover, like the "Ctrl+V" barrel; its tooltip says
-           whether the model is in use. */
-        .quality-mark:hover {
-            color: #98c379;
-            text-shadow: 0 0 6px rgba(152, 195, 121, 0.9);
-        }
-        /* Delete a downloaded model (not the one in use) to free disk space. */
-        .quality-delete {
-            width: 16px; text-align: center;
-            background: none; border: none; padding: 0; cursor: pointer;
-            color: var(--text-color); font-size: 12px; line-height: 1; opacity: 0.6;
-        }
-        button.quality-delete:hover { opacity: 1; color: #e06c75; }
-        span.quality-delete { cursor: inherit; }
+        /* Delete a downloaded model (not the one in use) to free disk space:
+           a link at the end of the line under the quality list. */
+        .quality-delete { margin-left: 4px; color: var(--accent-color); text-decoration: none; cursor: pointer; }
+        .quality-delete:hover { color: #e06c75; text-decoration: underline; }
         .setting-hint {
             margin-top: 3px;
             font-size: 0.8em;
             opacity: 0.75;
             line-height: 1.35;
         }
-        /* Account: who is signed in, the plan, time left today; sign out. */
+        /* Account (owner's mock-ups 2026-10-09, AUD-47): who is signed in, the
+           plan (not for a paid one: "Paid until" says it), time left today in
+           two lines; on the right a column of three buttons of one width —
+           Pay (not on unlimited plans), Contact us, Sign out. */
         .account-box {
             display: flex; align-items: center; gap: 10px; padding: 8px 10px;
             background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 4px;
@@ -109,13 +108,13 @@
         .account-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
         .account-plan, .account-left { font-size: 0.85em; }
         .account-plan { opacity: 0.8; }
-        /* "Pay" / "Renew" beside the plan: no extra row, the window keeps its height. */
-        .account-plan-row { display: flex; align-items: baseline; gap: 8px; }
-        .pay-link { font-size: 0.85em; font-weight: 600; color: var(--accent-color); text-decoration: none; }
-        .pay-link:hover { text-decoration: underline; }
+        /* A line each: "1 h 46 min left," / "renews in 15 h 1 min" — never
+           broken inside "renews in". */
+        .account-left > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .account-left.empty { color: #e06c75; }
         .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
         .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
+        .account-actions .action-button[hidden] { display: none; }
         /* The folder for recordings and texts: its path (the start cut with "…"
            when long — the end is the part that tells), change, open. */
         .folder-box {
@@ -218,12 +217,14 @@
                 <div class="setting-hint" id="source-hint"></div>
             </div>
 
-            <!-- The speech model. A model not yet on this computer is downloaded
-                 after Save; the main window shows the progress. -->
+            <!-- The speech model, a drop-down like the others (owner 2026-10-09,
+                 AUD-48): each entry with its size and a tick once it is on this
+                 computer. A model not yet here is downloaded after Save; the main
+                 window shows the progress. -->
             <div class="setting stacked">
-                <label data-i18n="settings.quality">Качество распознавания</label>
-                <div class="quality-list" id="quality-list" role="radiogroup"></div>
-                <div class="setting-hint" id="quality-hint"></div>
+                <label for="quality-select" data-i18n="settings.quality">Качество распознавания</label>
+                <select id="quality-select"></select>
+                <div class="setting-hint"><span id="quality-hint"></span><a href="#" class="quality-delete" id="quality-delete" hidden></a></div>
             </div>
 
             <!-- Where every recording and the saved texts go (Downloads\Audiator by
@@ -242,13 +243,11 @@
                 <div class="account-box">
                     <div class="account-info">
                         <div class="account-email" id="account-email"></div>
-                        <div class="account-plan-row">
-                            <span class="account-plan" id="account-plan"></span>
-                            <a href="#" class="pay-link" id="pay-link" hidden></a>
-                        </div>
+                        <div class="account-plan" id="account-plan"></div>
                         <div class="account-left" id="account-left"></div>
                     </div>
                     <div class="account-actions">
+                        <button class="action-button" id="pay-btn" data-i18n="account.pay" hidden>Оплатить</button>
                         <button class="action-button" id="support-btn" data-i18n="menu.contact">Написать нам</button>
                         <button class="action-button" id="sign-out-btn" data-i18n="account.signOut">Выйти из аккаунта</button>
                     </div>
@@ -302,7 +301,15 @@
                     window.settingsApi.send('update-setting', { key: 'fontFamily', value: e.target.value });
                 });
 
+                // The accent part of a slider's track goes up to its value.
+                function paintRange(el) {
+                    const p = (el.value - el.min) / (el.max - el.min) * 100;
+                    el.style.setProperty('--fill', `${Math.max(0, Math.min(100, p))}%`);
+                }
+                function paintRanges() { paintRange(fontSizeSlider); paintRange(opacitySlider); }
+
                 fontSizeSlider.addEventListener('input', (e) => {
+                    paintRange(e.target);
                     const size = parseInt(e.target.value);
                     currentSettings.fontSize = size;
                     fontSizeValue.textContent = `${size}px`;
@@ -310,6 +317,7 @@
                 });
 
                 opacitySlider.addEventListener('input', (e) => {
+                    paintRange(e.target);
                     currentSettings.opacity = parseFloat(e.target.value);
                     window.settingsApi.send('update-setting', { key: 'opacity', value: parseFloat(e.target.value) });
                 });
@@ -367,6 +375,7 @@
                     opacitySlider.value = initialSettings.opacity || 0.8;
                     fontSizeSlider.value = initialSettings.fontSize || 14;
                     fontSizeValue.textContent = `${initialSettings.fontSize || 14}px`;
+                    paintRanges();
                 });
 
                 window.settingsApi.receive('settings-loaded', (settings) => {
@@ -378,6 +387,7 @@
                     opacitySlider.value = settings.opacity || 0.8;
                     fontSizeSlider.value = settings.fontSize || 14;
                     fontSizeValue.textContent = `${settings.fontSize || 14}px`;
+                    paintRanges();
                     applyTheme(currentSettings.theme); // Apply theme to settings window itself
                     renderQuality();
                     renderFolder();
@@ -427,11 +437,13 @@
                 applyI18n().then(() => { renderQuality(); renderAccount(); renderFolder(); });
 
                 // --- Recognition quality (the speech model) ---
-                // One row per model: its size, a tick once it is on this
-                // computer, and a cross to delete it again — except the one in
-                // use. The line below says what the chosen one means.
-                const qualityList = document.getElementById('quality-list');
+                // A drop-down: each model with its size and a tick once it is on
+                // this computer. The line below says what the chosen one means,
+                // whether it is installed, and offers to delete it when it is
+                // downloaded but not in use.
+                const qualitySelect = document.getElementById('quality-select');
                 const qualityHint = document.getElementById('quality-hint');
+                const qualityDelete = document.getElementById('quality-delete');
                 const QUALITY = ['base', 'small', 'large-v3-turbo'];
                 let engineStatus = null;
 
@@ -448,15 +460,15 @@
                 function formatSize(bytes) {
                     const lang = document.documentElement.lang;
                     if (bytes >= 1e9) {
-                        return (bytes / 1e9).toLocaleString(lang, { maximumFractionDigits: 1 }) + ' ' + strings['unit.gb'];
+                        return (bytes / 1e9).toLocaleString(lang, { maximumFractionDigits: 1 }) + '\u00A0' + strings['unit.gb'];
                     }
-                    return Math.round(bytes / 1e6) + ' ' + strings['unit.mb'];
+                    return Math.round(bytes / 1e6) + '\u00A0' + strings['unit.mb'];
                 }
 
-                function chooseQuality(m) {
-                    currentSettings.whisperModel = m; // applied on Save
+                qualitySelect.addEventListener('change', () => {
+                    currentSettings.whisperModel = qualitySelect.value; // applied on Save
                     renderQuality();
-                }
+                });
 
                 async function deleteQuality(m, info) {
                     const what = qualityName(m) + (info.size ? ` (${formatSize(info.size)})` : '');
@@ -465,66 +477,36 @@
                         strings['dlg.delete'], document.documentElement.lang))) return;
                     window.settingsApi.deleteModel(m).then((s) => { engineStatus = s; renderQuality(); });
                 }
+                qualityDelete.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const m = qualitySelect.value;
+                    const info = ((engineStatus && engineStatus.models) || {})[m];
+                    if (info && info.installed) deleteQuality(m, info);
+                });
 
                 function renderQuality() {
                     const models = (engineStatus && engineStatus.models) || {};
                     const inUse = engineStatus && engineStatus.model;
                     const job = engineStatus && engineStatus.job;
                     const chosen = currentSettings.whisperModel || 'small';
-                    qualityList.textContent = '';
+                    qualitySelect.textContent = '';
                     for (const m of QUALITY) {
                         const info = models[m] || {};
-                        const row = document.createElement('label');
-                        row.className = 'quality-row' + (m === chosen ? ' chosen' : '');
-                        const radio = document.createElement('input');
-                        radio.type = 'radio';
-                        radio.name = 'quality';
-                        radio.value = m;
-                        radio.checked = m === chosen;
-                        radio.addEventListener('change', () => chooseQuality(m));
-                        const name = document.createElement('span');
-                        name.className = 'quality-name';
-                        name.textContent = qualityName(m) + (m === 'small' ? ` (${strings['settings.default']})` : '');
-                        const size = document.createElement('span');
-                        size.className = 'quality-size';
-                        size.textContent = info.size ? formatSize(info.size) : '';
-                        const mark = document.createElement('span');
-                        mark.className = 'quality-mark';
-                        mark.textContent = info.installed ? '\u2713' : '';
-                        // What hovering says: installed and in use, installed
-                        // but not in use (Save switches to it), or not yet here.
-                        row.title = !info.installed ? strings['quality.tipNotInstalled']
-                                  : m === inUse ? strings['quality.tipInUse']
-                                  : strings['quality.tipInstalled'];
-                        if (info.installed) mark.title = row.title;
-                        row.append(radio, name, size, mark);
-                        // The last cell is a cross to delete a downloaded model
-                        // that is not in use, or an empty cell of the same width,
-                        // so the sizes and ticks line up on every row. The model
-                        // in use says so in its tooltip.
-                        if (info.installed && m !== inUse && m !== job) {
-                            const del = document.createElement('button');
-                            del.type = 'button';
-                            del.className = 'quality-delete';
-                            del.title = strings['quality.delete'];
-                            del.textContent = '\u2715';
-                            del.addEventListener('click', (e) => {
-                                e.preventDefault(); // a click on the cross does not choose the row
-                                e.stopPropagation();
-                                deleteQuality(m, info);
-                            });
-                            row.appendChild(del);
-                        } else {
-                            const gap = document.createElement('span');
-                            gap.className = 'quality-delete';
-                            row.appendChild(gap);
-                        }
-                        qualityList.appendChild(row);
+                        const text = qualityName(m) + (m === 'small' ? ` (${strings['settings.default']})` : '')
+                            + (info.size ? ` \u00B7 ${formatSize(info.size)}` : '') + (info.installed ? '  \u2713' : '');
+                        qualitySelect.add(new Option(text, m, false, m === chosen));
                     }
+                    qualitySelect.value = chosen;
                     const info = models[chosen];
+                    // What hovering says: installed and in use, installed but not
+                    // in use (Save switches to it), or not yet here.
+                    qualitySelect.title = !info || !info.installed ? (strings['quality.tipNotInstalled'] || '')
+                        : chosen === inUse ? strings['quality.tipInUse'] : strings['quality.tipInstalled'];
                     let hint = qualityHintText(chosen);
                     if (info) hint += ' ' + (info.installed ? strings['quality.installed'] : strings['quality.toDownload']);
                     qualityHint.textContent = hint;
+                    qualityDelete.textContent = strings['quality.delete'] || '';
+                    qualityDelete.hidden = !(info && info.installed && chosen !== inUse && chosen !== job);
                 }
 
                 window.settingsApi.getEngineStatus().then((s) => { engineStatus = s; renderQuality(); });
@@ -546,38 +528,38 @@
                     if (!account || !account.signedIn) return; // signing out closes this window
                     document.getElementById('account-email').textContent = account.email;
                     document.getElementById('account-email').title = account.email;
-                    document.getElementById('account-plan').textContent = strings[`plan.${account.plan}`] || account.plan;
+                    // A paid plan says "Paid until …" instead (owner's mock-up).
+                    const plan = document.getElementById('account-plan');
+                    plan.textContent = strings[`plan.${account.plan}`] || account.plan;
+                    plan.hidden = account.plan === 'commercial' && !!account.paidUntil;
                     const left = document.getElementById('account-left');
-                    let text = '';
+                    const lines = [];
                     // 24 hours just over: all the time back at once (as in the main window).
                     const over = !!account.resetsAt && Date.now() >= account.resetsAt;
                     const remaining = over ? account.limit : account.remaining;
                     const empty = !!account.limited && remaining <= 0;
                     if (account.limited) {
                         // Left in the account's own 24 hours, and when they
-                        // renew (once the first use has started them).
-                        const left = formatLeft(remaining);
-                        text = account.resetsAt && !over
-                            ? (strings['account.leftReset'] || '').replace('{left}', left).replace('{t}',
+                        // renew (once the first use has started them): two lines.
+                        const l = formatLeft(remaining);
+                        lines.push(...(account.resetsAt && !over
+                            ? (strings['account.leftResetLines'] || '').replace('{left}', l).replace('{t}',
                                 formatLeft(Math.max(60, Math.ceil((account.resetsAt - Date.now()) / 60000) * 60)))
-                            : (strings['account.left'] || '').replace('{left}', left);
+                            : (strings['account.left'] || '').replace('{left}', l)).split('\n'));
                     } else if (account.plan === 'commercial' && account.paidUntil) {
                         const d = new Date(account.paidUntil).toLocaleDateString(document.documentElement.lang);
-                        text = (strings['account.paidUntil'] || '').replace('{d}', d);
+                        lines.push((strings['account.paidUntil'] || '').replace('{d}', d));
                     }
-                    // Paid and not yet spent: it pays the next period (auth-server/billing.py).
+                    // Less than a month, waiting for the next payment (auth-server/billing.py).
                     if (account.balance > 0 && (account.plan === 'free' || account.plan === 'commercial')) {
-                        const b = (strings['account.balance'] || '').replace('{b}',
-                            Number(account.balance).toLocaleString(document.documentElement.lang, { maximumFractionDigits: 2 }));
-                        text = text ? `${text} · ${b}` : b;
+                        lines.push((strings['account.balance'] || '').replace('{b}',
+                            Number(account.balance).toLocaleString(document.documentElement.lang, { maximumFractionDigits: 2 })));
                     }
-                    // Pay (free plan) or Renew (paid); nothing to pay on unlimited and admin.
-                    const pay = document.getElementById('pay-link');
-                    pay.hidden = !(account.plan === 'free' || account.plan === 'commercial');
-                    pay.textContent = (account.plan === 'commercial' ? strings['account.renew'] : strings['account.pay']) || '';
-                    left.textContent = text;
-                    left.hidden = !text;
+                    left.replaceChildren(...lines.map((t) => { const d = document.createElement('div'); d.textContent = t; return d; }));
+                    left.hidden = !lines.length;
                     left.classList.toggle('empty', empty);
+                    // Pay on the free and the paid plan; nothing to pay on unlimited and admin.
+                    document.getElementById('pay-btn').hidden = !(account.plan === 'free' || account.plan === 'commercial');
                 }
                 setInterval(() => renderAccount(), 30 * 1000); // the countdown moves on
                 window.settingsApi.getAccount().then(renderAccount).catch(() => {});
@@ -587,8 +569,7 @@
                 document.getElementById('support-btn').addEventListener('click', () => {
                     window.settingsApi.openSupport(document.documentElement.lang);
                 });
-                document.getElementById('pay-link').addEventListener('click', (e) => {
-                    e.preventDefault();
+                document.getElementById('pay-btn').addEventListener('click', () => {
                     window.settingsApi.openPay(document.documentElement.lang);
                 });
                 document.getElementById('terms-link').addEventListener('click', (e) => {
