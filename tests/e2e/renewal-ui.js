@@ -55,7 +55,8 @@ app.whenReady().then(async () => {
   await js('renderAccount()'); await sjs('renderAccount()'); // the 30-second tick, without waiting for it
   const after = await counter();
   check('a moment after the 24 hours end: all 2 hours, no renewal time', after === 'Осталось 2 ч', after);
-  check('...in Settings too', (await sjs(`document.getElementById('account-left').textContent`)) === 'Осталось 2 ч',
+  // (Settings keep a number and its unit together with a no-break space since 73d4232.)
+  check('...in Settings too', (await sjs(`document.getElementById('account-left').textContent`)) === 'Осталось 2\u00A0ч',
     await sjs(`document.getElementById('account-left').textContent`));
   await js(`document.getElementById('record-btn').click()`); await sleep(800);
   check('a recording starts (it was refused until the main process sent new figures)', (await js('window.__started')) === 1);

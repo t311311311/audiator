@@ -4,7 +4,7 @@ const { spawn, spawnSync } = require('child_process');
 const path = require('path'), fs = require('fs'), os = require('os');
 const ROOT = 'C:/Test01/tray-translator';
 const OUT = __dirname;
-const PORT = 3107, DBG = 9333;
+const PORT = 3107, DBG = 9333, INSPECT = 9339; // INSPECT: the main process, to ask Electron about its windows
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aud-app-'));
 // The server's settings, shared with the support digest run against its database.
 const serverEnv = { ...process.env, PYTHONUTF8: '1', SMTP_HOST: '', MAIL_DEV_PRINT: '1', SUPPORT_TO: 'support@example.com',
@@ -13,7 +13,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let server, appProc, serverLog = '', appLog = '';
 let failed = 0;
 const check = (what, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}${extra ? '  ' + extra : ''}`); if (!ok) failed++; };
-const done = (code) => { try { appProc && appProc.kill(); } catch (e) {} try { server && server.kill(); } catch (e) {} process.exit(code); };
+const done = (code) => { try { mainProc && mainProc.close(); } catch (e) {} try { appProc && appProc.kill(); } catch (e) {} try { server && server.kill(); } catch (e) {} process.exit(code); };
 setTimeout(() => { console.log('timeout'); console.log(appLog.slice(-3000)); done(2); }, 120000);
 
 async function targets() {
@@ -46,6 +46,22 @@ function connect(url) {
     send,
   }));
 }
+// The main process (node inspector): what Electron itself says about its windows.
+let mainProc = null;
+async function electronSays(expr) {
+  if (!mainProc) {
+    const list = await (await fetch(`http://127.0.0.1:${INSPECT}/json/list`)).json();
+    mainProc = await connect(list[0].webSocketDebuggerUrl);
+  }
+  const r = await mainProc.send('Runtime.evaluate', { returnByValue: true, includeCommandLineAPI: true,
+    expression: `(() => { const { BrowserWindow } = require('electron');
+    const by = (f) => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().split('?')[0].endsWith('/' + f));
+    return JSON.stringify(${expr}); })()` });
+  const v = r.result && r.result.result && r.result.result.value;
+  if (typeof v === 'string') return JSON.parse(v);
+  console.log('main process said:', JSON.stringify(r).slice(0, 600));
+  return {};
+}
 const codeFor = async (email) => {
   for (let i = 0; i < 80; i++) {
     const m = [...serverLog.matchAll(new RegExp(`sign-in code for ${email.replace(/[.]/g, '\\.')}: (\\d{6})`, 'g'))].pop();
@@ -64,7 +80,7 @@ const codeFor = async (email) => {
   for (let i = 0; i < 100 && !/Uvicorn running/.test(serverLog); i++) await sleep(200);
 
   appProc = spawn(path.join(ROOT, 'node_modules/electron/dist/electron.exe'),
-    [`--remote-debugging-port=${DBG}`, path.join(OUT, 'app-launcher.js')], {
+    [`--remote-debugging-port=${DBG}`, `--inspect=${INSPECT}`, path.join(OUT, 'app-launcher.js')], {
       cwd: ROOT,
       env: { ...process.env, AUD_TEST_USERDATA: path.join(tmp, 'userData'), AUDIATOR_ACCOUNTS_URL: `http://127.0.0.1:${PORT}` },
     });
@@ -134,13 +150,26 @@ const codeFor = async (email) => {
   await sleep(400);
   check('support window closes', !(await targets()).some((t) => t.url.split('?')[0].endsWith('/support.html')));
 
+  // 2c. The ☰ menu (AUD-50): while open, the title bar is no drag area, so a
+  // click there reaches the page and closes it; leaving the window closes it.
+  const region = () => main.js(`getComputedStyle(document.querySelector('.title-bar')).getPropertyValue('-webkit-app-region')`);
+  await main.js(`document.getElementById('menu-btn').click()`);
+  await sleep(100);
+  check('menu open: the title bar takes clicks (no drag)', (await main.js(`!document.getElementById('app-menu').classList.contains('hidden')`)) && (await region()) === 'no-drag', await region());
+  await main.js(`document.querySelector('.title-bar').click()`);
+  await sleep(100);
+  check('a click on the title bar closes the menu, the bar drags again', (await main.js(`document.getElementById('app-menu').classList.contains('hidden')`)) && (await region()) === 'drag', await region());
+  await main.js(`document.getElementById('menu-btn').click(); window.dispatchEvent(new Event('blur'))`);
+  await sleep(100);
+  check('away to another window: the menu closes', await main.js(`document.getElementById('app-menu').classList.contains('hidden')`));
+
   // 3. Settings: the account section; signing out brings sign-in back.
   // A recording going on while Settings is in front: the bar must show it.
   await main.js(`window.api.recordingStarted(999)`);
   await main.js(`document.getElementById('settings-btn').click()`);
   const settings = await page('settings.html');
   await sleep(800);
-  check('account buttons: write to us, sign out (no switch)', (await settings.js(`[...document.querySelectorAll('.account-actions button')].map((b) => b.textContent).join('|')`)) === 'Написать нам|Выйти из аккаунта');
+  check('account buttons: pay, write to us, sign out (no switch; AUD-47)', (await settings.js(`[...document.querySelectorAll('.account-actions button')].filter((b) => !b.hidden).map((b) => b.textContent).join('|')`)) === 'Оплатить|Написать нам|Выйти из аккаунта');
   check('settings shows the account', (await settings.js(`document.getElementById('account-email').textContent + ' | ' + document.getElementById('account-left').textContent`)).startsWith('tester@example.com'));
   await sleep(400);
   // (The bar's page always reports "visible" — it is never throttled — so
@@ -149,6 +178,19 @@ const codeFor = async (email) => {
   await main.js(`window.api.transcribeFailed(999)`);
   await sleep(500);
   check('nothing going on: the bar goes again', /\[overlay\] hide: barrels=0/.test(appLog.split('[overlay] show: barrels=1 inView=false')[1] || ''));
+  // "Pay" in Settings: the payment window, modal to Settings (AUD-44).
+  await settings.js(`document.getElementById('pay-btn').click()`);
+  const pay = await page('pay.html');
+  await sleep(600);
+  const st = await electronSays(`{ modal: by('pay.html').isModal(), parent: by('pay.html').getParentWindow() === by('settings.html'),
+    settingsEnabled: by('settings.html').isEnabled(), minimizable: by('pay.html').isMinimizable() }`);
+  check('the payment window is modal to Settings: Settings wait (AUD-44)', st.modal && st.parent && !st.settingsEnabled && !st.minimizable, JSON.stringify(st));
+  await pay.shot('app-6-pay.png');
+  await pay.js(`window.payApi.close()`).catch(() => {});
+  await sleep(500);
+  check('...closed: Settings usable again', !(await targets()).some((t) => t.url.split('?')[0].endsWith('/pay.html'))
+    && (await electronSays(`by('settings.html').isEnabled()`)) === true);
+  mainProc.close(); mainProc = null; // an open inspector session would keep the app from quitting at the end
   // English being tried in Settings (not saved): Contact us and the rules open in English.
   await settings.js(`window.settingsApi.openSupport('en')`);
   const supEn = await page('support.html');
