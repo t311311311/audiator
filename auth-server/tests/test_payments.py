@@ -89,9 +89,9 @@ class U:
         self.balance, self.paid_until = balance, paid_until
 
 
-@pytest.mark.parametrize("paid,days,left", [(3, 30, 0), (2.95, 30, 0), (2.9, None, 2.9), (10, 30, 7),
-                                            (25, 365, 0), (24.6, 365, 0), (30, 365, 5)])
-def test_the_balance_pays_a_year_if_it_can_else_a_month(paid, days, left):
+@pytest.mark.parametrize("paid,days,left", [(3, 30, 0), (2.95, 30, 0), (2.9, None, 2.9), (10, 90, 1),
+                                            (25, 365, 0), (24.6, 365, 0), (30, 395, 2), (53, 760, 0)])
+def test_the_balance_buys_years_then_months_while_it_covers_one(paid, days, left):
     now = accounts_db._utcnow()
     u = U()
     billing.credit(u, paid, now)
@@ -99,19 +99,54 @@ def test_the_balance_pays_a_year_if_it_can_else_a_month(paid, days, left):
         assert u.paid_until is None, "short by more than 2%: waits on the balance"
     else:
         assert u.paid_until == now + timedelta(days=days)
-    assert u.balance == pytest.approx(left)
+    assert u.balance == pytest.approx(left), "only less than a month stays on the balance"
 
 
-def test_what_is_left_renews_when_the_period_ends():
+def test_a_payment_while_a_period_runs_adds_to_its_end():
+    """Owner 2026-10-09: paying again while paid adds another month, it does
+    not sit on the balance."""
     now = accounts_db._utcnow()
     u = U()
-    billing.credit(u, 10, now)                      # a month, 7 left
-    assert not billing.settle(u, now + timedelta(days=10)), "nothing while the month runs"
-    later = now + timedelta(days=31)
-    assert billing.settle(u, later) and u.paid_until == later + timedelta(days=30) and u.balance == 4
-    billing.credit(u, 25, later + timedelta(days=1))
-    assert u.balance == 29, "paid during a running period: waits for its end"
-    assert billing.settle(u, later + timedelta(days=31)) and u.balance == 4, "then a year"
+    billing.credit(u, 3, now)
+    end = now + timedelta(days=30)
+    billing.credit(u, 3, now + timedelta(days=10))
+    assert u.paid_until == end + timedelta(days=30) and u.balance == 0
+    billing.credit(u, 25, now + timedelta(days=11))
+    assert u.paid_until == end + timedelta(days=30 + 365) and u.balance == 0, "a year on top"
+    billing.credit(u, 2, now + timedelta(days=12))
+    assert u.paid_until == end + timedelta(days=395) and u.balance == 2, "less than a month waits"
+    billing.credit(u, 1, now + timedelta(days=13))
+    assert u.paid_until == end + timedelta(days=425) and u.balance == 0, "and joins the next payment"
+
+
+def test_a_lapsed_period_starts_again_from_now():
+    now = accounts_db._utcnow()
+    u = U(balance=0.0, paid_until=now - timedelta(days=5))
+    billing.credit(u, 3, now)
+    assert u.paid_until == now + timedelta(days=30), "the days in between were not paid for"
+    assert not billing.settle(u, now + timedelta(days=1)), "nothing left to buy"
+
+
+def test_a_free_price_never_loops(monkeypatch):
+    monkeypatch.setitem(billing.PRICE, "month", 0)
+    monkeypatch.setitem(billing.PRICE, "year", 0)
+    u = U(balance=5.0)
+    assert not billing.settle(u, accounts_db._utcnow()) and u.balance == 5
+
+
+def test_the_profile_extends_a_running_period_from_the_balance(client, codes, monkeypatch):
+    """The owner's case: paid till 08.11 with 0.01 on the balance and a month
+    at 0.01 — the next /me makes it 08.12 and the balance 0."""
+    monkeypatch.setitem(billing.PRICE, "month", 0.01)
+    h = signed_in(client, codes)
+    end = accounts_db._utcnow().replace(microsecond=0) + timedelta(days=30)
+    with accounts_db.Session() as s:
+        u = s.query(accounts_db.User).one()
+        u.balance, u.paid_until = 0.01, end
+        s.commit()
+    me = client.get("/api/v2/me", headers=h).json()
+    assert me["plan"] == "commercial" and me["balance"] == 0
+    assert user().paid_until == end + timedelta(days=30)
 
 
 # --- xRocket invoices ------------------------------------------------------------------

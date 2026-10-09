@@ -299,7 +299,8 @@ def me(tz: Optional[int] = 0, authorization: Optional[str] = Header(None)):
     u, device = _auth(authorization)
     with Session() as s:
         u = s.get(User, u.id)
-        # A paid period that ended: the balance pays the next one, if it can.
+        # Whatever the balance covers is bought (a payment made elsewhere, a
+        # price lowered since); a lapsed period starts again from now.
         if billing.settle(u, _utcnow()):
             s.commit()
     return _profile(u)
