@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """xRocket Pay (https://docs.xrocket.exchange/api/pay/pay-api-overview): invoices
 paid inside Telegram from the payer's xRocket wallet (owner's decision
-2026-10-07/09: the main way to pay, the fee paid by the buyer).
+2026-10-09: the main way to pay; xRocket's 1.5% on incoming payments is ours,
+the buyer pays the price and no more).
 
   XROCKET_TOKEN          the app's Bearer token (bot: Pay API → app → Settings)
   XROCKET_WEBHOOK_TOKEN  the app's webhook secret (signs the notifications)
@@ -50,11 +51,11 @@ def _call(method: str, path: str, **kw) -> dict:
 
 def create_invoice(amount: float, client_id: str, description: str, callback_url: str = "",
                    expires_ms: int = 30 * 60 * 1000) -> dict:
-    """A USDT invoice for amount, the service fee on top for the payer.
+    """A USDT invoice for amount; xRocket's fee comes out of what we receive.
     Returns the invoice: id, status, expiresAt, links.telegramBotLink."""
     body = {"priceAmount": f"{amount:g}", "priceCurrency": "USDT", "payCurrencies": ["USDT"],
             "clientInvoiceId": client_id, "description": description[:1000], "expiresIn": expires_ms,
-            "isFeePaidByUser": True, "callback": {"payload": {"client": client_id}}}
+            "isFeePaidByUser": False, "callback": {"payload": {"client": client_id}}}
     if callback_url:
         body["callback"]["callbackUrl"] = callback_url
     return _call("POST", "/api/v1/invoices", json=body)
@@ -64,9 +65,10 @@ def get_invoice(invoice_id: str) -> dict:
     return _call("GET", "/api/v1/invoice", params={"invoiceId": invoice_id})
 
 
-def received(invoice_id: str) -> float:
-    """What reached us for the invoice, after xRocket's fee: the sum of its
-    finished payments (finalizedAt set — the docs' test for finality)."""
+def paid(invoice_id: str) -> float:
+    """What the buyer paid for the invoice — before xRocket's fee, which is
+    ours: the sum of its finished payments (finalizedAt set — the docs' test
+    for finality)."""
     total, cursor = 0.0, None
     for _ in range(20):
         params = {"invoiceId": invoice_id, "limit": 100}
@@ -75,7 +77,7 @@ def received(invoice_id: str) -> float:
         page = _call("GET", "/api/v1/invoice/payments", params=params)
         for p in page.get("items", []):
             if p.get("finalizedAt") and p.get("status") == "paid":
-                total += float(p.get("receiveAmount") or 0)
+                total += float(p.get("payAmount") or 0)
         cursor = (page.get("pagination") or {}).get("next")
         if not cursor:
             break

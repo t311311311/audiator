@@ -29,15 +29,16 @@
         h1 { font-size: 18px; margin: 0 0 4px; }
         .now { opacity: 0.8; margin: 0 0 14px; line-height: 1.45; }
         .periods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        /* A month and a year: a card each, everything in its middle. */
         .period {
-            display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; cursor: pointer;
-            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 6px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+            padding: 14px 12px; cursor: pointer; text-align: center;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 8px;
         }
         .period.chosen { border-color: var(--accent-color); box-shadow: 0 0 0 1px var(--accent-color) inset; }
         .period input { display: none; }
-        .period .name { font-weight: 600; }
-        .period .price { font-size: 17px; }
-        .period .note { font-size: 11.5px; opacity: 0.7; min-height: 15px; }
+        .period .name { font-weight: 600; opacity: 0.85; }
+        .period .price { font-size: 20px; font-weight: 600; }
         .how { font-size: 12px; opacity: 0.75; line-height: 1.45; margin: 12px 0 0; }
         .primary {
             width: 100%; margin-top: 12px; padding: 9px; font: inherit; font-size: 14px; font-weight: 600;
@@ -91,15 +92,16 @@
         <h1 data-i18n="pay.title">Оплатить тариф</h1>
         <p class="now" id="now"></p>
         <div class="periods" id="periods" role="radiogroup"></div>
-        <p class="how" data-i18n="pay.how">Оплата в Telegram с кошелька xRocket. К цене добавляется комиссия xRocket 1,5 %.</p>
+        <p class="how" data-i18n="pay.how">Оплата в Telegram с кошелька xRocket.</p>
         <button class="primary" id="pay" data-i18n="pay.button">Оплатить в Telegram</button>
         <div class="error" id="error"></div>
         <div class="steps">
             <h2 data-i18n="pay.stepsTitle">Нет USDT в xRocket? Три шага:</h2>
             <ol>
-                <li data-i18n="pay.step1">Пройдите проверку личности в xRocket — один раз.</li>
-                <li data-i18n="pay.step2">Пополните кошелёк по СБП.</li>
-                <li data-i18n="pay.step3">Вернитесь сюда и нажмите «Оплатить в Telegram».</li>
+                <!-- "xRocket" in step 1 is a link: the owner's referral link, as the button below. -->
+                <li><span id="step1"></span></li>
+                <li><span data-i18n="pay.step2">Пополните кошелёк по СБП.</span></li>
+                <li><span data-i18n="pay.step3">Вернитесь сюда и нажмите «Оплатить в Telegram».</span></li>
             </ol>
             <button class="secondary" id="topup" data-i18n="pay.topUpButton">Пополнить кошелёк xRocket</button>
         </div>
@@ -166,11 +168,8 @@
                 name.textContent = S(`pay.${p}`);
                 const price = document.createElement('span');
                 price.className = 'price';
-                price.textContent = `${fmtUsdt(PRICES[p])} USDT`;
-                const note = document.createElement('span');
-                note.className = 'note';
-                note.textContent = p === 'year' ? S('pay.yearNote', { m: fmtUsdt(PRICES.year / 12) }) : '';
-                card.append(radio, name, price, note);
+                price.textContent = `${fmtUsdt(PRICES[p])} USDT`;
+                card.append(radio, name, price);
                 $('periods').appendChild(card);
             }
         }
@@ -248,6 +247,13 @@
             document.querySelectorAll('[data-i18n]').forEach((el) => {
                 if (STR[el.dataset.i18n] !== undefined) el.textContent = STR[el.dataset.i18n];
             });
+            // Step 1: "xRocket" is a link to the top-up (the referral link).
+            const [before, after] = S('pay.step1').split('{xrocket}');
+            const link = document.createElement('a');
+            link.href = '#';
+            link.textContent = 'xRocket';
+            link.addEventListener('click', (e) => { e.preventDefault(); window.payApi.topUp(); });
+            $('step1').replaceChildren(before, link, after || '');
             renderNow();
             renderPeriods();
         }

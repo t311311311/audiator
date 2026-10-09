@@ -86,13 +86,19 @@ app.whenReady().then(async () => {
   await open('lang=ru&theme=dark&acc=free');
   check('free plan: what it is now', (await text('now')) === 'Сейчас: бесплатный тариф, 2 часа в сутки.', await text('now'));
   check('a month and a year, the month chosen', (await js(`[...document.querySelectorAll('.period')].map((c) => c.classList.contains('chosen') + ':' + c.textContent).join('|')`))
-    === 'true:Месяц3 USDT|false:Год25 USDT≈ 2,08 USDT в месяц');
-  check('the fee is said before paying', /комиссия xRocket 1,5 %/.test(await text('form')));
+    === 'true:Месяц3\u00A0USDT|false:Год25\u00A0USDT', 'no "≈ … a month" under the year (AUD-42)');
+  check('the prices in the middle of their cards', await js(`[...document.querySelectorAll('.period .price')].every((el) => {
+    const c = el.parentElement.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return Math.abs((r.left + r.right) / 2 - (c.left + c.right) / 2) < 3; })`));
+  check('no fee on top for the buyer: none mentioned (owner\'s decision 2026-10-09)', !/комисси/i.test(await text('form'))
+    && (await text('form')).includes('Оплата в Telegram с кошелька xRocket.'));
   check('three steps to top up, without P2P', (await js(`[...document.querySelectorAll('.steps li')].map((l) => l.textContent).join('|')`))
-    === 'Пройдите проверку личности в xRocket — один раз.|Пополните кошелёк по СБП — от 150 ₽. На месяц хватит около 300 ₽.|Вернитесь сюда и нажмите «Оплатить в Telegram».'
+    === 'Пройдите проверку личности в xRocket — один раз.|Пополните кошелёк по СБП на сумму тарифа по текущему курсу (цены указаны в USDT: 1 USDT ≈ 1 $).|Вернитесь сюда и нажмите «Оплатить в Telegram».'
     && !/P2P/.test(await text('form')));
+  await js(`document.querySelector('#step1 a').click()`);
+  check('"xRocket" in step 1 is the referral link', (await js('window.__calls.topup')) === 1);
   await js(`document.getElementById('topup').click()`);
-  check('"Top up" opens the xRocket top-up (the referral link lives in the main process)', (await js('window.__calls.topup')) === 1);
+  check('"Top up" opens the xRocket top-up too (the link lives in the main process)', (await js('window.__calls.topup')) === 2);
   await js(`document.querySelectorAll('.period input')[1].click()`);
   check('the year chosen', await js(`document.querySelectorAll('.period')[1].classList.contains('chosen')`));
   await js(`document.getElementById('pay').click()`);

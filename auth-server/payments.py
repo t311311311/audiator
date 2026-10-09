@@ -2,7 +2,8 @@
 """Paying for the plan (the rules, section 4; docs/PRODUCT-PLAN.md, step 5).
 
 The main way (owner's decision 2026-10-09): an xRocket invoice, paid inside
-Telegram from the payer's xRocket wallet, the service fee on top for the payer.
+Telegram from the payer's xRocket wallet. The buyer pays the price; xRocket's
+1.5% comes out of what we receive.
 
   POST /api/v2/pay/xrocket            {period: month|year, lang}  -> {id, url, expires_at, price}
   GET  /api/v2/pay/{id}                                            -> {status, credited, profile}
@@ -103,7 +104,8 @@ def reconcile(payment_id: int) -> str:
             return p.status
         if status != "paid":
             return p.status
-        amount = xrocket.received(p.invoice_id) or float(inv.get("priceAmount") or 0)
+        # What the buyer paid goes to the balance; xRocket's fee is ours.
+        amount = xrocket.paid(p.invoice_id) or float(inv.get("priceAmount") or 0)
         now = _utcnow()
         # Only the request that moves it from pending credits it: a notification
         # and the app's question can arrive together.

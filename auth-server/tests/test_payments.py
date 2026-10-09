@@ -53,7 +53,7 @@ class FakeRocket:
         self.calls.append(("get", iid))
         return dict(self.invoices[iid])
 
-    def received(self, iid):
+    def paid(self, iid):
         return self.invoices[iid]["received"]
 
     def pay(self, iid, received=None):
@@ -66,7 +66,7 @@ def rocket(monkeypatch):
     fake = FakeRocket()
     monkeypatch.setenv("XROCKET_TOKEN", "test-token")
     monkeypatch.setenv("XROCKET_WEBHOOK_TOKEN", SECRET)
-    for name in ("create_invoice", "get_invoice", "received"):
+    for name in ("create_invoice", "get_invoice", "paid"):
         monkeypatch.setattr(xrocket, name, getattr(fake, name))
     return fake
 
@@ -249,3 +249,16 @@ def test_the_profile_tells_the_balance_and_renews_on_sign_in(client, codes):
         s.commit()
     me = client.get("/api/v2/me", headers=h).json()
     assert me["plan"] == "commercial" and me["balance"] == 2, "the next month from the balance"
+
+
+def test_the_buyer_pays_the_price_and_the_fee_is_ours(monkeypatch):
+    """Owner's decision 2026-10-09: no fee on top for the buyer; xRocket's 1.5%
+    comes out of what we receive, and the balance gets what the buyer paid."""
+    sent = {}
+    monkeypatch.setattr(xrocket, "_call", lambda method, path, **kw: sent.update(kw.get("json") or {}) or {"id": "1"})
+    xrocket.create_invoice(3, "aud-1", "Audiator — 1 месяц")
+    assert sent["isFeePaidByUser"] is False and sent["priceAmount"] == "3"
+    pages = {"items": [{"status": "paid", "finalizedAt": "2026-10-09T10:30:00Z", "payAmount": "3", "receiveAmount": "2.955"},
+                       {"status": "pending", "finalizedAt": None, "payAmount": "3", "receiveAmount": "2.955"}]}
+    monkeypatch.setattr(xrocket, "_call", lambda method, path, **kw: pages)
+    assert xrocket.paid("1") == 3, "what the buyer paid, not what reached us after the fee"
