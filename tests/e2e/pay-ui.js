@@ -16,7 +16,7 @@ function payStub(lang, theme, accountJson) {
   const I18N = JSON.stringify({ lang, languages: i18n.LANGUAGES, strings: i18n.stringsFor(lang) });
   return `<script>
   const noop = () => {};
-  window.__calls = { invoice: [], status: [], open: [], close: 0, terms: 0 };
+  window.__calls = { invoice: [], status: [], open: [], close: 0, terms: 0, topup: 0 };
   window.__account = ${accountJson};
   window.__invoice = { ok: true, id: 7, url: 'https://t.me/xrocket?start=inv_test7', price: 3, expiresAt: Date.now() + 30 * 60e3 };
   window.__statuses = ['pending'];
@@ -27,6 +27,7 @@ function payStub(lang, theme, accountJson) {
     openInvoice: (url) => { window.__calls.open.push(url); },
     status: (id) => { window.__calls.status.push(id); const s = window.__statuses.length > 1 ? window.__statuses.shift() : window.__statuses[0];
       return Promise.resolve(s === 'offline' ? { ok: false, error: 'network' } : { ok: true, status: s, credited: s === 'paid' ? 3 : null }); },
+    topUp: () => { window.__calls.topup++; },
     openTerms: () => { window.__calls.terms++; }, close: () => { window.__calls.close++; } };
   </script>`;
 }
@@ -75,7 +76,7 @@ app.whenReady().then(async () => {
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${srv.address().port}/`;
   // Drawn offscreen: snapshots work with the screen off or locked too.
-  const win = new BrowserWindow({ width: 440, height: 480, useContentSize: true, show: false, webPreferences: { offscreen: true } });
+  const win = new BrowserWindow({ width: 440, height: 540, useContentSize: true, show: false, webPreferences: { offscreen: true } }); // as index.js opens it
   const js = (code) => win.webContents.executeJavaScript(code);
   const open = async (q) => { await win.loadURL(`${base}pay.html?${q}`); await sleep(500); };
   const visible = (id) => js(`!document.getElementById('${id}').classList.contains('hidden')`);
@@ -87,7 +88,11 @@ app.whenReady().then(async () => {
   check('a month and a year, the month chosen', (await js(`[...document.querySelectorAll('.period')].map((c) => c.classList.contains('chosen') + ':' + c.textContent).join('|')`))
     === 'true:Месяц3 USDT|false:Год25 USDT≈ 2,08 USDT в месяц');
   check('the fee is said before paying', /комиссия xRocket 1,5 %/.test(await text('form')));
-  check('how to top up, without P2P', /Кошелёк → Пополнить/.test(await text('topup')) && !/P2P/.test(await text('topup')));
+  check('three steps to top up, without P2P', (await js(`[...document.querySelectorAll('.steps li')].map((l) => l.textContent).join('|')`))
+    === 'Пройдите проверку личности в xRocket — один раз.|Пополните кошелёк по СБП — от 150 ₽. На месяц хватит около 300 ₽.|Вернитесь сюда и нажмите «Оплатить в Telegram».'
+    && !/P2P/.test(await text('form')));
+  await js(`document.getElementById('topup').click()`);
+  check('"Top up" opens the xRocket top-up (the referral link lives in the main process)', (await js('window.__calls.topup')) === 1);
   await js(`document.querySelectorAll('.period input')[1].click()`);
   check('the year chosen', await js(`document.querySelectorAll('.period')[1].classList.contains('chosen')`));
   await js(`document.getElementById('pay').click()`);
@@ -97,11 +102,15 @@ app.whenReady().then(async () => {
   check('waiting: until when the invoice is valid', /^Счёт действует до \d\d:\d\d\.$/.test(await text('valid')), await text('valid'));
   await js(`document.getElementById('again').click()`);
   check('"open the invoice again" opens the same invoice', JSON.stringify(await js('window.__calls.open')) === '["https://t.me/xrocket?start=inv_test7"]');
+  check('waiting: in the middle of the window', await js(`(() => { const r = document.querySelector('#waiting .spinner').getBoundingClientRect();
+    const b = document.getElementById('back').getBoundingClientRect(); return Math.abs((r.top + b.bottom) / 2 - window.innerHeight / 2) < 40; })()`));
   await js(`window.__statuses = ['pending', 'offline', 'paid'];
             window.__account = ${PAID.replace('"balance":2', '"balance":0')};`);
   await sleep(13000);
   check('asked the server until paid (offline once, still waiting)', (await js('window.__calls.status.length')) >= 3);
-  check('paid: the plan and until when', (await text('result-text')) === 'Оплачено! Тариф действует до 09.11.2026.', await text('result-text'));
+  check('paid: the plan and until when', (await text('result-title')) === 'Оплачено!' && (await text('result-text')) === 'Тариф действует до 09.11.2026.', await text('result-text'));
+  check('paid: in the middle of the window', await js(`(() => { const r = document.getElementById('icon').getBoundingClientRect(); const b = document.getElementById('result-btn').getBoundingClientRect();
+    const mid = (r.top + b.bottom) / 2; return Math.abs(mid - window.innerHeight / 2) < 40; })()`));
   const polls = await js('window.__calls.status.length');
   await sleep(5000);
   check('no more asking once paid', (await js('window.__calls.status.length')) === polls);
@@ -109,9 +118,14 @@ app.whenReady().then(async () => {
   check('"Close" closes the window', (await js('window.__calls.close')) === 1);
 
   await open('lang=ru&theme=dark&acc=free');
+  await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
+  await sleep(300);
+  await js(`document.getElementById('back').click()`);
+  check('"Back" from waiting returns to the form', await visible('form'));
   await js(`window.__statuses = ['expired']; document.getElementById('pay').click()`);
   await sleep(5000);
-  check('expired: said so, a new invoice offered', (await text('result-text')) === 'Счёт истёк без оплаты.' && (await text('result-btn')) === 'Новый счёт');
+  check('expired: said so, a new invoice offered', (await text('result-title')) === 'Счёт истёк'
+    && (await text('result-text')) === 'Оплата не поступила — создайте новый счёт.' && (await text('result-btn')) === 'Новый счёт');
   await js(`document.getElementById('result-btn').click()`);
   check('"New invoice" goes back to the form', await visible('form'));
 
@@ -128,12 +142,13 @@ app.whenReady().then(async () => {
   check('signed out meanwhile: the window closes', (await js('window.__calls.close')) === 1);
 
   await open('lang=ru&theme=dark&acc=paid');
-  check('paid plan with a balance: until when, and what waits', (await text('now')) === 'Оплачено до 09.11.2026. На балансе: 2 USDT, пойдут на следующий срок.', await text('now'));
+  // (A no-break space before "USDT": the amount and its unit stay on one line.)
+  check('paid plan with a balance: until when, and what waits', (await text('now')) === 'Оплачено до 09.11.2026. На балансе: 2 USDT, пойдут на следующий срок.', await text('now'));
 
   // --- Settings: "Pay" / "Renew" beside the plan ---
-  const sw = new BrowserWindow({ width: 450, height: 770, useContentSize: true, show: false }); // as index.js opens Settings
+  const sw = new BrowserWindow({ width: 450, height: 770, useContentSize: true, show: false, webPreferences: { offscreen: true } }); // as index.js opens Settings
   const sjs = (code) => sw.webContents.executeJavaScript(code);
-  for (const [acc, link, left] of [['free', 'Оплатить', null], ['paid', 'Продлить', 'Оплачено до 09.11.2026 · на балансе 2 USDT'], ['admin', null, null]]) {
+  for (const [acc, link, left] of [['free', 'Оплатить', null], ['paid', 'Продлить', 'Оплачено до 09.11.2026 · на балансе 2 USDT'], ['admin', null, null]]) {
     await sw.loadURL(`${base}settings.html?lang=ru&theme=dark&acc=${acc}`);
     await sleep(900);
     const shown = await sjs(`(() => { const a = document.getElementById('pay-link'); return a.hidden ? null : a.textContent; })()`);
@@ -148,6 +163,12 @@ app.whenReady().then(async () => {
         document.getElementById('pay-link').hidden = true; const b = h(); document.getElementById('pay-link').hidden = false; return [a, b]; })()`);
       check('Settings keep their height: the link adds no row', withLink === without, `${withLink} / ${without}`);
     }
+  }
+
+  for (const theme of ['dark', 'light']) {
+    await sw.loadURL(`${base}settings.html?lang=ru&theme=${theme}&acc=paid`);
+    await sleep(900);
+    fs.writeFileSync(path.join(OUT, `pay-settings-balance-ru-${theme}.png`), (await sw.webContents.capturePage()).toPNG());
   }
 
   // --- Snapshots: the form and paid, three languages, two themes; waiting once ---

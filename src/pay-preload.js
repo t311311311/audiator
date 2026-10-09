@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('payApi', {
   onAccountUpdated: (cb) => ipcRenderer.on('account-updated', (event, v) => cb(v)),
   invoice: (period, lang) => ipcRenderer.invoke('pay-invoice', { period, lang }), // opens it in Telegram
   openInvoice: (url) => ipcRenderer.send('pay-open-invoice', url),
+  topUp: () => ipcRenderer.send('pay-topup'), // xRocket's ruble top-up, by the owner's referral link
   status: (id) => ipcRenderer.invoke('pay-status', id),
   openTerms: (lang) => ipcRenderer.send('open-terms', lang),
   close: () => ipcRenderer.send('pay-close'),

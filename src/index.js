@@ -486,7 +486,7 @@ const showPayWindow = (lang) => {
   if (payWindow && !payWindow.isDestroyed()) { payWindow.focus(); return; }
   payWindow = new BrowserWindow({
     width: 440,
-    height: 480,
+    height: 540, // the form with the three top-up steps needs 521 (ru, en)
     useContentSize: true,
     resizable: false,
     maximizable: false,
@@ -504,6 +504,9 @@ const showPayWindow = (lang) => {
   payWindow.loadFile(path.join(__dirname, 'pay.html'), { query: { lang } });
   payWindow.on('closed', () => { payWindow = null; });
 };
+// Topping up an xRocket wallet with rubles: the owner's referral link (a small
+// share of xRocket's fee comes back; owner's decision 2026-10-09).
+const XROCKET_TOPUP_URL = 'https://t.me/xrocket/app?startapp=deposit_rub_share-ref_SIZqQqMhXr-us_share';
 // Only xRocket's own links leave the app: an invoice opens in Telegram.
 const openInvoice = (url) => {
   if (typeof url === 'string' && /^https:\/\/t\.me\/xrocket\?start=inv_[\w-]+$/i.test(url)) shell.openExternal(url);
@@ -799,6 +802,7 @@ app.on('ready', async () => {
     return r;
   });
   ipcMain.on('pay-open-invoice', (event, url) => openInvoice(url));
+  ipcMain.on('pay-topup', () => shell.openExternal(XROCKET_TOPUP_URL));
   ipcMain.handle('pay-status', (event, id) => account.paymentStatus(id));
   ipcMain.on('account-sign-out', () => {
     account.signOut('user'); // onChange opens the sign-in window

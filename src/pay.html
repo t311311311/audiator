@@ -6,7 +6,9 @@
     <!-- Paying for the plan (owner's decision 2026-10-09): an xRocket invoice,
          paid in Telegram from the payer's xRocket wallet, xRocket's fee on top.
          The invoice opens in Telegram; this window asks our server every few
-         seconds until the payment comes (auth-server/payments.py). -->
+         seconds until the payment comes (auth-server/payments.py). Below the
+         button: how to top up an empty xRocket wallet, in three steps, with the
+         owner's referral link (index.js, XROCKET_TOPUP_URL). -->
     <style>
         :root {
             --bg-color: #282c34; --primary-color: #3e4452; --text-color: #abb2bf;
@@ -17,11 +19,13 @@
             --border-color: #d1d5db; --error-color: #c0392b; --ok-color: #2e7d32;
         }
         * { box-sizing: border-box; }
+        html, body { height: 100%; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--bg-color); color: var(--text-color);
             margin: 0; padding: 18px 22px; font-size: 13px; user-select: none;
         }
+        .screen { height: 100%; display: flex; flex-direction: column; }
         h1 { font-size: 18px; margin: 0 0 4px; }
         .now { opacity: 0.8; margin: 0 0 14px; line-height: 1.45; }
         .periods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -44,17 +48,37 @@
             width: 100%; margin-top: 8px; padding: 7px; font: inherit; color: var(--text-color);
             background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;
         }
-        .error { color: var(--error-color); min-height: 18px; margin-top: 8px; }
-        .topup { font-size: 12px; opacity: 0.75; line-height: 1.45; margin-top: 10px; }
-        .foot { margin-top: 10px; font-size: 12px; text-align: center; }
+        .error { color: var(--error-color); min-height: 18px; margin-top: 6px; }
+        /* How to top up an empty xRocket wallet: three numbered steps. */
+        .steps {
+            margin-top: 6px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+            background: color-mix(in srgb, var(--primary-color) 45%, transparent);
+        }
+        .steps h2 { font-size: 13px; margin: 0 0 8px; }
+        .steps ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+        .steps li { counter-increment: step; display: flex; gap: 9px; align-items: flex-start; margin: 6px 0; line-height: 1.4; font-size: 12.5px; }
+        .steps li::before {
+            content: counter(step); flex: 0 0 20px; height: 20px; border-radius: 50%; font-size: 11.5px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--accent-color); border: 1px solid var(--accent-color);
+        }
+        .steps .secondary { margin-top: 10px; }
+        .foot { margin-top: auto; padding-top: 10px; font-size: 12px; text-align: center; }
         a { color: var(--accent-color); }
-        .state { text-align: center; padding-top: 40px; }
-        .state .mark { font-size: 40px; }
-        .state .mark.ok { color: var(--ok-color); }
-        .state p { line-height: 1.5; margin: 10px 0 6px; }
+        /* Waiting and the result: in the middle of the window. */
+        .state { align-items: center; justify-content: center; text-align: center; gap: 4px; }
+        .state .icon {
+            width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 30px; margin-bottom: 12px; border: 2px solid var(--border-color);
+        }
+        .state .icon.ok { color: var(--ok-color); border-color: var(--ok-color);
+            background: color-mix(in srgb, var(--ok-color) 12%, transparent); }
+        .state h2 { font-size: 18px; margin: 0; }
+        .state p { line-height: 1.5; margin: 6px 0 0; max-width: 340px; }
         .state .small { font-size: 12px; opacity: 0.7; }
+        .state .actions { width: 100%; max-width: 300px; margin-top: 18px; }
         .spinner {
-            width: 34px; height: 34px; margin: 0 auto; border-radius: 50%;
+            width: 40px; height: 40px; margin-bottom: 14px; border-radius: 50%;
             border: 3px solid var(--border-color); border-top-color: var(--accent-color);
             animation: spin 1s linear infinite;
         }
@@ -63,26 +87,39 @@
     </style>
 </head>
 <body>
-    <div id="form">
+    <div id="form" class="screen">
         <h1 data-i18n="pay.title">Оплатить тариф</h1>
         <p class="now" id="now"></p>
         <div class="periods" id="periods" role="radiogroup"></div>
         <p class="how" data-i18n="pay.how">Оплата в Telegram с кошелька xRocket. К цене добавляется комиссия xRocket 1,5 %.</p>
         <button class="primary" id="pay" data-i18n="pay.button">Оплатить в Telegram</button>
         <div class="error" id="error"></div>
-        <p class="topup" id="topup" data-i18n="pay.topUp"></p>
+        <div class="steps">
+            <h2 data-i18n="pay.stepsTitle">Нет USDT в xRocket? Три шага:</h2>
+            <ol>
+                <li data-i18n="pay.step1">Пройдите проверку личности в xRocket — один раз.</li>
+                <li data-i18n="pay.step2">Пополните кошелёк по СБП.</li>
+                <li data-i18n="pay.step3">Вернитесь сюда и нажмите «Оплатить в Telegram».</li>
+            </ol>
+            <button class="secondary" id="topup" data-i18n="pay.topUpButton">Пополнить кошелёк xRocket</button>
+        </div>
         <div class="foot"><a href="#" id="terms" data-i18n="pay.terms">Правила оплаты</a></div>
     </div>
-    <div id="waiting" class="state hidden">
+    <div id="waiting" class="screen state hidden">
         <div class="spinner"></div>
-        <p data-i18n="pay.waiting">Счёт открыт в Telegram. Оплатите его там — это окно само увидит оплату.</p>
+        <h2 data-i18n="pay.waitingTitle">Ждём оплату</h2>
+        <p data-i18n="pay.waiting">Счёт на оплату открылся в Telegram, в боте @xRocket. Нажмите там «Оплатить» — оплата появится здесь сама.</p>
         <p class="small" id="valid"></p>
-        <button class="secondary" id="again" data-i18n="pay.openAgain">Открыть счёт снова</button>
+        <div class="actions">
+            <button class="secondary" id="again" data-i18n="pay.openAgain">Открыть счёт снова</button>
+            <button class="secondary" id="back" data-i18n="pay.back">Назад</button>
+        </div>
     </div>
-    <div id="result" class="state hidden">
-        <div class="mark" id="mark"></div>
+    <div id="result" class="screen state hidden">
+        <div class="icon" id="icon"></div>
+        <h2 id="result-title"></h2>
         <p id="result-text"></p>
-        <button class="primary" id="result-btn"></button>
+        <div class="actions"><button class="primary" id="result-btn"></button></div>
     </div>
 
     <script>
@@ -146,10 +183,11 @@
 
         function stopPolling() { if (poll) { clearInterval(poll); poll = null; } }
 
-        function result(ok, text, button) {
+        function result(ok, title, text, button) {
             stopPolling();
-            $('mark').textContent = ok ? '✓' : '⏱';
-            $('mark').classList.toggle('ok', ok);
+            $('icon').textContent = ok ? '✓' : '⏱';
+            $('icon').classList.toggle('ok', ok);
+            $('result-title').textContent = title;
             $('result-text').textContent = text;
             $('result-btn').textContent = button;
             $('result-btn').dataset.action = ok ? 'close' : 'again';
@@ -166,10 +204,10 @@
                 const text = v.plan === 'commercial' && v.paidUntil && !(v.balance > 0 && r.credited <= v.balance)
                     ? S('pay.paid', { d: fmtDate(v.paidUntil) })
                     : S('pay.paidBalance', { b: fmtUsdt(r.credited) });
-                result(true, text, S('pay.close'));
+                result(true, S('pay.paidTitle'), text, S('pay.close'));
             } else if (r.status === 'expired' || r.status === 'failed'
                        || (current.expiresAt && Date.now() > current.expiresAt + 60000)) {
-                result(false, S('pay.expired'), S('pay.newInvoice'));
+                result(false, S('pay.expiredTitle'), S('pay.expired'), S('pay.newInvoice'));
             }
         }
 
@@ -191,10 +229,14 @@
             }
         });
         $('again').addEventListener('click', () => { if (current) window.payApi.openInvoice(current.url); });
+        // Back to the form: the invoice stays valid in Telegram until it expires;
+        // paying it then still counts (the server settles it when asked next).
+        $('back').addEventListener('click', () => { stopPolling(); renderNow(); show('form'); });
         $('result-btn').addEventListener('click', () => {
             if ($('result-btn').dataset.action === 'close') window.payApi.close();
             else { current = null; renderNow(); show('form'); }
         });
+        $('topup').addEventListener('click', () => window.payApi.topUp());
         $('terms').addEventListener('click', (e) => { e.preventDefault(); window.payApi.openTerms(document.documentElement.lang); });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.payApi.close(); });
 
