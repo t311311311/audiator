@@ -467,6 +467,10 @@
         .dropdown-menu-item:hover {
             background-color: var(--primary-color);
         }
+        /* While the menu is open the title bar is not a drag area: a click
+           there reaches the page and closes the menu, like a click anywhere
+           else (the owner clicked the bar and the menu stayed, 2026-10-09). */
+        body.menu-open .title-bar, body.menu-open .minutes-left { -webkit-app-region: no-drag; }
 
         /* Стили для полосы прокрутки — одинаковые у истории и у панели перевода */
         .main-content::-webkit-scrollbar,
@@ -1448,6 +1452,13 @@
             event.stopPropagation();
             appMenu.classList.toggle('hidden');
         });
+        // The title bar follows the menu (see body.menu-open): every way the
+        // menu opens or closes goes through its "hidden" class.
+        new MutationObserver(() => {
+            document.body.classList.toggle('menu-open', !appMenu.classList.contains('hidden'));
+        }).observe(appMenu, { attributes: true, attributeFilter: ['class'] });
+        // Away to another window: the menu closes, as menus do.
+        window.addEventListener('blur', () => appMenu.classList.add('hidden'));
         
         settingsBtn.addEventListener('click', () => {
             window.api.openSettings();
