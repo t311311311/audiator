@@ -186,6 +186,18 @@ const codeFor = async (email) => {
     settingsEnabled: by('settings.html').isEnabled(), minimizable: by('pay.html').isMinimizable() }`);
   check('the payment window is modal to Settings: Settings wait (AUD-44)', st.modal && st.parent && !st.settingsEnabled && !st.minimizable, JSON.stringify(st));
   await pay.shot('app-6-pay.png');
+  // "Payment and balance rules": the rules open at section 4 (AUD-54).
+  check('the link is named after the section', (await pay.js(`document.getElementById('terms').textContent`)) === 'Правила оплаты и баланса');
+  await pay.js(`document.getElementById('terms').click()`);
+  const payTerms = await page('terms.html');
+  await sleep(700);
+  const at = await payTerms.js(`(() => { const h = document.querySelector('section.shown h2[data-part="payment"]');
+    return new URLSearchParams(location.search).get('part') + '|' + h.textContent + '|' + Math.round(h.getBoundingClientRect().top); })()`);
+  const [atPart, atTitle, atTop] = at.split('|');
+  check('...and opens the rules at "4. Оплата и баланс"', atPart === 'payment' && atTitle === '4. Оплата и баланс' && +atTop >= 0 && +atTop <= 24, at);
+  await payTerms.shot('app-7-terms-payment.png');
+  await payTerms.js('window.close()').catch(() => {});
+  await sleep(300);
   await pay.js(`window.payApi.close()`).catch(() => {});
   await sleep(500);
   check('...closed: Settings usable again', !(await targets()).some((t) => t.url.split('?')[0].endsWith('/pay.html'))

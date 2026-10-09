@@ -523,16 +523,19 @@ const openInvoice = (url) => {
   if (typeof url === 'string' && /^https:\/\/t\.me\/xrocket\?start=inv_[\w-]+$/i.test(url)) shell.openExternal(url);
 };
 
-// The rules of use (terms.html), from the sign-in window and from Settings.
+// The rules of use (terms.html), from the sign-in window, Settings and the
+// payment window — the last at its part, "4. Payment and balance" (AUD-54).
 // A plain page: no preload, nothing it can ask of the app; its mail link
 // goes to the user's mail program.
 let termsWindow = null;
-const showTermsWindow = (lang) => {
+const TERMS_PARTS = ['payment'];
+const showTermsWindow = (lang, part) => {
   lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
   const theme = resolveTheme(store.get('theme'));
+  const query = TERMS_PARTS.includes(part) ? { lang, theme, part } : { lang, theme };
   if (termsWindow && !termsWindow.isDestroyed()) {
-    // Open already, perhaps in another language: show it in this one.
-    termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang, theme } });
+    // Open already, perhaps in another language or at another part: show it so.
+    termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query });
     termsWindow.focus();
     return;
   }
@@ -546,7 +549,7 @@ const showTermsWindow = (lang) => {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   termsWindow.setMenu(null);
-  termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query: { lang, theme } });
+  termsWindow.loadFile(path.join(__dirname, 'terms.html'), { query });
   termsWindow.webContents.on('will-navigate', (event, url) => {
     event.preventDefault();
     if (url.startsWith('mailto:')) require('electron').shell.openExternal(url);
@@ -788,7 +791,7 @@ app.on('ready', async () => {
     return r;
   });
   // From Settings: sign out (also the way to another account).
-  ipcMain.on('open-terms', (event, lang) => showTermsWindow(lang));
+  ipcMain.on('open-terms', (event, lang, part) => showTermsWindow(lang, part));
   ipcMain.handle('history-load', () => (account.signedIn() ? loadHistory() : []));
   ipcMain.on('history-save', (event, list) => {
     if (account.signedIn() && Array.isArray(list)) saveHistory(list);

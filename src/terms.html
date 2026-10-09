@@ -7,7 +7,8 @@
          date below; it must match TERMS_VERSION in src/account.js and
          auth-server/accounts.py — change all three together, and the server
          asks everyone to accept the new version at their next sign-in.
-         Opened as terms.html?lang=ru&theme=dark. -->
+         Opened as terms.html?lang=ru&theme=dark; &part=payment opens it at
+         "4. Payment and balance" (the link in the payment window, AUD-54). -->
     <style>
         :root {
             --bg-color: #282c34; --text-color: #abb2bf; --head-color: #d7dae0;
@@ -70,22 +71,24 @@
 <li><span class="strong">Месяц</span> — 3 USDT. <span class="strong">Год</span> — 25 USDT. Без ограничения времени.</li>
 </ul>
 
-<h2>4. Оплата и баланс</h2>
+<h2 data-part="payment">4. Оплата и баланс</h2>
 <ul>
-<li>Оплата принимается только в <span class="strong">USDT</span>, двумя способами:
-<span class="strong">в сети BNB Smart Chain (BEP-20)</span> на ваш личный адрес, который показывает программа
-(адрес закреплён за вашим аккаунтом), или <span class="strong">в Telegram</span> по счёту из программы через
-Crypto Pay (@CryptoBot). При оплате в Telegram к цене добавляется комиссия этого сервиса — она видна в счёте.</li>
-<li>Каждый платёж зачисляется на баланс аккаунта. С баланса оплачивается период: год (25 USDT), если хватает,
-иначе месяц (3 USDT). Остаток остаётся на балансе и по окончании периода автоматически идёт на продление.</li>
-<li>Недостача до 2% от цены (например, удержанная биржей комиссия) не учитывается: период оплачивается.</li>
+<li>Оплата принимается только через <span class="strong">xRocket 🚀 в Telegram</span>, в <span class="strong">USDT</span>,
+по счёту из программы (Настройки → «Аккаунт» → «Оплатить»). <span class="strong">Месяц — 3 USDT, год — 25 USDT.</span>
+Комиссию xRocket 🚀 платим мы: вы платите ровно сумму счёта.</li>
+<li>Если в кошельке xRocket 🚀 нет USDT, его можно пополнить рублями по СБП — ссылка в окне оплаты. Пополнение
+проводит xRocket 🚀 по своим правилам.</li>
+<li>Каждый платёж зачисляется на баланс аккаунта, и с баланса сразу оплачивается период: год, если хватает на год,
+иначе месяц.</li>
+<li><span class="strong">Если тариф уже оплачен, новый платёж продлевает его:</span> период прибавляется к дате
+окончания.</li>
+<li>Остаток меньше цены месяца хранится на балансе и идёт в следующую оплату.</li>
+<li>Недостача до 2% от цены не учитывается: период оплачивается.</li>
 <li><span class="strong">Возвратов нет</span> ни при каких обстоятельствах, в том числе при ошибочных и излишних
 платежах: излишек остаётся на балансе и идёт на следующие периоды.</li>
-<li><span class="strong">Платёж в другой сети или другой монетой автоматически не засчитывается.</span> Напишите
-нам с номером транзакции: если перевод можно забрать, зачислим его на баланс за вычетом стоимости перевода.
-Если забрать нельзя — зачислить не сможем.</li>
-<li>Цены могут меняться. Баланс хранится в USDT; продление оплачивается по цене, действующей на момент продления.</li>
-<li>Пожертвования (донат) — добровольная благодарность; они не дают тарифа и не возвращаются.</li>
+<li>Цены могут меняться. Баланс хранится в USDT; оплаченные периоды не пересчитываются.</li>
+<li>Вопросы по оплате — через «Написать нам», тема «Оплата и баланс»: отвечаем в течение 48 часов, по другим
+вопросам — в течение 5 дней.</li>
 </ul>
 
 <h2>5. Какие данные мы храним</h2>
@@ -165,23 +168,24 @@ recording stops by itself, and what was recorded until then is recognised.</li>
 <li><span class="strong">Month</span> — 3 USDT. <span class="strong">Year</span> — 25 USDT. No time limit.</li>
 </ul>
 
-<h2>4. Payment and balance</h2>
+<h2 data-part="payment">4. Payment and balance</h2>
 <ul>
-<li>We accept only <span class="strong">USDT</span>, in two ways: <span class="strong">on BNB Smart Chain
-(BEP-20)</span>, sent to your personal address shown in the app (the address belongs to your account), or
-<span class="strong">in Telegram</span>, by an invoice from the app through Crypto Pay (@CryptoBot). When you pay
-in Telegram, that service's fee is added to the price — the invoice shows it.</li>
-<li>Every payment goes to your account balance. The balance pays for a period: a year (25 USDT) if there is
-enough, otherwise a month (3 USDT). The rest stays on the balance and renews the plan automatically when the
-period ends.</li>
-<li>A shortfall of up to 2% of the price (for example, a fee kept by an exchange) is ignored: the period is paid.</li>
+<li>We accept payment only through <span class="strong">xRocket 🚀 in Telegram</span>, in <span class="strong">USDT</span>,
+by an invoice from the app (Settings → "Account" → "Pay"). <span class="strong">A month is 3 USDT, a year is
+25 USDT.</span> We pay the fee of xRocket 🚀: you pay exactly the amount of the invoice.</li>
+<li>If your xRocket 🚀 wallet has no USDT, top it up in xRocket 🚀 (from Russia — with rubles via SBP); the link is in
+the payment window. The top-up is handled by xRocket 🚀 under its own rules.</li>
+<li>Every payment goes to your account balance, and the balance at once pays for a period: a year if it covers a
+year, otherwise a month.</li>
+<li><span class="strong">If your plan is already paid, a new payment extends it:</span> the period is added to its
+end date.</li>
+<li>What is left, less than the price of a month, stays on the balance and goes into your next payment.</li>
+<li>A shortfall of up to 2% of the price is ignored: the period is paid.</li>
 <li><span class="strong">There are no refunds</span> under any circumstances, including mistaken and excess
 payments: the excess stays on the balance and pays for the following periods.</li>
-<li><span class="strong">A payment on another network or in another coin is not credited automatically.</span>
-Write to us with the transaction id: if the transfer can be recovered, we credit it to your balance minus the
-cost of moving it. If it cannot be recovered, we cannot credit it.</li>
-<li>Prices may change. The balance is kept in USDT; a renewal is paid at the price in force at that time.</li>
-<li>Donations are a voluntary thank-you; they do not give a plan and are not refunded.</li>
+<li>Prices may change. The balance is kept in USDT; periods already paid are not recalculated.</li>
+<li>Questions about payment — through "Contact us", topic "Payment and balance": we answer within 48 hours, other
+questions within 5 days.</li>
 </ul>
 
 <h2>5. What data we keep</h2>
@@ -252,15 +256,17 @@ folder.</p>
 <li><span class="strong">月付</span> — 3 USDT。<span class="strong">年付</span> — 25 USDT。不限时长。</li>
 </ul>
 
-<h2>4. 付款与余额</h2>
+<h2 data-part="payment">4. 付款与余额</h2>
 <ul>
-<li>仅接受 <span class="strong">USDT</span> 付款，两种方式：通过 <span class="strong">BNB Smart Chain（BEP-20）网络</span>付款至程序显示的您的专属地址（该地址与您的账户绑定），或<span class="strong">在 Telegram 中</span>通过 Crypto Pay（@CryptoBot）支付程序生成的账单。在 Telegram 中支付时，价格会加上该服务的手续费，账单中会显示。</li>
-<li>每笔付款计入账户余额。余额足够时支付一年（25 USDT），否则支付一个月（3 USDT）。剩余部分保留在余额中，期满后自动续费。</li>
-<li>不足价格 2% 以内的差额（例如交易所扣除的手续费）不计：视为已付清。</li>
+<li>仅接受通过 <span class="strong">Telegram 中的 xRocket 🚀</span> 以 <span class="strong">USDT</span> 付款，使用程序生成的账单（设置 → “账户” → “付款”）。<span class="strong">一个月 3 USDT，一年 25 USDT。</span>xRocket 🚀 的手续费由我们承担：您只需支付账单金额。</li>
+<li>如果 xRocket 🚀 钱包中没有 USDT，可以在 xRocket 🚀 中充值（在俄罗斯可通过 SBP 用卢布充值），链接在付款窗口中。充值由 xRocket 🚀 按其规则办理。</li>
+<li>每笔付款计入账户余额，余额立即用于支付一期：足够一年则支付一年，否则支付一个月。</li>
+<li><span class="strong">如果套餐已付费，新的付款将延长有效期：</span>新的一期加在到期日之后。</li>
+<li>不足一个月价格的余款保留在余额中，计入下次付款。</li>
+<li>不足价格 2% 以内的差额不计：视为已付清。</li>
 <li><span class="strong">任何情况下均不退款</span>，包括误付和多付：多付部分保留在余额中，用于后续周期。</li>
-<li><span class="strong">通过其他网络或以其他币种的付款不会自动入账。</span>请附上交易编号联系我们：如果该笔转账可以取回，我们将扣除转账费用后计入您的余额；如果无法取回，则无法入账。</li>
-<li>价格可能调整。余额以 USDT 计；续费按续费时的价格支付。</li>
-<li>捐赠为自愿致谢，不提供套餐，不予退还。</li>
+<li>价格可能调整。余额以 USDT 计；已支付的周期不会重新计算。</li>
+<li>付款问题请通过“联系我们”（主题“付款与余额”）提出：我们在 48 小时内答复，其他问题在 5 天内答复。</li>
 </ul>
 
 <h2>5. 我们保存的数据</h2>
@@ -305,6 +311,13 @@ folder.</p>
     document.querySelector(`section[lang="${lang}"]`).classList.add('shown');
     document.title = document.querySelector('section.shown h1').textContent;
     if (q.get('theme') === 'light') document.body.classList.add('light-theme');
+    // Opened for one part (the payment window's "Payment and balance rules"):
+    // that heading at the top, so nobody has to look for it.
+    const part = q.get('part') && document.querySelector(`section.shown h2[data-part="${CSS.escape(q.get('part'))}"]`);
+    if (part) {
+        part.style.scrollMarginTop = '14px'; // a little room above it, not glued to the frame
+        part.scrollIntoView({ block: 'start' });
+    }
     // (The mail link is handed to the user's mail program by the main process.)
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
 </script>
