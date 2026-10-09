@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   // In the language shown in Settings (it may be one being tried, not yet saved).
   openTerms: (lang) => ipcRenderer.send('open-terms', lang),
   openSupport: (lang) => ipcRenderer.send('support-open', lang),
+  openPay: (lang) => ipcRenderer.send('pay-open', lang), // paying for the plan (pay.html)
   // The folder for recordings and texts: the one in use, pick another (the
   // dialog in the language shown), open it in Explorer.
   getSaveFolder: () => ipcRenderer.invoke('save-folder'),

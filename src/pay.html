@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Audiator</title>
+    <!-- Paying for the plan (owner's decision 2026-10-09): an xRocket invoice,
+         paid in Telegram from the payer's xRocket wallet, xRocket's fee on top.
+         The invoice opens in Telegram; this window asks our server every few
+         seconds until the payment comes (auth-server/payments.py). -->
+    <style>
+        :root {
+            --bg-color: #282c34; --primary-color: #3e4452; --text-color: #abb2bf;
+            --border-color: #4b5263; --accent-color: #61afef; --error-color: #e06c75; --ok-color: #98c379;
+        }
+        body.light-theme {
+            --bg-color: #fafafa; --primary-color: #e4e6eb; --text-color: #1c1e21;
+            --border-color: #d1d5db; --error-color: #c0392b; --ok-color: #2e7d32;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-color); color: var(--text-color);
+            margin: 0; padding: 18px 22px; font-size: 13px; user-select: none;
+        }
+        h1 { font-size: 18px; margin: 0 0 4px; }
+        .now { opacity: 0.8; margin: 0 0 14px; line-height: 1.45; }
+        .periods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .period {
+            display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; cursor: pointer;
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 6px;
+        }
+        .period.chosen { border-color: var(--accent-color); box-shadow: 0 0 0 1px var(--accent-color) inset; }
+        .period input { display: none; }
+        .period .name { font-weight: 600; }
+        .period .price { font-size: 17px; }
+        .period .note { font-size: 11.5px; opacity: 0.7; min-height: 15px; }
+        .how { font-size: 12px; opacity: 0.75; line-height: 1.45; margin: 12px 0 0; }
+        .primary {
+            width: 100%; margin-top: 12px; padding: 9px; font: inherit; font-size: 14px; font-weight: 600;
+            color: #fff; background: var(--accent-color); border: none; border-radius: 6px; cursor: pointer;
+        }
+        .primary:disabled { opacity: 0.55; cursor: default; }
+        .secondary {
+            width: 100%; margin-top: 8px; padding: 7px; font: inherit; color: var(--text-color);
+            background: var(--primary-color); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;
+        }
+        .error { color: var(--error-color); min-height: 18px; margin-top: 8px; }
+        .topup { font-size: 12px; opacity: 0.75; line-height: 1.45; margin-top: 10px; }
+        .foot { margin-top: 10px; font-size: 12px; text-align: center; }
+        a { color: var(--accent-color); }
+        .state { text-align: center; padding-top: 40px; }
+        .state .mark { font-size: 40px; }
+        .state .mark.ok { color: var(--ok-color); }
+        .state p { line-height: 1.5; margin: 10px 0 6px; }
+        .state .small { font-size: 12px; opacity: 0.7; }
+        .spinner {
+            width: 34px; height: 34px; margin: 0 auto; border-radius: 50%;
+            border: 3px solid var(--border-color); border-top-color: var(--accent-color);
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="form">
+        <h1 data-i18n="pay.title">Оплатить тариф</h1>
+        <p class="now" id="now"></p>
+        <div class="periods" id="periods" role="radiogroup"></div>
+        <p class="how" data-i18n="pay.how">Оплата в Telegram с кошелька xRocket. К цене добавляется комиссия xRocket 1,5 %.</p>
+        <button class="primary" id="pay" data-i18n="pay.button">Оплатить в Telegram</button>
+        <div class="error" id="error"></div>
+        <p class="topup" id="topup" data-i18n="pay.topUp"></p>
+        <div class="foot"><a href="#" id="terms" data-i18n="pay.terms">Правила оплаты</a></div>
+    </div>
+    <div id="waiting" class="state hidden">
+        <div class="spinner"></div>
+        <p data-i18n="pay.waiting">Счёт открыт в Telegram. Оплатите его там — это окно само увидит оплату.</p>
+        <p class="small" id="valid"></p>
+        <button class="secondary" id="again" data-i18n="pay.openAgain">Открыть счёт снова</button>
+    </div>
+    <div id="result" class="state hidden">
+        <div class="mark" id="mark"></div>
+        <p id="result-text"></p>
+        <button class="primary" id="result-btn"></button>
+    </div>
+
+    <script>
+        let STR = {};
+        const S = (key, vars) => {
+            let s = STR[key] !== undefined ? STR[key] : key;
+            for (const [k, v] of Object.entries(vars || {})) s = s.split(`{${k}}`).join(v);
+            return s;
+        };
+        const $ = (id) => document.getElementById(id);
+        const LANG = new URLSearchParams(location.search).get('lang') || undefined;
+        // The prices the server asks by default (auth-server/billing.py); the
+        // invoice itself carries the amount to pay.
+        const PRICES = { month: 3, year: 25 };
+        const POLL_MS = 4000;
+        let period = 'month', account = null, current = null, poll = null;
+
+        const fmtDate = (iso) => new Date(iso).toLocaleDateString(document.documentElement.lang);
+        const fmtUsdt = (n) => Number(n || 0).toLocaleString(document.documentElement.lang, { maximumFractionDigits: 2 });
+        function show(which) {
+            for (const id of ['form', 'waiting', 'result']) $(id).classList.toggle('hidden', id !== which);
+        }
+
+        function renderNow() {
+            if (!account || !account.signedIn) return;
+            let text = account.plan === 'commercial' && account.paidUntil
+                ? S('pay.now.paid', { d: fmtDate(account.paidUntil) }) : S('pay.now.free');
+            if (account.balance > 0) text += ' ' + S('pay.balance', { b: fmtUsdt(account.balance) });
+            $('now').textContent = text;
+        }
+
+        function renderPeriods() {
+            $('periods').textContent = '';
+            for (const p of ['month', 'year']) {
+                const card = document.createElement('label');
+                card.className = 'period' + (p === period ? ' chosen' : '');
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'period';
+                radio.checked = p === period;
+                radio.addEventListener('change', () => { period = p; $('error').textContent = ''; renderPeriods(); });
+                const name = document.createElement('span');
+                name.className = 'name';
+                name.textContent = S(`pay.${p}`);
+                const price = document.createElement('span');
+                price.className = 'price';
+                price.textContent = `${fmtUsdt(PRICES[p])} USDT`;
+                const note = document.createElement('span');
+                note.className = 'note';
+                note.textContent = p === 'year' ? S('pay.yearNote', { m: fmtUsdt(PRICES.year / 12) }) : '';
+                card.append(radio, name, price, note);
+                $('periods').appendChild(card);
+            }
+        }
+
+        function errorText(error) {
+            const key = `pay.err.${error}`;
+            return STR[key] !== undefined ? S(key)
+                : STR[`login.err.${error}`] !== undefined ? S(`login.err.${error}`) : S('login.err.server');
+        }
+
+        function stopPolling() { if (poll) { clearInterval(poll); poll = null; } }
+
+        function result(ok, text, button) {
+            stopPolling();
+            $('mark').textContent = ok ? '✓' : '⏱';
+            $('mark').classList.toggle('ok', ok);
+            $('result-text').textContent = text;
+            $('result-btn').textContent = button;
+            $('result-btn').dataset.action = ok ? 'close' : 'again';
+            show('result');
+        }
+
+        async function check() {
+            if (!current) return;
+            const r = await window.payApi.status(current.id);
+            if (!r.ok) return; // offline for a moment: asked again in a few seconds
+            if (r.status === 'paid') {
+                const v = await window.payApi.getAccount();
+                account = v;
+                const text = v.plan === 'commercial' && v.paidUntil && !(v.balance > 0 && r.credited <= v.balance)
+                    ? S('pay.paid', { d: fmtDate(v.paidUntil) })
+                    : S('pay.paidBalance', { b: fmtUsdt(r.credited) });
+                result(true, text, S('pay.close'));
+            } else if (r.status === 'expired' || r.status === 'failed'
+                       || (current.expiresAt && Date.now() > current.expiresAt + 60000)) {
+                result(false, S('pay.expired'), S('pay.newInvoice'));
+            }
+        }
+
+        $('pay').addEventListener('click', async () => {
+            $('error').textContent = '';
+            $('pay').disabled = true;
+            try {
+                const r = await window.payApi.invoice(period, document.documentElement.lang);
+                if (!r.ok) { $('error').textContent = errorText(r.error); return; }
+                current = r;
+                $('valid').textContent = r.expiresAt
+                    ? S('pay.validUntil', { t: new Date(r.expiresAt).toLocaleTimeString(document.documentElement.lang,
+                        { hour: '2-digit', minute: '2-digit' }) }) : '';
+                show('waiting');
+                stopPolling();
+                poll = setInterval(check, POLL_MS);
+            } finally {
+                $('pay').disabled = false;
+            }
+        });
+        $('again').addEventListener('click', () => { if (current) window.payApi.openInvoice(current.url); });
+        $('result-btn').addEventListener('click', () => {
+            if ($('result-btn').dataset.action === 'close') window.payApi.close();
+            else { current = null; renderNow(); show('form'); }
+        });
+        $('terms').addEventListener('click', (e) => { e.preventDefault(); window.payApi.openTerms(document.documentElement.lang); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.payApi.close(); });
+
+        async function applyI18n(lang) {
+            const i18n = await window.payApi.getI18n(lang);
+            STR = i18n.strings;
+            document.documentElement.lang = i18n.lang;
+            document.title = S('pay.windowTitle');
+            document.querySelectorAll('[data-i18n]').forEach((el) => {
+                if (STR[el.dataset.i18n] !== undefined) el.textContent = STR[el.dataset.i18n];
+            });
+            renderNow();
+            renderPeriods();
+        }
+        window.payApi.onSettingsUpdated((settings) => {
+            document.body.classList.toggle('light-theme', !!settings && settings.theme === 'light');
+            applyI18n();
+        });
+        window.payApi.onAccountUpdated((v) => {
+            if (!v || !v.signedIn) { stopPolling(); window.payApi.close(); return; } // signed out
+            account = v;
+            renderNow();
+        });
+
+        (async () => {
+            const [settings, acc] = await Promise.all([window.payApi.getSettings(), window.payApi.getAccount()]);
+            account = acc;
+            if (settings && settings.theme === 'light') document.body.classList.add('light-theme');
+            await applyI18n(LANG);
+        })().catch((e) => console.error('pay window', e));
+    </script>
+</body>
+</html>

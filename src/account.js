@@ -205,6 +205,25 @@ async function sendSupport(category, text, appVersion, os) {
   return { ok: true, id: res.data.id, answerWithin: res.data.answer_within, replyTo: res.data.reply_to };
 }
 
+/** An xRocket invoice for the plan (period: 'month' | 'year'), to be paid in
+ *  Telegram: { ok, id, url, price, expiresAt (ms) } or { ok: false, error }. */
+async function payInvoice(period, lang) {
+  const res = await request('/api/v2/pay/xrocket', { method: 'POST', auth: true, body: { period, lang } });
+  if (!res.ok) return { ok: false, ...errorOf(res) };
+  return { ok: true, id: res.data.id, url: res.data.url, price: res.data.price,
+           expiresAt: res.data.expires_at ? Date.parse(res.data.expires_at) : null };
+}
+
+/** Where a payment is: { ok, status ('pending' | 'paid' | 'expired' | 'failed'),
+ *  credited } — the plan and balance the server sent come along. */
+async function paymentStatus(id) {
+  const res = await request(`/api/v2/pay/${encodeURIComponent(id)}`, { auth: true });
+  if (!res.ok) return { ok: false, ...errorOf(res) };
+  const s = load();
+  if (res.data.profile && s.token) { s.profile = res.data.profile; save(); }
+  return { ok: true, status: res.data.status, credited: res.data.credited };
+}
+
 /** reason: 'user' (signed out in Settings) or what the server said
  *  (session_expired, blocked). The sign-in window offers the last email again. */
 function signOut(reason) {
@@ -239,7 +258,7 @@ function view() {
     remaining = Math.max(0, p.limit_seconds - used - (pending ? pending.seconds : 0));
   }
   return { signedIn: true, email: s.email, plan: p.plan, limited, remaining, resetsAt,
-           limit: p.limit_seconds, paidUntil: p.paid_until };
+           limit: p.limit_seconds, paidUntil: p.paid_until, balance: p.balance || 0 };
 }
 
 function signedIn() { return !!load().token; }
@@ -251,5 +270,6 @@ function canTranscribe() {
 }
 
 module.exports = {
-  TERMS_VERSION, deviceHash, sendSupport, requestCode, verify, refresh, addUsage, signOut, view, signedIn, canTranscribe, onChange,
+  TERMS_VERSION, deviceHash, sendSupport, payInvoice, paymentStatus, requestCode, verify, refresh, addUsage, signOut,
+  view, signedIn, canTranscribe, onChange,
 };

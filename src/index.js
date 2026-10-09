@@ -478,6 +478,37 @@ const showSupportWindow = (lang) => {
   supportWindow.on('closed', () => { supportWindow = null; });
 };
 
+// Paying for the plan (pay.html): an xRocket invoice, paid in Telegram; the
+// window asks the server until the payment comes (auth-server/payments.py).
+let payWindow = null;
+const showPayWindow = (lang) => {
+  lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
+  if (payWindow && !payWindow.isDestroyed()) { payWindow.focus(); return; }
+  payWindow = new BrowserWindow({
+    width: 440,
+    height: 480,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    title: i18n.t(lang, 'pay.windowTitle'),
+    icon: iconPath,
+    backgroundColor: resolveTheme(store.get('theme')) === 'light' ? '#fafafa' : '#282c34',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'pay-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  payWindow.setMenu(null);
+  payWindow.loadFile(path.join(__dirname, 'pay.html'), { query: { lang } });
+  payWindow.on('closed', () => { payWindow = null; });
+};
+// Only xRocket's own links leave the app: an invoice opens in Telegram.
+const openInvoice = (url) => {
+  if (typeof url === 'string' && /^https:\/\/t\.me\/xrocket\?start=inv_[\w-]+$/i.test(url)) shell.openExternal(url);
+};
+
 // The rules of use (terms.html), from the sign-in window and from Settings.
 // A plain page: no preload, nothing it can ask of the app; its mail link
 // goes to the user's mail program.
@@ -760,6 +791,15 @@ app.on('ready', async () => {
     const { version, os } = supportInfo();
     return account.sendSupport(category, text, version, os);
   });
+  ipcMain.on('pay-open', (event, lang) => showPayWindow(lang));
+  ipcMain.on('pay-close', () => { if (payWindow && !payWindow.isDestroyed()) payWindow.close(); });
+  ipcMain.handle('pay-invoice', async (event, { period, lang }) => {
+    const r = await account.payInvoice(period, lang || currentLang());
+    if (r.ok) openInvoice(r.url);
+    return r;
+  });
+  ipcMain.on('pay-open-invoice', (event, url) => openInvoice(url));
+  ipcMain.handle('pay-status', (event, id) => account.paymentStatus(id));
   ipcMain.on('account-sign-out', () => {
     account.signOut('user'); // onChange opens the sign-in window
   });

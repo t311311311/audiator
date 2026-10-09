@@ -109,6 +109,10 @@
         .account-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
         .account-plan, .account-left { font-size: 0.85em; }
         .account-plan { opacity: 0.8; }
+        /* "Pay" / "Renew" beside the plan: no extra row, the window keeps its height. */
+        .account-plan-row { display: flex; align-items: baseline; gap: 8px; }
+        .pay-link { font-size: 0.85em; font-weight: 600; color: var(--accent-color); text-decoration: none; }
+        .pay-link:hover { text-decoration: underline; }
         .account-left.empty { color: #e06c75; }
         .account-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
         .account-actions .action-button { padding: 4px 10px; font-size: 0.85em; white-space: nowrap; }
@@ -238,7 +242,10 @@
                 <div class="account-box">
                     <div class="account-info">
                         <div class="account-email" id="account-email"></div>
-                        <div class="account-plan" id="account-plan"></div>
+                        <div class="account-plan-row">
+                            <span class="account-plan" id="account-plan"></span>
+                            <a href="#" class="pay-link" id="pay-link" hidden></a>
+                        </div>
                         <div class="account-left" id="account-left"></div>
                     </div>
                     <div class="account-actions">
@@ -528,9 +535,11 @@
                 // until when it is paid; unlimited ones, nothing more.
                 let account = null;
                 function formatLeft(seconds) {
-                    const m = Math.floor(seconds / 60), h = Math.floor(m / 60);
-                    if (!h) return `${m} ${strings['unit.min']}`;
-                    return m % 60 ? `${h} ${strings['unit.h']} ${m % 60} ${strings['unit.min']}` : `${h} ${strings['unit.h']}`;
+                    // A no-break space between a number and its unit: never "4" at a
+                    // line's end and "ч" on the next.
+                    const m = Math.floor(seconds / 60), h = Math.floor(m / 60), nb = ' ';
+                    if (!h) return `${m}${nb}${strings['unit.min']}`;
+                    return m % 60 ? `${h}${nb}${strings['unit.h']} ${m % 60}${nb}${strings['unit.min']}` : `${h}${nb}${strings['unit.h']}`;
                 }
                 function renderAccount(v) {
                     if (v) account = v;
@@ -556,6 +565,16 @@
                         const d = new Date(account.paidUntil).toLocaleDateString(document.documentElement.lang);
                         text = (strings['account.paidUntil'] || '').replace('{d}', d);
                     }
+                    // Paid and not yet spent: it pays the next period (auth-server/billing.py).
+                    if (account.balance > 0 && (account.plan === 'free' || account.plan === 'commercial')) {
+                        const b = (strings['account.balance'] || '').replace('{b}',
+                            Number(account.balance).toLocaleString(document.documentElement.lang, { maximumFractionDigits: 2 }));
+                        text = text ? `${text} · ${b}` : b;
+                    }
+                    // Pay (free plan) or Renew (paid); nothing to pay on unlimited and admin.
+                    const pay = document.getElementById('pay-link');
+                    pay.hidden = !(account.plan === 'free' || account.plan === 'commercial');
+                    pay.textContent = (account.plan === 'commercial' ? strings['account.renew'] : strings['account.pay']) || '';
                     left.textContent = text;
                     left.hidden = !text;
                     left.classList.toggle('empty', empty);
@@ -567,6 +586,10 @@
                 // comes up and takes any email.
                 document.getElementById('support-btn').addEventListener('click', () => {
                     window.settingsApi.openSupport(document.documentElement.lang);
+                });
+                document.getElementById('pay-link').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.settingsApi.openPay(document.documentElement.lang);
                 });
                 document.getElementById('terms-link').addEventListener('click', (e) => {
                     e.preventDefault();
