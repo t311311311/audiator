@@ -19,6 +19,9 @@ Accounts by email (step 4, accounts.db):
   .venv\\Scripts\\python.exe scripts\\admin.py unlimited friend@mail.ru on # lifetime unlimited
   .venv\\Scripts\\python.exe scripts\\admin.py block someone@mail.ru on
   .venv\\Scripts\\python.exe scripts\\admin.py paid client@firm.com 30     # commercial for 30 days
+  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com     # the balance and the paid time
+  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com zero        # the balance to 0
+  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com minus 0.02  # lower it by 0.02 USDT
 
 Clients and support (the same card support letters carry):
   .venv\\Scripts\\python.exe scripts\\admin.py client ivan@mail.ru         # who the client is
@@ -197,6 +200,44 @@ def cmd_paid(args):
     print(f"{args.email}: коммерческий тариф {'до ' + u.paid_until.strftime('%Y-%m-%d') if u.paid_until else 'снят'}")
 
 
+def _usdt(text) -> float:
+    """An amount typed by hand: 0.02 or 0,02; more than nothing."""
+    try:
+        amount = float(str(text).replace(",", "."))
+    except ValueError:
+        sys.exit(f"сумма не понята: {text} (пример: 0.02)")
+    if not amount > 0:
+        sys.exit("сумма должна быть больше нуля")
+    return amount
+
+
+def cmd_balance(args):
+    """For testing payments (owner 2026-10-10), and for putting a balance
+    right by hand: show the balance and the paid time; 'zero' — the balance to
+    0; 'minus N' — lower it by N USDT, never below 0. The paid time is not
+    touched (that is `paid`). Prints what was there, to put it back."""
+    import accounts_db
+    with accounts_db.Session() as s:
+        u = _account(s, args.email)
+        was = round(u.balance or 0.0, 6)
+        paid = u.paid_until.strftime("%d.%m.%Y") if u.paid_until else "нет"
+        if args.action is None:
+            print(f"{u.email}: на балансе {was:g} USDT, оплачено до: {paid}")
+            return
+        if args.action == "zero":
+            if args.amount is not None:
+                sys.exit("zero — без суммы: balance <email> zero")
+            now = 0.0
+        else:
+            if args.amount is None:
+                sys.exit("укажите сумму: balance <email> minus 0.02")
+            now = max(0.0, round(was - _usdt(args.amount), 6))
+        u.balance = now
+        s.commit()
+    print(f"{args.email}: баланс был {was:g} USDT -> стал {now:g} USDT (оплачено до: {paid}; "
+          "приложение увидит, когда откроете его окно, или после перезапуска)")
+
+
 def cmd_client(args):
     """Who the client is: usage, payments, messages — the card support letters carry."""
     import accounts_db
@@ -354,6 +395,11 @@ def main():
     pd.add_argument("email")
     pd.add_argument("days", type=int)
     pd.set_defaults(func=cmd_paid)
+    ba = sub.add_parser("balance", help="баланс: показать; zero — обнулить; minus СУММА — снизить на сумму")
+    ba.add_argument("email")
+    ba.add_argument("action", nargs="?", choices=("zero", "minus"))
+    ba.add_argument("amount", nargs="?", help="на сколько USDT снизить (для minus), например 0.02")
+    ba.set_defaults(func=cmd_balance)
     lf = sub.add_parser("left", help="тест лимита: оставить N минут в текущих 24 часах, или reset")
     lf.add_argument("email")
     lf.add_argument("minutes", help="минут осталось (например 5) или reset")
