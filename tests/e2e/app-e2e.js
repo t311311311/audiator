@@ -176,7 +176,9 @@ const codeFor = async (email) => {
   await sleep(400);
   // (The bar's page always reports "visible" — it is never throttled — so
   // the main process's own log of its show/hide decisions is what is read.)
-  check('recording + Settings in front: the bar is on screen', /\[overlay\] show: barrels=1 inView=false focused=other-own/.test(appLog),
+  // ("focused=none": another program has the screen's focus at that moment — someone
+  // is working at the computer; Settings are then still the last of our windows in front.)
+  check('recording + Settings in front: the bar is on screen', /\[overlay\] show: barrels=1 inView=false focused=(?:other-own|none) tracked=other-own/.test(appLog),
     (appLog.match(/\[overlay\].*/g) || ['no [overlay] lines in the app\'s log']).slice(-3).join(' | '));
   await main.js(`window.api.transcribeFailed(999)`);
   await sleep(500);
