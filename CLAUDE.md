@@ -86,7 +86,7 @@ Electron (src/)                      auth-server/ (Python, FastAPI)
 
 ```bash
 npm start                                              # приложение + сам поднимет бэкенд (:8000/:3000/:5000)
-npm run start:test                                     # то же с тестовыми ценами оплаты: месяц 0,10 / год 1,20 USDT
+npm run start:test                                     # то же с тестовыми ценами оплаты: месяц 0,01 / год 0,12 USDT
 .venv\Scripts\python.exe -m pytest auth-server/tests   # 32 серверных теста
 node scripts/check-i18n.js                             # ключи переводов + синтаксис inline-скриптов
 .venv\Scripts\python.exe scripts\admin.py list         # аккаунты: list / create "Имя" --role admin / role / use

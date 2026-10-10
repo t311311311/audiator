@@ -1,6 +1,7 @@
 // Audiator for a payment test with cheap prices (owner 2026-10-10): the same as
-// `npm start`, but the local accounts server asks 0.10 USDT for a month and
-// 1.20 for a year — real money through the real xRocket, just little of it.
+// `npm start`, but the local accounts server asks 0.01 USDT for a month and
+// 0.12 for a year (the owner's choice, 2026-10-11; 0.10 / 1.20 before) — real
+// money through the real xRocket, just little of it.
 //   npm run start:test
 // Other prices: set PRICE_MONTH / PRICE_YEAR before it (PowerShell:
 // $env:PRICE_MONTH = '0.01'; npm run start:test).
@@ -10,15 +11,16 @@
 // 3 USDT that way, unnoticed. The payment window shows the prices the server
 // asks, so a look at it tells which ones are in force.
 //
-// (A year is not 0.12 here: with a month at 0.10, 0.02 left on the balance
-// plus a month's payment would buy a year.)
+// (Mind what is on the test account's balance before starting: at 0.01 a
+// month every cent left there buys a month with the first profile —
+// `scripts\admin.py balance <email>` shows it, `... zero` empties it.)
 const { spawn } = require('child_process');
 const path = require('path');
 const { portOpen } = require('../src/local-backend');
 
 const ROOT = path.join(__dirname, '..');
-const month = process.env.PRICE_MONTH || '0.10';
-const year = process.env.PRICE_YEAR || '1.20';
+const month = process.env.PRICE_MONTH || '0.01';
+const year = process.env.PRICE_YEAR || '0.12';
 
 (async () => {
   if (await portOpen(3000)) {
