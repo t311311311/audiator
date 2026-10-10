@@ -97,7 +97,8 @@ node scripts/check-i18n.js                             # ключи перево
 - Ручной запуск бэкенда без приложения: `powershell -ExecutionPolicy Bypass -File scripts\run-local.ps1`.
 - Тест оплаты: `npm run start:test` (другие цены — `PRICE_MONTH` / `PRICE_YEAR` перед ним). Сервер, уже
   работающий на 3000, остаётся со своими ценами — команда откажется стартовать; окно оплаты показывает цены
-  сервера. Баланс тестового аккаунта: `scripts\admin.py balance <email> [zero | minus 0.02]`, срок — `paid <email> <дней>`.
+  сервера. Баланс тестового аккаунта: `scripts\admin.py balance <email> [zero | minus 0.02 | reset]` (`reset` — как до оплат:
+  баланс 0 и срок снят; `zero`/`minus` срок не трогают), срок отдельно — `paid <email> <дней>`.
 - Доп. языки перевода: `.venv\Scripts\python.exe scripts\install-lang.py <code> <code>` (сейчас решено не качать).
 
 ## Грабли (выучено на ошибках)
