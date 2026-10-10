@@ -831,7 +831,6 @@ app.on('ready', async () => {
     if (r.ok) { waitingPayment = r.id; openInvoice(r.url); }
     return r;
   });
-  ipcMain.on('pay-open-invoice', (event, url) => openInvoice(url));
   ipcMain.on('pay-topup', () => shell.openExternal(XROCKET_TOPUP_URL));
   ipcMain.handle('pay-status', async (event, id) => settledPayment(id, await account.paymentStatus(id)));
   ipcMain.handle('pay-cancel', async (event, id) => settledPayment(id, await account.cancelPayment(id)));

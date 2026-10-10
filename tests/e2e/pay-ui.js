@@ -21,7 +21,7 @@ function payStub(lang, theme, accountJson) {
   const I18N = JSON.stringify({ lang, languages: i18n.LANGUAGES, strings: i18n.stringsFor(lang) });
   return `<script>
   const noop = () => {};
-  window.__calls = { invoice: [], status: [], cancel: [], open: [], close: 0, terms: 0, topup: 0 };
+  window.__calls = { invoice: [], status: [], cancel: [], close: 0, terms: 0, topup: 0 };
   window.__cancel = { ok: true, status: 'cancelled', credited: null }; // what "Cancel" comes back with
   window.__account = ${accountJson};
   window.__invoice = { ok: true, id: 7, url: 'https://t.me/xrocket?start=inv_test7', price: 3, expiresAt: Date.now() + 30 * 60e3 };
@@ -30,7 +30,6 @@ function payStub(lang, theme, accountJson) {
     getSettings: () => Promise.resolve({ theme: '${theme}' }), onSettingsUpdated: noop,
     getAccount: () => Promise.resolve(window.__account), onAccountUpdated: (cb) => { window.__accountCb = cb; },
     invoice: (period, lang) => { window.__calls.invoice.push({ period, lang }); return Promise.resolve(window.__invoice); },
-    openInvoice: (url) => { window.__calls.open.push(url); },
     status: (id) => { window.__calls.status.push(id); const s = window.__statuses.length > 1 ? window.__statuses.shift() : window.__statuses[0];
       return Promise.resolve(s === 'offline' ? { ok: false, error: 'network' } : { ok: true, status: s, credited: s === 'paid' ? 3 : null }); },
     cancel: (id) => { window.__calls.cancel.push(id); return Promise.resolve(window.__cancel); },
@@ -111,8 +110,8 @@ app.whenReady().then(async () => {
   check('...Esc does not close the window while it waits', (await js('window.__calls.close')) === 0);
   check('waiting: the invoice in "@xRocket 🚀"', (await js(`document.querySelector('#waiting [data-i18n="pay.waiting"]').textContent`)).includes('в боте @xRocket 🚀.'));
   check('waiting: until when the invoice is valid', /^Счёт действует до \d\d:\d\d\.$/.test(await text('valid')), await text('valid'));
-  await js(`document.getElementById('again').click()`);
-  check('"open the invoice again" opens the same invoice', JSON.stringify(await js('window.__calls.open')) === '["https://t.me/xrocket?start=inv_test7"]');
+  check('...no "open the invoice again" (owner 2026-10-10): cancel and pay again', !(await js(`!!document.getElementById('again')`))
+    && !(await js(`document.getElementById('waiting').querySelector('a')`)));
   check('waiting: in the middle of the window', await js(`(() => { const r = document.querySelector('#waiting .spinner').getBoundingClientRect();
     const b = document.querySelector('#waiting [data-i18n="pay.cancelHint"]').getBoundingClientRect(); return Math.abs((r.top + b.bottom) / 2 - window.innerHeight / 2) < 40; })()`));
   await js(`window.__statuses = ['pending', 'offline', 'paid'];

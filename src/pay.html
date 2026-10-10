@@ -7,7 +7,8 @@
          paid in Telegram from the payer's xRocket wallet; xRocket's fee is ours.
          Opened from Settings and modal to them (AUD-44). While the invoice
          waits, a shade lies over the prices with a spinner and "Cancel", which
-         really cancels the invoice at xRocket (owner 2026-10-10, AUD-59; closing
+         really cancels the invoice at xRocket (owner 2026-10-10, AUD-59; no
+         "open the invoice again" — Telegram did not open: cancel and pay again; closing
          the window then does the same, index.js). xRocket never tells that the
          buyer opened the invoice and went away: cancelling is done here. No lines about the plan
          now or how it is paid above the prices (owner, AUD-45); "xRocket 🚀"
@@ -122,7 +123,7 @@
         <div class="spinner"></div>
         <h2 data-i18n="pay.waitingTitle">Ждём оплату</h2>
         <p data-i18n="pay.waiting">Счёт на оплату открылся в Telegram, в боте @xRocket 🚀. Нажмите там «Оплатить» — оплата появится здесь сама.</p>
-        <p class="small"><span id="valid"></span> <a href="#" id="again" data-i18n="pay.openAgain">Открыть счёт снова</a></p>
+        <p class="small" id="valid"></p>
         <div class="actions">
             <button class="secondary" id="cancel" data-i18n="pay.cancel">Отменить</button>
         </div>
@@ -254,7 +255,6 @@
                 $('pay').disabled = false;
             }
         });
-        $('again').addEventListener('click', (e) => { e.preventDefault(); if (current) window.payApi.openInvoice(current.url); });
         // "Cancel": the invoice is cancelled at xRocket — it can no longer be
         // paid in Telegram — and the shade comes off. Paid a moment before: that
         // is what is shown. Not cancelled (no connection): said so, the shade
