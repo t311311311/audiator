@@ -21,7 +21,8 @@ Accounts by email (step 4, accounts.db):
   .venv\\Scripts\\python.exe scripts\\admin.py paid client@firm.com 30     # commercial for 30 days
   .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com     # the balance and the paid time
   .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com zero        # the balance to 0
-  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com minus 0.02  # lower it by 0.02 USDT
+  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com minus 0.02  # take 0.02 USDT off (out of
+                                                                 # the paid time, when the balance is short)
   .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com reset       # like a new account
 
 Clients and support (the same card support letters carry):
@@ -212,11 +213,31 @@ def _usdt(text) -> float:
     return amount
 
 
+def _last_period(session, u):
+    """What a period of this account's paid time cost and how long it is: by
+    its last payment, else by today's prices (this command does not see the
+    prices the server was started with — `npm run start:test` — so the
+    payment is the better witness). (price, days, where it is from)"""
+    import accounts_db
+    import billing
+    last = (session.query(accounts_db.Payment)
+            .filter(accounts_db.Payment.user_id == u.id, accounts_db.Payment.status == "paid")
+            .order_by(accounts_db.Payment.id.desc()).first())
+    if last is not None and (last.credited or last.amount):
+        period = last.period if last.period in billing.DAYS else "month"
+        return float(last.credited or last.amount), billing.DAYS[period], f"как в последней оплате №{last.id}"
+    return float(billing.PRICE["month"]), billing.DAYS["month"], "по цене месяца: оплат у аккаунта нет"
+
+
 def cmd_balance(args):
     """For testing payments (owner 2026-10-10), and for putting a balance
     right by hand: show the balance and the paid time; 'zero' — the balance to
-    0; 'minus N' — lower it by N USDT, never below 0; both leave the paid time
-    alone. 'reset' — like a new account (what the owner expected of
+    0, the paid time left alone; 'minus N' — take N USDT off the account's
+    money: off the balance, and when that is short, out of the paid time — the
+    period paid last goes back onto the balance (the paid time that much
+    shorter) and N comes off it, so what is then less than a month shows as
+    the balance (the owner took 0.01 off a paid account with an empty balance
+    and nothing happened). 'reset' — like a new account (what the owner expected of
     "zeroing"): the balance 0, the paid time gone, and the free plan's 24
     hours not running — all 2 hours there, the next use starts them. Prints
     what was there, to put it back (`paid`, `window`)."""
@@ -241,16 +262,37 @@ def cmd_balance(args):
             print("стало — как новый аккаунт: баланс 0, срок оплаты снят, бесплатный тариф, все 2 часа на месте "
                   "(24 часа пойдут с первой записи; приложение увидит, когда откроете его окно, или после перезапуска)")
             return
+        seen = "приложение увидит, когда откроете его окно, или после перезапуска"
         if args.action == "zero":
-            now = 0.0
-        else:
-            if args.amount is None:
-                sys.exit("укажите сумму: balance <email> minus 0.02")
-            now = max(0.0, round(was - _usdt(args.amount), 6))
-        u.balance = now
+            u.balance = now = 0.0
+            s.commit()
+            print(f"{args.email}: баланс был {was:g} USDT -> стал 0 USDT (оплачено до: {paid} — срок не тронут, "
+                  f"снять и его: balance <email> reset; {seen})")
+            return
+        if args.amount is None:
+            sys.exit("укажите сумму: balance <email> minus 0.02")
+        amount = _usdt(args.amount)
+        # The balance is short: periods go back onto it out of the paid time, the
+        # last one first, at what the last payment paid for one (today's price
+        # if there was none) — until the amount is covered or no paid time is left.
+        price, days, source = _last_period(s, u)
+        have, back, moment = was, 0, accounts_db._utcnow()
+        while have + 1e-9 < amount and u.paid_until and u.paid_until > moment and price > 0 and back < 240:
+            u.paid_until -= timedelta(days=days)
+            have = round(have + price, 6)
+            back += 1
+        if u.paid_until and u.paid_until <= moment:
+            u.paid_until = None                     # nothing paid ahead any more
+        u.balance = now = max(0.0, round(have - amount, 6))
         s.commit()
-    print(f"{args.email}: баланс был {was:g} USDT -> стал {now:g} USDT (оплачено до: {paid} — срок не тронут, "
-          "снять и его: balance <email> reset; приложение увидит, когда откроете его окно, или после перезапуска)")
+        until = u.paid_until.strftime("%d.%m.%Y") if u.paid_until else "нет"
+        if back:
+            print(f"{args.email}: на балансе было {was:g} USDT — не хватало; с оплаченного срока на баланс возвращено "
+                  f"периодов: {back} (по {price:g} USDT за {days} дн., {source})")
+            print(f"оплачено до: {paid} -> {until}; баланс: {was:g} -> {now:g} USDT ({seen})")
+        else:
+            short = "" if was + 1e-9 >= amount else " — столько нет ни на балансе, ни в оплаченном сроке"
+            print(f"{args.email}: баланс был {was:g} USDT -> стал {now:g} USDT{short} (оплачено до: {paid}; {seen})")
 
 
 def cmd_client(args):
@@ -410,7 +452,8 @@ def main():
     pd.add_argument("email")
     pd.add_argument("days", type=int)
     pd.set_defaults(func=cmd_paid)
-    ba = sub.add_parser("balance", help="баланс: показать; zero — обнулить баланс; minus СУММА — снизить; "
+    ba = sub.add_parser("balance", help="баланс: показать; zero — обнулить баланс; minus СУММА — снять сумму "
+                                        "(не хватает на балансе — из оплаченного срока); "
                                         "reset — как новый аккаунт: баланс 0, срок оплаты снят, все 2 бесплатных часа")
     ba.add_argument("email")
     ba.add_argument("action", nargs="?", choices=("zero", "minus", "reset"))
