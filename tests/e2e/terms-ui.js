@@ -4,7 +4,7 @@
 //  - section 4 is the payment as it is (AUD-52): xRocket in Telegram, 3 / 25
 //    USDT, our fee, a payment extends the plan, less than a month waits, no
 //    refunds — and nothing of the old ways (BEP-20, Crypto Pay, donations);
-//  - "xRocket 🚀" everywhere (AUD-46); the answer times the same in 4 and 6;
+//  - "xRocket 🚀" everywhere (AUD-46); the answer times the same in 4 and 6;
 //  - snapshots at section 4: three languages, two themes.
 //   node_modules\.bin\electron tests\e2e\terms-ui.js
 const { app, BrowserWindow } = require('electron');
@@ -19,9 +19,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // What section 4 must say, per language.
 const MUST = {
-  ru: ['xRocket 🚀 в Telegram', '3 USDT', '25 USDT', 'Комиссию xRocket 🚀 платим мы', 'продлевает его', 'Остаток меньше цены месяца', 'Возвратов нет', '48 часов'],
-  en: ['xRocket 🚀 in Telegram', '3 USDT', '25 USDT', 'We pay the fee of xRocket 🚀', 'extends it', 'less than the price of a month', 'no refunds', '48 hours'],
-  zh: ['Telegram 中的 xRocket 🚀', '3 USDT', '25 USDT', '手续费由我们承担', '延长有效期', '不足一个月价格的余款', '均不退款', '48 小时'],
+  ru: ['xRocket 🚀 в Telegram', '3 USDT', '25 USDT', 'Комиссию xRocket 🚀 платим мы', 'продлевает его', 'Остаток меньше цены месяца', 'Возвратов нет', '48 часов'],
+  en: ['xRocket 🚀 in Telegram', '3 USDT', '25 USDT', 'We pay the fee of xRocket 🚀', 'extends it', 'less than the price of a month', 'no refunds', '48 hours'],
+  zh: ['Telegram 中的 xRocket 🚀', '3 USDT', '25 USDT', '手续费由我们承担', '延长有效期', '不足一个月价格的余款', '均不退款', '48 小时'],
 };
 // Section 6's "other questions" line, to be said the same way in section 4.
 const OTHER = { ru: 'в течение 5 дней', en: 'within 5 days', zh: '5 天内' };
@@ -38,7 +38,7 @@ app.whenReady().then(async () => {
     const all = await js(`document.querySelector('section.shown').innerText`);
     check(`${lang}: nothing of the old ways (BEP-20, Crypto Pay, an address, donations)`,
       !/BEP-20|BNB|Crypto ?Pay|CryptoBot|донат|Пожертвован|Donation|捐赠|личный адрес|personal address|专属地址/i.test(all));
-    check(`${lang}: xRocket never without its rocket`, /xRocket 🚀/.test(all) && !/xRocket(?! 🚀)/.test(all));
+    check(`${lang}: xRocket never without its rocket`, /xRocket 🚀/.test(all) && !/xRocket(?!\u00A0🚀)/.test(all));
     for (const theme of ['dark', 'light']) {
       await w.loadFile(FILE, { query: { lang, theme, part: 'payment' } });
       await sleep(300);

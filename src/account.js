@@ -224,6 +224,18 @@ async function paymentStatus(id) {
   return { ok: true, status: res.data.status, credited: res.data.credited };
 }
 
+/** The buyer changed their mind: the invoice is cancelled at xRocket and can
+ *  no longer be paid. { ok, status } — 'cancelled'; 'paid' if the money had
+ *  come first (credited); 'pending' if it could not be cancelled — the invoice
+ *  is still payable, and the window says so. */
+async function cancelPayment(id) {
+  const res = await request(`/api/v2/pay/${encodeURIComponent(id)}/cancel`, { method: 'POST', auth: true });
+  if (!res.ok) return { ok: false, ...errorOf(res) };
+  const s = load();
+  if (res.data.profile && s.token) { s.profile = res.data.profile; save(); }
+  return { ok: true, status: res.data.status, credited: res.data.credited };
+}
+
 /** reason: 'user' (signed out in Settings) or what the server said
  *  (session_expired, blocked). The sign-in window offers the last email again. */
 function signOut(reason) {
@@ -271,6 +283,7 @@ function canTranscribe() {
 }
 
 module.exports = {
-  TERMS_VERSION, deviceHash, sendSupport, payInvoice, paymentStatus, requestCode, verify, refresh, addUsage, signOut,
+  TERMS_VERSION, deviceHash, sendSupport, payInvoice, paymentStatus, cancelPayment, requestCode, verify, refresh,
+  addUsage, signOut,
   view, signedIn, canTranscribe, onChange,
 };

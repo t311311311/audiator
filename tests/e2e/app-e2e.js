@@ -16,7 +16,7 @@ let server, appProc, serverLog = '', appLog = '';
 let failed = 0;
 const check = (what, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}${extra ? '  ' + extra : ''}`); if (!ok) failed++; };
 const done = (code) => { try { mainProc && mainProc.close(); } catch (e) {} try { appProc && appProc.kill(); } catch (e) {} try { server && server.kill(); } catch (e) {} process.exit(code); };
-setTimeout(() => { console.log('timeout'); console.log(appLog.slice(-3000)); done(2); }, 120000);
+setTimeout(() => { console.log('timeout'); console.log(appLog.slice(-3000)); done(2); }, 200000);
 
 async function targets() {
   try { return await (await fetch(`http://127.0.0.1:${DBG}/json`)).json(); } catch (e) { return []; }
@@ -176,7 +176,8 @@ const codeFor = async (email) => {
   await sleep(400);
   // (The bar's page always reports "visible" — it is never throttled — so
   // the main process's own log of its show/hide decisions is what is read.)
-  check('recording + Settings in front: the bar is on screen', /\[overlay\] show: barrels=1 inView=false focused=other-own/.test(appLog));
+  check('recording + Settings in front: the bar is on screen', /\[overlay\] show: barrels=1 inView=false focused=other-own/.test(appLog),
+    (appLog.match(/\[overlay\].*/g) || ['no [overlay] lines in the app\'s log']).slice(-3).join(' | '));
   await main.js(`window.api.transcribeFailed(999)`);
   await sleep(500);
   check('nothing going on: the bar goes again', /\[overlay\] hide: barrels=0/.test(appLog.split('[overlay] show: barrels=1 inView=false')[1] || ''));
@@ -206,6 +207,22 @@ const codeFor = async (email) => {
   await sleep(500);
   check('...closed: Settings usable again', !(await targets()).some((t) => t.url.split('?')[0].endsWith('/pay.html'))
     && (await electronSays(`by('settings.html').isEnabled()`)) === true);
+  // A payment that came while no window was asking (AUD-60): the paid date is
+  // put into the server's database, then Settings come to the front — the new
+  // date must show there without closing and opening them. (The app asks the
+  // server at most every 30 seconds: waited out.)
+  const paidInDb = spawnSync(path.join(ROOT, '.venv/Scripts/python.exe'), ['-c',
+    "import sqlite3, sys, datetime as d; c = sqlite3.connect(sys.argv[1]); "
+    + "c.execute(\"update users set paid_until = ? where email = 'tester@example.com'\", "
+    + "((d.datetime.utcnow() + d.timedelta(days=30)).isoformat(' '),)); c.commit(); print(c.total_changes)",
+    path.join(tmp, 'accounts.db')], { encoding: 'utf8', windowsHide: true });
+  check('(the stand marks the account paid in the server\'s database)', (paidInDb.stdout || '').trim() === '1', (paidInDb.stderr || '').slice(-200));
+  const leftNow = () => settings.js(`document.getElementById('account-left').textContent`);
+  check('Settings still show the free plan', /^Осталось/.test(await leftNow()), await leftNow());
+  await sleep(31000);
+  await electronSays(`require('electron').app.emit('browser-window-focus', {}, by('settings.html'))`);
+  for (let i = 0; i < 40 && !/^Оплачено до/.test(await leftNow()); i++) await sleep(250);
+  check('back to Settings: the paid date shows without reopening them (AUD-60)', /^Оплачено до \d\d\.\d\d\.\d{4}$/.test(await leftNow()), await leftNow());
   mainProc.close(); mainProc = null; // an open inspector session would keep the app from quitting at the end
   // English being tried in Settings (not saved): Contact us and the rules open in English.
   await settings.js(`window.settingsApi.openSupport('en')`);

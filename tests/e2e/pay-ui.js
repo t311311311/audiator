@@ -1,8 +1,9 @@
 // Stand: paying for the plan (pay.html; owner's decision 2026-10-09 — an
 // xRocket invoice in Telegram). The real page with a stand-in payApi (calls are
 // recorded, nothing leaves the stand): the form, a month or a year, the
-// invoice opened, waiting, paid, expired, errors, closing on sign-out; no
-// lines about the plan above the prices (AUD-45), "xRocket 🚀" (AUD-46); the
+// invoice opened, waiting as a shade over the prices, "Cancel" (the invoice
+// cancelled for real, AUD-59), paid, expired, errors, closing on sign-out; no
+// lines about the plan above the prices (AUD-45), "xRocket 🚀" (AUD-46); the
 // window's height as index.js opens it; snapshots in three languages, two
 // themes. The "Pay" button in Settings: tests/e2e/settings-ui.js.
 //   node_modules\.bin\electron tests\e2e\pay-ui.js
@@ -13,14 +14,15 @@ const OUT = __dirname;
 const i18n = require(path.join(ROOT, 'i18n.js'));
 // The window's height, as index.js opens it.
 const PAY_H = Number(/const PAY_H = (\d+)/.exec(fs.readFileSync(path.join(ROOT, 'index.js'), 'utf8'))[1]);
-setTimeout(() => { console.error('timeout'); app.exit(2); }, 180000);
+setTimeout(() => { console.error('timeout'); app.exit(2); }, 300000);
 
 const PAID_UNTIL = '2026-11-09T12:00:00.000Z';
 function payStub(lang, theme, accountJson) {
   const I18N = JSON.stringify({ lang, languages: i18n.LANGUAGES, strings: i18n.stringsFor(lang) });
   return `<script>
   const noop = () => {};
-  window.__calls = { invoice: [], status: [], open: [], close: 0, terms: 0, topup: 0 };
+  window.__calls = { invoice: [], status: [], cancel: [], open: [], close: 0, terms: 0, topup: 0 };
+  window.__cancel = { ok: true, status: 'cancelled', credited: null }; // what "Cancel" comes back with
   window.__account = ${accountJson};
   window.__invoice = { ok: true, id: 7, url: 'https://t.me/xrocket?start=inv_test7', price: 3, expiresAt: Date.now() + 30 * 60e3 };
   window.__statuses = ['pending'];
@@ -31,6 +33,7 @@ function payStub(lang, theme, accountJson) {
     openInvoice: (url) => { window.__calls.open.push(url); },
     status: (id) => { window.__calls.status.push(id); const s = window.__statuses.length > 1 ? window.__statuses.shift() : window.__statuses[0];
       return Promise.resolve(s === 'offline' ? { ok: false, error: 'network' } : { ok: true, status: s, credited: s === 'paid' ? 3 : null }); },
+    cancel: (id) => { window.__calls.cancel.push(id); return Promise.resolve(window.__cancel); },
     topUp: () => { window.__calls.topup++; },
     openTerms: () => { window.__calls.terms++; }, close: () => { window.__calls.close++; } };
   </script>`;
@@ -81,13 +84,13 @@ app.whenReady().then(async () => {
     const c = el.parentElement.getBoundingClientRect(), r = el.getBoundingClientRect();
     return Math.abs((r.left + r.right) / 2 - (c.left + c.right) / 2) < 3; })`));
   check('no fee on top for the buyer: none mentioned (owner\'s decision 2026-10-09)', !/комисси/i.test(await text('form')));
-  check('"xRocket 🚀": the steps\' title and the top-up button (AUD-46)',
-    (await js(`document.querySelector('.steps h2').textContent`)) === 'Нет USDT в xRocket 🚀? Три шага:'
-    && (await text('topup')) === 'Пополнить кошелёк xRocket 🚀');
+  check('"xRocket 🚀": the steps\' title and the top-up button (AUD-46)',
+    (await js(`document.querySelector('.steps h2').textContent`)) === 'Нет USDT в xRocket 🚀? Три шага:'
+    && (await text('topup')) === 'Пополнить кошелёк xRocket 🚀');
   check('xRocket never without its rocket in the window, any language', ['ru', 'en', 'zh'].every((l) =>
-    Object.entries(i18n.stringsFor(l)).filter(([k]) => k.startsWith('pay.')).every(([, v]) => !/xRocket(?! 🚀)/.test(v))));
+    Object.entries(i18n.stringsFor(l)).filter(([k]) => k.startsWith('pay.')).every(([, v]) => !/xRocket(?!\u00A0🚀)/.test(v))));
   check('three steps to top up, without P2P', (await js(`[...document.querySelectorAll('.steps li')].map((l) => l.textContent).join('|')`))
-    === 'Пройдите проверку личности в xRocket 🚀 — один раз.|Пополните кошелёк по СБП на сумму тарифа по текущему курсу (цены указаны в USDT: 1 USDT ≈ 1 $).|Вернитесь сюда и нажмите «Оплатить в Telegram».'
+    === 'Пройдите проверку личности в xRocket 🚀 — один раз.|Пополните кошелёк по СБП на сумму тарифа по текущему курсу (цены указаны в USDT: 1 USDT ≈ 1 $).|Вернитесь сюда и нажмите «Оплатить в Telegram».'
     && !/P2P/.test(await text('form')));
   await js(`document.querySelector('#step1 a').click()`);
   check('"xRocket" in step 1 is the referral link', (await js('window.__calls.topup')) === 1);
@@ -98,13 +101,20 @@ app.whenReady().then(async () => {
   await js(`document.getElementById('pay').click()`);
   await sleep(300);
   check('the invoice asked for a year in the window\'s language', JSON.stringify(await js('window.__calls.invoice')) === '[{"period":"year","lang":"ru"}]');
-  check('waiting: the invoice is open in Telegram', await visible('waiting') && !(await visible('form')));
-  check('waiting: the invoice in "@xRocket 🚀"', (await js(`document.querySelector('#waiting [data-i18n="pay.waiting"]').textContent`)).includes('в боте @xRocket 🚀.'));
+  const shaded = () => js(`(() => { const f = document.getElementById('form'), b = document.getElementById('pay').getBoundingClientRect();
+    const top = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+    return f.inert === true && getComputedStyle(f).display !== 'none' && !!top.closest('#waiting, #result'); })()`);
+  check('waiting: a shade over the prices — seen, not to be pressed (AUD-59)', await visible('waiting') && await shaded());
+  check('...with one button, "Отменить", and no "Назад"', (await js(`[...document.querySelectorAll('#waiting button')].map((b) => b.textContent).join('|')`)) === 'Отменить'
+    && !(await js(`!!document.getElementById('back')`)));
+  await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  check('...Esc does not close the window while it waits', (await js('window.__calls.close')) === 0);
+  check('waiting: the invoice in "@xRocket 🚀"', (await js(`document.querySelector('#waiting [data-i18n="pay.waiting"]').textContent`)).includes('в боте @xRocket 🚀.'));
   check('waiting: until when the invoice is valid', /^Счёт действует до \d\d:\d\d\.$/.test(await text('valid')), await text('valid'));
   await js(`document.getElementById('again').click()`);
   check('"open the invoice again" opens the same invoice', JSON.stringify(await js('window.__calls.open')) === '["https://t.me/xrocket?start=inv_test7"]');
   check('waiting: in the middle of the window', await js(`(() => { const r = document.querySelector('#waiting .spinner').getBoundingClientRect();
-    const b = document.getElementById('back').getBoundingClientRect(); return Math.abs((r.top + b.bottom) / 2 - window.innerHeight / 2) < 40; })()`));
+    const b = document.querySelector('#waiting [data-i18n="pay.cancelHint"]').getBoundingClientRect(); return Math.abs((r.top + b.bottom) / 2 - window.innerHeight / 2) < 40; })()`));
   await js(`window.__statuses = ['pending', 'offline', 'paid'];
             window.__account = ${PAID.replace('"balance":2', '"balance":0')};`);
   await sleep(13000);
@@ -118,11 +128,17 @@ app.whenReady().then(async () => {
   await js(`document.getElementById('result-btn').click()`);
   check('"Close" closes the window', (await js('window.__calls.close')) === 1);
 
+  // "Cancel": the invoice is cancelled at xRocket, the shade comes off.
+  const formFree = () => js(`document.getElementById('form').inert === false && document.getElementById('waiting').classList.contains('hidden') && document.getElementById('result').classList.contains('hidden')`);
   await open('lang=ru&theme=dark&acc=free');
   await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
   await sleep(300);
-  await js(`document.getElementById('back').click()`);
-  check('"Back" from waiting returns to the form', await visible('form'));
+  await js(`document.getElementById('cancel').click()`);
+  await sleep(300);
+  check('"Cancel": the invoice is cancelled for real, the prices are free again', JSON.stringify(await js('window.__calls.cancel')) === '[7]' && await formFree());
+  const askedAtCancel = await js('window.__calls.status.length');
+  await sleep(4500);
+  check('...and nothing more is asked about it', (await js('window.__calls.status.length')) === askedAtCancel);
   await js(`window.__statuses = ['expired']; document.getElementById('pay').click()`);
   await sleep(5000);
   check('expired: said so, a new invoice offered', (await text('result-title')) === 'Счёт истёк'
@@ -130,27 +146,28 @@ app.whenReady().then(async () => {
   await js(`document.getElementById('result-btn').click()`);
   check('"New invoice" goes back to the form', await visible('form'));
 
-  // "Back" does not forget the invoice (AUD-58): paid in Telegram afterwards, it still shows.
+  // Paid in Telegram a moment before "Cancel": that is what is shown.
   await open('lang=ru&theme=dark&acc=free');
   await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
   await sleep(300);
-  await js(`document.getElementById('back').click()`);
-  const askedAtBack = await js('window.__calls.status.length');
-  await sleep(4500);
-  check('after "Back": on the form, and still asking about the invoice', await visible('form') && (await js('window.__calls.status.length')) > askedAtBack);
+  await js(`window.__cancel = { ok: true, status: 'paid', credited: 3 }; window.__account = ${PAID.replace('"balance":2', '"balance":0')};
+            document.getElementById('cancel').click()`);
+  await sleep(300);
+  check('"Cancel" after the money came: "Оплачено!", not a cancellation', await visible('result') && (await text('result-title')) === 'Оплачено!'
+    && (await text('result-text')) === 'Тариф действует до 09.11.2026.', await text('result-text'));
+  // Not cancelled (no connection, or xRocket would not): said so, still waiting, still asking.
+  await open('lang=ru&theme=dark&acc=free');
+  await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
+  await sleep(300);
+  await js(`window.__cancel = { ok: false, error: 'network' }; document.getElementById('cancel').click()`);
+  await sleep(300);
+  check('"Cancel" without a connection: told it did not work, the shade stays', (await text('wait-error')) === 'Не удалось отменить счёт. Проверьте связь и попробуйте ещё раз.' && await visible('waiting') && await shaded());
+  await js(`window.__cancel = { ok: true, status: 'pending', credited: null }; document.getElementById('cancel').click()`);
+  await sleep(300);
+  check('"Cancel" that xRocket would not do: the same', (await text('wait-error')) === 'Не удалось отменить счёт. Проверьте связь и попробуйте ещё раз.' && await visible('waiting'));
   await js(`window.__statuses = ['paid']; window.__account = ${PAID.replace('"balance":2', '"balance":0')};`);
   await sleep(4500);
-  check('paid in Telegram after "Back": "Оплачено!" comes up', await visible('result') && (await text('result-title')) === 'Оплачено!'
-    && (await text('result-text')) === 'Тариф действует до 09.11.2026.', await text('result-text'));
-  await open('lang=ru&theme=dark&acc=free');
-  await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
-  await sleep(300);
-  await js(`document.getElementById('back').click(); window.__statuses = ['expired'];`);
-  await sleep(4500);
-  const askedAtEnd = await js('window.__calls.status.length');
-  await sleep(4500);
-  check('expired after "Back": the form stays, nothing pops up, the asking ends', await visible('form') && !(await visible('result'))
-    && (await js('window.__calls.status.length')) === askedAtEnd);
+  check('...and a payment after that still shows', await visible('result') && (await text('result-title')) === 'Оплачено!');
 
   await open('lang=ru&theme=dark&acc=free');
   await js(`window.__invoice = { ok: false, error: 'payments_off' }; document.getElementById('pay').click()`);
@@ -181,7 +198,7 @@ app.whenReady().then(async () => {
   check('paid but only onto the balance: told it goes into the next payment', (await text('result-text'))
     === 'На балансе 3\u00A0USDT — меньше цены месяца. Они пойдут в следующую оплату.', await text('result-text'));
 
-  // --- Snapshots: the form and paid, three languages, two themes; waiting once ---
+  // --- Snapshots: the form, waiting and paid — three languages, two themes ---
   for (const lang of ['ru', 'en', 'zh']) {
     for (const theme of ['dark', 'light']) {
       await open(`lang=${lang}&theme=${theme}&acc=free`);
@@ -193,13 +210,14 @@ app.whenReady().then(async () => {
         f.style.marginTop = ''; return [n, window.innerHeight]; })()`);
       check(`${lang}/${theme}: the form fits the window, without a gap below (${need} of ${have})`,
         need <= have && have - need <= 24 && (await js(`document.documentElement.scrollHeight <= window.innerHeight`)));
-      await js(`window.__statuses = ['paid']; window.__account = ${PAID.replace('"balance":2', '"balance":0')};
-                document.getElementById('pay').click()`);
-      await sleep(lang === 'ru' && theme === 'dark' ? 600 : 5000);
-      if (lang === 'ru' && theme === 'dark') {
-        fs.writeFileSync(path.join(OUT, 'pay-waiting-ru-dark.png'), (await win.webContents.capturePage()).toPNG());
-        await sleep(4500);
-      }
+      await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
+      await sleep(700);
+      fs.writeFileSync(path.join(OUT, `pay-waiting-${lang}-${theme}.png`), (await win.webContents.capturePage()).toPNG());
+      check(`${lang}/${theme}: waiting fits the window`, await js(`(() => { const w = document.getElementById('waiting');
+        return w.scrollHeight <= w.clientHeight + 1 && [...w.children].every((c) => c.getBoundingClientRect().bottom <= window.innerHeight
+          && c.getBoundingClientRect().top >= 0); })()`));
+      await js(`window.__statuses = ['paid']; window.__account = ${PAID.replace('"balance":2', '"balance":0')};`);
+      await sleep(4500);
       fs.writeFileSync(path.join(OUT, `pay-paid-${lang}-${theme}.png`), (await win.webContents.capturePage()).toPNG());
       check(`${lang}/${theme}: paid shown`, await visible('result'));
     }

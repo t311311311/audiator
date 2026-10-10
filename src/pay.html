@@ -5,8 +5,12 @@
     <title>Audiator</title>
     <!-- Paying for the plan (owner's decision 2026-10-09): an xRocket invoice,
          paid in Telegram from the payer's xRocket wallet; xRocket's fee is ours.
-         Opened from Settings and modal to them (AUD-44). No lines about the plan
-         now or how it is paid above the prices (owner, AUD-45); "xRocket 🚀"
+         Opened from Settings and modal to them (AUD-44). While the invoice
+         waits, a shade lies over the prices with a spinner and "Cancel", which
+         really cancels the invoice at xRocket (owner 2026-10-10, AUD-59; closing
+         the window then does the same, index.js). xRocket never tells that the
+         buyer opened the invoice and went away: cancelling is done here. No lines about the plan
+         now or how it is paid above the prices (owner, AUD-45); "xRocket 🚀"
          with its rocket everywhere (AUD-46).
          The invoice opens in Telegram; this window asks our server every few
          seconds until the payment comes (auth-server/payments.py). Below the
@@ -67,8 +71,15 @@
         .steps .secondary { margin-top: 10px; }
         .foot { margin-top: auto; padding-top: 10px; font-size: 12px; text-align: center; }
         a { color: var(--accent-color); }
-        /* Waiting and the result: in the middle of the window. */
-        .state { align-items: center; justify-content: center; text-align: center; gap: 4px; }
+        /* Waiting and the result: a shade over the prices, its words in the
+           middle. What is under it is seen but cannot be pressed (the form is
+           made inert). */
+        .state {
+            position: fixed; inset: 0; z-index: 10; padding: 18px 22px;
+            align-items: center; justify-content: center; text-align: center; gap: 4px;
+            background: color-mix(in srgb, var(--bg-color) 88%, transparent);
+            backdrop-filter: blur(3px);
+        }
         .state .icon {
             width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-size: 30px; margin-bottom: 12px; border: 2px solid var(--border-color);
@@ -79,6 +90,7 @@
         .state p { line-height: 1.5; margin: 6px 0 0; max-width: 340px; }
         .state .small { font-size: 12px; opacity: 0.7; }
         .state .actions { width: 100%; max-width: 300px; margin-top: 18px; }
+        .state .error { margin-top: 8px; max-width: 340px; line-height: 1.4; }
         .spinner {
             width: 40px; height: 40px; margin-bottom: 14px; border-radius: 50%;
             border: 3px solid var(--border-color); border-top-color: var(--accent-color);
@@ -95,26 +107,27 @@
         <button class="primary" id="pay" data-i18n="pay.button">Оплатить в Telegram</button>
         <div class="error" id="error"></div>
         <div class="steps">
-            <h2 data-i18n="pay.stepsTitle">Нет USDT в xRocket 🚀? Три шага:</h2>
+            <h2 data-i18n="pay.stepsTitle">Нет USDT в xRocket 🚀? Три шага:</h2>
             <ol>
                 <!-- "xRocket" in step 1 is a link: the owner's referral link, as the button below. -->
                 <li><span id="step1"></span></li>
                 <li><span data-i18n="pay.step2">Пополните кошелёк по СБП.</span></li>
                 <li><span data-i18n="pay.step3">Вернитесь сюда и нажмите «Оплатить в Telegram».</span></li>
             </ol>
-            <button class="secondary" id="topup" data-i18n="pay.topUpButton">Пополнить кошелёк xRocket 🚀</button>
+            <button class="secondary" id="topup" data-i18n="pay.topUpButton">Пополнить кошелёк xRocket 🚀</button>
         </div>
         <div class="foot"><a href="#" id="terms" data-i18n="pay.terms">Правила оплаты и баланса</a></div>
     </div>
     <div id="waiting" class="screen state hidden">
         <div class="spinner"></div>
         <h2 data-i18n="pay.waitingTitle">Ждём оплату</h2>
-        <p data-i18n="pay.waiting">Счёт на оплату открылся в Telegram, в боте @xRocket 🚀. Нажмите там «Оплатить» — оплата появится здесь сама.</p>
-        <p class="small" id="valid"></p>
+        <p data-i18n="pay.waiting">Счёт на оплату открылся в Telegram, в боте @xRocket 🚀. Нажмите там «Оплатить» — оплата появится здесь сама.</p>
+        <p class="small"><span id="valid"></span> <a href="#" id="again" data-i18n="pay.openAgain">Открыть счёт снова</a></p>
         <div class="actions">
-            <button class="secondary" id="again" data-i18n="pay.openAgain">Открыть счёт снова</button>
-            <button class="secondary" id="back" data-i18n="pay.back">Назад</button>
+            <button class="secondary" id="cancel" data-i18n="pay.cancel">Отменить</button>
         </div>
+        <p class="small" data-i18n="pay.cancelHint">Передумали — нажмите «Отменить»: счёт станет недействительным.</p>
+        <div class="error" id="wait-error"></div>
     </div>
     <div id="result" class="screen state hidden">
         <div class="icon" id="icon"></div>
@@ -138,13 +151,18 @@
         const PRICES = { month: 3, year: 25 };
         const priceOf = (p) => (account && account.prices && account.prices[p] > 0 ? account.prices[p] : PRICES[p]);
         const POLL_MS = 4000;
-        let period = 'month', account = null, current = null, poll = null;
+        let period = 'month', account = null, current = null, poll = null, cancelling = false;
 
         const fmtDate = (iso) => new Date(iso).toLocaleDateString(document.documentElement.lang);
         const fmtUsdt = (n) => Number(n || 0).toLocaleString(document.documentElement.lang, { maximumFractionDigits: 2 });
+        // The prices are always there; waiting and the result lie over them as
+        // a shade, and nothing under a shade can be pressed or tabbed to.
         function show(which) {
-            for (const id of ['form', 'waiting', 'result']) $(id).classList.toggle('hidden', id !== which);
+            for (const id of ['waiting', 'result']) $(id).classList.toggle('hidden', id !== which);
+            $('form').inert = which !== 'form';
+            $('wait-error').textContent = '';
         }
+        const waitingNow = () => !$('waiting').classList.contains('hidden');
 
         function renderPeriods() {
             $('periods').textContent = '';
@@ -186,10 +204,9 @@
             show('result');
         }
 
-        async function check() {
-            if (!current) return;
-            const r = await window.payApi.status(current.id);
-            if (!r.ok) return; // offline for a moment: asked again in a few seconds
+        // What the server says about the invoice the window waits for. True
+        // once it is settled one way or another; false while it is still payable.
+        async function take(r) {
             if (r.status === 'paid') {
                 const v = await window.payApi.getAccount();
                 account = v;
@@ -197,12 +214,27 @@
                     ? S('pay.paid', { d: fmtDate(v.paidUntil) })
                     : S('pay.paidBalance', { b: fmtUsdt(r.credited) });
                 result(true, S('pay.paidTitle'), text, S('pay.close'));
-            } else if (r.status === 'expired' || r.status === 'failed'
-                       || (current.expiresAt && Date.now() > current.expiresAt + 60000)) {
-                // Said only to someone still waiting for it; after "Back" it just ends.
-                if (!$('waiting').classList.contains('hidden')) result(false, S('pay.expiredTitle'), S('pay.expired'), S('pay.newInvoice'));
-                else { stopPolling(); current = null; }
+                return true;
             }
+            if (r.status === 'cancelled') { // back to the prices, the shade off
+                stopPolling();
+                current = null;
+                show('form');
+                return true;
+            }
+            if (r.status === 'expired' || r.status === 'failed'
+                || (current && current.expiresAt && Date.now() > current.expiresAt + 60000)) {
+                result(false, S('pay.expiredTitle'), S('pay.expired'), S('pay.newInvoice'));
+                return true;
+            }
+            return false;
+        }
+
+        async function check() {
+            if (!current || cancelling) return;
+            const r = await window.payApi.status(current.id);
+            if (!r.ok || cancelling) return; // offline for a moment: asked again in a few seconds
+            await take(r);
         }
 
         $('pay').addEventListener('click', async () => {
@@ -222,20 +254,33 @@
                 $('pay').disabled = false;
             }
         });
-        $('again').addEventListener('click', () => { if (current) window.payApi.openInvoice(current.url); });
-        // Back to the form: the invoice stays valid in Telegram until it expires,
-        // and paying it then still counts. So the window goes on asking about
-        // it and says "Paid!" if the money comes (AUD-58: the owner pressed Back
-        // and paid in Telegram — nobody was asking any more). With the window
-        // closed, the server finds it with the next profile.
-        $('back').addEventListener('click', () => { show('form'); });
+        $('again').addEventListener('click', (e) => { e.preventDefault(); if (current) window.payApi.openInvoice(current.url); });
+        // "Cancel": the invoice is cancelled at xRocket — it can no longer be
+        // paid in Telegram — and the shade comes off. Paid a moment before: that
+        // is what is shown. Not cancelled (no connection): said so, the shade
+        // stays, the invoice is still payable.
+        $('cancel').addEventListener('click', async () => {
+            if (!current || cancelling) return;
+            cancelling = true;
+            $('cancel').disabled = true;
+            $('wait-error').textContent = '';
+            try {
+                const r = await window.payApi.cancel(current.id);
+                if (!r.ok || !(await take(r))) $('wait-error').textContent = S('pay.cancelFailed');
+            } finally {
+                cancelling = false;
+                $('cancel').disabled = false;
+            }
+        });
         $('result-btn').addEventListener('click', () => {
             if ($('result-btn').dataset.action === 'close') window.payApi.close();
             else { current = null; show('form'); }
         });
         $('topup').addEventListener('click', () => window.payApi.topUp());
         $('terms').addEventListener('click', (e) => { e.preventDefault(); window.payApi.openTerms(document.documentElement.lang); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.payApi.close(); });
+        // Esc closes the window — not while it waits for a payment: closing
+        // then cancels the invoice, and that takes "Cancel" or the window's own ✕.
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !waitingNow()) window.payApi.close(); });
 
         async function applyI18n(lang) {
             const i18n = await window.payApi.getI18n(lang);
@@ -249,7 +294,7 @@
             const [before, after] = S('pay.step1').split('{xrocket}');
             const link = document.createElement('a');
             link.href = '#';
-            link.textContent = 'xRocket 🚀';
+            link.textContent = 'xRocket 🚀';
             link.addEventListener('click', (e) => { e.preventDefault(); window.payApi.topUp(); });
             $('step1').replaceChildren(before, link, after || '');
             renderPeriods();

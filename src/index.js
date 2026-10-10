@@ -487,6 +487,11 @@ const showSupportWindow = (lang) => {
 // Modal to Settings, where it is opened from: Settings wait until it closes
 // (owner 2026-10-09, AUD-44).
 let payWindow = null;
+// The invoice the payment window is waiting for. Closing the window while it
+// waits cancels the invoice at xRocket: nothing payable is left behind a
+// closed window (the owner paid such a one in a test, and it surprised him).
+let waitingPayment = null;
+const settledPayment = (id, r) => { if (r && r.ok && r.status !== 'pending' && id === waitingPayment) waitingPayment = null; return r; };
 const PAY_H = 470; // inside the frame; tests/e2e/pay-ui.js opens it the same and checks the form fits
 const showPayWindow = (lang) => {
   lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
@@ -513,7 +518,15 @@ const showPayWindow = (lang) => {
   });
   payWindow.setMenu(null);
   payWindow.loadFile(path.join(__dirname, 'pay.html'), { query: { lang } });
-  payWindow.on('closed', () => { payWindow = null; });
+  payWindow.on('closed', () => {
+    payWindow = null;
+    if (waitingPayment) {
+      const id = waitingPayment;
+      waitingPayment = null;
+      // (Not cancelled — no connection: the server credits it with the next profile if it is paid after all.)
+      account.cancelPayment(id).catch(() => {});
+    }
+  });
 };
 // Topping up an xRocket wallet with rubles: the owner's referral link (a small
 // share of xRocket's fee comes back; owner's decision 2026-10-09).
@@ -717,17 +730,20 @@ app.on('ready', async () => {
     syncTimer = setTimeout(refreshOverlay, 100);
   };
   ['hide', 'minimize', 'show', 'restore'].forEach((evt) => mainWindow.on(evt, scheduleSync));
-  // Opening the window asks the server for the plan and the minutes (at most
-  // every 30 seconds): a change made on the server — a payment, more minutes
-  // granted — shows without waiting for the 15-minute check.
+  // Coming to any window of ours asks the server for the plan and the minutes
+  // (at most every 30 seconds): a change made on the server — a payment, more
+  // minutes granted — shows without waiting for the 15-minute check. Any
+  // window, not only the main one: the owner came back from Telegram to
+  // Settings and the new paid date was not there until they were reopened
+  // (AUD-60).
   let lastAccountCheck = 0;
-  mainWindow.on('focus', () => {
+  const askServerOnFocus = () => {
     if (Date.now() - lastAccountCheck < 30 * 1000 || !account.signedIn()) return;
     lastAccountCheck = Date.now();
     account.refresh().catch(() => {});
-  });
+  };
   app.on('browser-window-focus', (event, win) => {
-    if (win !== overlayWindow) ownFocus = win;
+    if (win !== overlayWindow) { ownFocus = win; askServerOnFocus(); }
     scheduleSync();
   });
   app.on('browser-window-blur', (event, win) => {
@@ -812,12 +828,13 @@ app.on('ready', async () => {
   ipcMain.on('pay-close', () => { if (payWindow && !payWindow.isDestroyed()) payWindow.close(); });
   ipcMain.handle('pay-invoice', async (event, { period, lang }) => {
     const r = await account.payInvoice(period, lang || currentLang());
-    if (r.ok) openInvoice(r.url);
+    if (r.ok) { waitingPayment = r.id; openInvoice(r.url); }
     return r;
   });
   ipcMain.on('pay-open-invoice', (event, url) => openInvoice(url));
   ipcMain.on('pay-topup', () => shell.openExternal(XROCKET_TOPUP_URL));
-  ipcMain.handle('pay-status', (event, id) => account.paymentStatus(id));
+  ipcMain.handle('pay-status', async (event, id) => settledPayment(id, await account.paymentStatus(id)));
+  ipcMain.handle('pay-cancel', async (event, id) => settledPayment(id, await account.cancelPayment(id)));
   ipcMain.on('account-sign-out', () => {
     account.signOut('user'); // onChange opens the sign-in window
   });

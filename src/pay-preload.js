@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('payApi', {
   openInvoice: (url) => ipcRenderer.send('pay-open-invoice', url),
   topUp: () => ipcRenderer.send('pay-topup'), // xRocket's ruble top-up, by the owner's referral link
   status: (id) => ipcRenderer.invoke('pay-status', id),
+  cancel: (id) => ipcRenderer.invoke('pay-cancel', id), // the invoice can no longer be paid
   openTerms: (lang) => ipcRenderer.send('open-terms', lang, 'payment'), // at "4. Payment and balance"
   close: () => ipcRenderer.send('pay-close'),
 });
