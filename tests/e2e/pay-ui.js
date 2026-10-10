@@ -130,6 +130,28 @@ app.whenReady().then(async () => {
   await js(`document.getElementById('result-btn').click()`);
   check('"New invoice" goes back to the form', await visible('form'));
 
+  // "Back" does not forget the invoice (AUD-58): paid in Telegram afterwards, it still shows.
+  await open('lang=ru&theme=dark&acc=free');
+  await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
+  await sleep(300);
+  await js(`document.getElementById('back').click()`);
+  const askedAtBack = await js('window.__calls.status.length');
+  await sleep(4500);
+  check('after "Back": on the form, and still asking about the invoice', await visible('form') && (await js('window.__calls.status.length')) > askedAtBack);
+  await js(`window.__statuses = ['paid']; window.__account = ${PAID.replace('"balance":2', '"balance":0')};`);
+  await sleep(4500);
+  check('paid in Telegram after "Back": "Оплачено!" comes up', await visible('result') && (await text('result-title')) === 'Оплачено!'
+    && (await text('result-text')) === 'Тариф действует до 09.11.2026.', await text('result-text'));
+  await open('lang=ru&theme=dark&acc=free');
+  await js(`window.__statuses = ['pending']; document.getElementById('pay').click()`);
+  await sleep(300);
+  await js(`document.getElementById('back').click(); window.__statuses = ['expired'];`);
+  await sleep(4500);
+  const askedAtEnd = await js('window.__calls.status.length');
+  await sleep(4500);
+  check('expired after "Back": the form stays, nothing pops up, the asking ends', await visible('form') && !(await visible('result'))
+    && (await js('window.__calls.status.length')) === askedAtEnd);
+
   await open('lang=ru&theme=dark&acc=free');
   await js(`window.__invoice = { ok: false, error: 'payments_off' }; document.getElementById('pay').click()`);
   await sleep(300);

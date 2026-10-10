@@ -286,6 +286,88 @@ def test_the_profile_tells_the_prices(client, codes, monkeypatch):
     assert client.get("/api/v2/me", headers=h).json()["prices"] == {"month": 0.1, "year": 1.2}
 
 
+# --- paid while nobody was asking (AUD-58) ---------------------------------------------
+
+def gets(rocket, iid=None):
+    return [c for c in rocket.calls if c[0] == "get" and (iid is None or c[1] == iid)]
+
+
+def test_an_invoice_paid_after_the_window_stopped_asking_is_credited_with_the_profile(client, codes, rocket):
+    """The owner's case, 2026-10-10: an invoice asked for, "Back" pressed in
+    the payment window (it stops asking), then paid in Telegram — and no
+    notification reaches a dev machine. The next profile credits it, once."""
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    rocket.pay(next(iter(rocket.invoices)))                 # paid in Telegram; nobody asks GET /pay/{id}
+    assert user().paid_until is None, "not known here yet"
+    me = client.get("/api/v2/me", headers=h).json()
+    assert me["plan"] == "commercial" and me["balance"] == 0, "the profile found it and credited it"
+    first = user().paid_until
+    with accounts_db.Session() as s:
+        p = s.get(accounts_db.Payment, r["id"])
+        assert p.status == "paid" and p.credited == 3
+    asked = len(gets(rocket))
+    client.get("/api/v2/me", headers=h)
+    assert user().paid_until == first and len(gets(rocket)) == asked, "settled: not credited or asked about again"
+
+
+def test_an_unpaid_invoice_stays_and_an_expired_one_is_closed(client, codes, rocket):
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    iid = next(iter(rocket.invoices))
+    assert client.get("/api/v2/me", headers=h).json()["plan"] == "free"
+    with accounts_db.Session() as s:
+        assert s.get(accounts_db.Payment, r["id"]).status == "pending", "still payable: left as it is"
+    rocket.invoices[iid]["status"] = "expired"
+    client.get("/api/v2/me", headers=h)
+    with accounts_db.Session() as s:
+        assert s.get(accounts_db.Payment, r["id"]).status == "expired"
+    asked = len(gets(rocket))
+    client.get("/api/v2/me", headers=h)
+    assert len(gets(rocket)) == asked, "closed: xRocket is not asked about it any more"
+    assert user().paid_until is None and user().balance == 0
+
+
+def test_the_profile_answers_when_xrocket_does_not(client, codes, rocket, monkeypatch):
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    rocket.pay(next(iter(rocket.invoices)))
+    waited = []
+
+    def down(iid):
+        waited.append(xrocket._timeout.get())
+        raise xrocket.Error("timeout")
+    monkeypatch.setattr(xrocket, "get_invoice", down)
+    res = client.get("/api/v2/me", headers=h)
+    assert res.status_code == 200 and res.json()["plan"] == "free", "the profile comes anyway"
+    assert waited == [payments.SWEEP_PATIENCE], "asked once, with little patience, then left for the next time"
+    assert xrocket._timeout.get() == 20, "the usual patience is back afterwards"
+    monkeypatch.setattr(xrocket, "get_invoice", rocket.get_invoice)
+    assert client.get("/api/v2/me", headers=h).json()["plan"] == "commercial", "xRocket back: credited then"
+    assert user().balance == 0 and r["id"]
+
+
+def test_only_the_accounts_own_newest_invoices_are_asked_about(client, codes, rocket):
+    h = signed_in(client, codes)
+    mine = [invoice(client, h)["id"] for _ in range(payments.SWEEP + 2)]
+    other = signed_in(client, codes, "owner@example.com")   # an admin: no free-account rule on this computer
+    theirs = invoice(client, other)["id"]
+    rocket.calls.clear()
+    client.get("/api/v2/me", headers=h)
+    with accounts_db.Session() as s:
+        asked = {s.query(accounts_db.Payment).filter_by(invoice_id=c[1]).one().id for c in gets(rocket)}
+    assert asked == set(mine[-payments.SWEEP:]), "the newest few of this account, nobody else's"
+    assert theirs not in asked
+
+
+def test_no_xrocket_no_sweep(client, codes, rocket, monkeypatch):
+    h = signed_in(client, codes)
+    invoice(client, h)
+    monkeypatch.setenv("XROCKET_TOKEN", "")
+    rocket.calls.clear()
+    assert client.get("/api/v2/me", headers=h).status_code == 200 and not gets(rocket)
+
+
 def test_the_profile_tells_the_balance_and_renews_on_sign_in(client, codes):
     h = signed_in(client, codes)
     with accounts_db.Session() as s:

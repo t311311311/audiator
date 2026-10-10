@@ -14,6 +14,11 @@ seconds while its window is open; the notification only makes it quicker. Both
 end in reconcile(), which reads the invoice and what reached us from xRocket's
 API and credits the balance once — whichever comes first.
 
+An invoice paid when neither happens — after "Back" or with the window closed,
+and no notification reaching us (never on a dev machine; a restart or the
+network on the server) — is settled by settle_pending() the next time the app
+asks for the profile (GET /me): money that came is never left uncredited.
+
   PUBLIC_URL   the server's own address for xRocket's notifications
                (https://audiator.duckdns.org); without it, asking is enough.
 """
@@ -38,6 +43,8 @@ log = logging.getLogger("audiator")
 
 INVOICE_MINUTES = 30
 PER_HOUR = 10   # invoices an account may ask for in an hour
+SWEEP = 3           # an account's newest unsettled invoices asked about with one profile
+SWEEP_PATIENCE = 6  # seconds to wait for xRocket then: the profile must not hang on it
 DESCRIPTION = {
     "en": {"month": "Audiator — 1 month", "year": "Audiator — 1 year"},
     "ru": {"month": "Audiator — 1 месяц", "year": "Audiator — 1 год"},
@@ -120,6 +127,30 @@ def reconcile(payment_id: int) -> str:
         s.commit()
         log.info("payment #%s: %s USDT credited (xrocket invoice %s)", p.id, amount, p.invoice_id)
         return "paid"
+
+
+def settle_pending(user_id: int) -> bool:
+    """The account's invoices still "pending" here, asked of xRocket again:
+    a paid one is credited, an expired one closed (and never asked about
+    again). For what the waiting screen and the notification both missed (see
+    the top). The newest few at a time, with little patience; xRocket not
+    answering just leaves them for the next time. True if any was credited."""
+    if not xrocket.configured():
+        return False
+    with Session() as s:
+        ids = [p.id for p in s.query(Payment)
+               .filter(Payment.user_id == user_id, Payment.provider == "xrocket", Payment.status == "pending",
+                       Payment.invoice_id.isnot(None))
+               .order_by(Payment.id.desc()).limit(SWEEP)]
+    credited = False
+    for payment_id in ids:
+        try:
+            with xrocket.patience(SWEEP_PATIENCE):
+                credited = reconcile(payment_id) == "paid" or credited
+        except xrocket.Error as e:
+            log.warning("payment #%s: xrocket not reachable, left for the next time: %s", payment_id, e)
+            break
+    return credited
 
 
 @router.get("/pay/{payment_id}")

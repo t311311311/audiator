@@ -199,7 +199,9 @@
                 result(true, S('pay.paidTitle'), text, S('pay.close'));
             } else if (r.status === 'expired' || r.status === 'failed'
                        || (current.expiresAt && Date.now() > current.expiresAt + 60000)) {
-                result(false, S('pay.expiredTitle'), S('pay.expired'), S('pay.newInvoice'));
+                // Said only to someone still waiting for it; after "Back" it just ends.
+                if (!$('waiting').classList.contains('hidden')) result(false, S('pay.expiredTitle'), S('pay.expired'), S('pay.newInvoice'));
+                else { stopPolling(); current = null; }
             }
         }
 
@@ -221,9 +223,12 @@
             }
         });
         $('again').addEventListener('click', () => { if (current) window.payApi.openInvoice(current.url); });
-        // Back to the form: the invoice stays valid in Telegram until it expires;
-        // paying it then still counts (the server settles it when asked next).
-        $('back').addEventListener('click', () => { stopPolling(); show('form'); });
+        // Back to the form: the invoice stays valid in Telegram until it expires,
+        // and paying it then still counts. So the window goes on asking about
+        // it and says "Paid!" if the money comes (AUD-58: the owner pressed Back
+        // and paid in Telegram — nobody was asking any more). With the window
+        // closed, the server finds it with the next profile.
+        $('back').addEventListener('click', () => { show('form'); });
         $('result-btn').addEventListener('click', () => {
             if ($('result-btn').dataset.action === 'close') window.payApi.close();
             else { current = null; show('form'); }

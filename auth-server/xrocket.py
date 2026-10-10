@@ -13,14 +13,28 @@ Notifications are only a hint that something changed: what an invoice is and
 what was received is always read back from the API (payments.reconcile), so a
 notification cannot credit anything by itself.
 """
+import contextvars
 import hashlib
 import hmac
 import os
 import time
+from contextlib import contextmanager
 
 import httpx
 
 TOLERANCE_MS = 5 * 60 * 1000   # replay protection, as the docs recommend
+_timeout = contextvars.ContextVar("xrocket_timeout", default=20.0)   # seconds to wait for the API
+
+
+@contextmanager
+def patience(seconds: float):
+    """Calls inside wait for the API no longer than this: for asking on the
+    way to another answer (the profile), where 20 seconds would be felt."""
+    token = _timeout.set(seconds)
+    try:
+        yield
+    finally:
+        _timeout.reset(token)
 
 
 def _api() -> str:
@@ -41,7 +55,7 @@ class Error(Exception):
 
 def _call(method: str, path: str, **kw) -> dict:
     try:
-        r = httpx.request(method, _api() + path, headers=_headers(), timeout=20, **kw)
+        r = httpx.request(method, _api() + path, headers=_headers(), timeout=_timeout.get(), **kw)
     except httpx.HTTPError as e:
         raise Error(f"{method} {path}: {e}") from e
     if r.status_code >= 400:

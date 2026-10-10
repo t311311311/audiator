@@ -300,6 +300,14 @@ def verify_code(req: VerifyRequest):
 @router.get("/me")
 def me(tz: Optional[int] = 0, authorization: Optional[str] = Header(None)):
     u, device = _auth(authorization)
+    # Invoices paid while nobody was asking (after "Back" in the payment
+    # window, or with it closed, and no notification from xRocket): credited
+    # now, so the profile is true. Never in the way of the answer itself.
+    try:
+        from payments import settle_pending   # payments.py imports this module: not at the top
+        settle_pending(u.id)
+    except Exception:   # noqa: BLE001 — the profile matters more than the sweep
+        log.exception("settling pending invoices of user #%s", u.id)
     with Session() as s:
         u = s.get(User, u.id)
         # Whatever the balance covers is bought (a payment made elsewhere, a
