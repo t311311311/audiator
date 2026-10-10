@@ -7,6 +7,7 @@ Telegram from the payer's xRocket wallet. The buyer pays the price; xRocket's
 
   POST /api/v2/pay/xrocket            {period: month|year, lang}  -> {id, url, expires_at, price}
   GET  /api/v2/pay/{id}                                            -> {status, credited, profile}
+  POST /api/v2/pay/{id}/cancel        the buyer changed their mind  -> the same
   POST /api/v2/pay/xrocket/webhook    xRocket's signed notification
 
 The app opens url (the invoice in @xRocket) and asks GET /pay/{id} every few
@@ -19,12 +20,18 @@ and no notification reaching us (never on a dev machine; a restart or the
 network on the server) — is settled by settle_pending() the next time the app
 asks for the profile (GET /me): money that came is never left uncredited.
 
+"Cancel" in the payment window (and closing it while it waits) really cancels:
+the invoice is deleted at xRocket and can no longer be paid (owner 2026-10-10 —
+"Back" had left it payable). xRocket has no word for "the buyer opened the
+invoice and went away", so cancelling is always the app's doing.
+
   PUBLIC_URL   the server's own address for xRocket's notifications
                (https://audiator.duckdns.org); without it, asking is enough.
 """
 import json
 import logging
 import os
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Header, Request
@@ -95,18 +102,30 @@ def new_invoice(req: InvoiceRequest, authorization: Optional[str] = Header(None)
                 "period": req.period}
 
 
-def reconcile(payment_id: int) -> str:
+def reconcile(payment_id: int, gone: Optional[str] = None) -> str:
     """Read the invoice back from xRocket and settle the payment: paid — the
-    received amount onto the balance (once); expired or cancelled — expired.
-    Returns the payment's status."""
+    received amount onto the balance (once); expired or cancelled — closed as
+    that. Returns the payment's status.
+
+    gone: what the payment becomes when xRocket no longer knows the invoice
+    (it forgets a cancelled one). Only a caller that knows why says so —
+    "cancelled" right after cancelling it, "expired" for one past its life;
+    otherwise xrocket.NotFound is raised and the payment stays pending."""
     with Session() as s:
         p = s.get(Payment, payment_id)
         if p is None or p.status != "pending" or p.provider != "xrocket" or not p.invoice_id:
             return p.status if p else "missing"
-        inv = xrocket.get_invoice(p.invoice_id)
+        try:
+            inv = xrocket.get_invoice(p.invoice_id)
+        except xrocket.NotFound:
+            if gone is None:
+                raise
+            p.status = gone
+            s.commit()
+            return p.status
         status = inv.get("status")
         if status in ("expired", "cancelled"):
-            p.status = "expired"
+            p.status = status
             s.commit()
             return p.status
         if status != "paid":
@@ -138,41 +157,91 @@ def settle_pending(user_id: int) -> bool:
     if not xrocket.configured():
         return False
     with Session() as s:
-        ids = [p.id for p in s.query(Payment)
-               .filter(Payment.user_id == user_id, Payment.provider == "xrocket", Payment.status == "pending",
-                       Payment.invoice_id.isnot(None))
-               .order_by(Payment.id.desc()).limit(SWEEP)]
+        rows = [(p.id, p.created_at) for p in s.query(Payment)
+                .filter(Payment.user_id == user_id, Payment.provider == "xrocket", Payment.status == "pending",
+                        Payment.invoice_id.isnot(None))
+                .order_by(Payment.id.desc()).limit(SWEEP)]
     credited = False
-    for payment_id in ids:
+    past_its_life = _utcnow() - timedelta(minutes=INVOICE_MINUTES + 10)
+    for payment_id, created in rows:
         try:
             with xrocket.patience(SWEEP_PATIENCE):
-                credited = reconcile(payment_id) == "paid" or credited
+                # An invoice xRocket has forgotten: closed once it could not be paid any more anyway.
+                gone = "expired" if created and created < past_its_life else None
+                credited = reconcile(payment_id, gone=gone) == "paid" or credited
+        except xrocket.NotFound:
+            continue
         except xrocket.Error as e:
             log.warning("payment #%s: xrocket not reachable, left for the next time: %s", payment_id, e)
             break
     return credited
 
 
-@router.get("/pay/{payment_id}")
-def payment_status(payment_id: int, authorization: Optional[str] = Header(None)):
-    u, _device = _auth(authorization)
+def cancel(payment_id: int) -> str:
+    """The buyer changed their mind: delete the invoice at xRocket, so that it
+    can no longer be paid. Returns the payment's status: "cancelled"; "paid" if
+    the money had come first (it is credited — asked before deleting and again
+    after); "pending" if xRocket would not do it — still payable."""
+    status = reconcile(payment_id)             # paid a moment ago? Then it is paid, not cancelled.
+    if status != "pending":
+        return status
+    with Session() as s:
+        invoice_id = s.get(Payment, payment_id).invoice_id
+    try:
+        xrocket.delete_invoice(invoice_id)
+    except xrocket.NotFound:
+        pass                                   # gone already: closed below
+    except xrocket.Error as e:
+        log.warning("payment #%s: xrocket would not cancel the invoice: %s", payment_id, e)
+        return reconcile(payment_id)           # what it is now decides; "pending" = not cancelled
+    status = reconcile(payment_id, gone="cancelled")
+    if status == "cancelled":
+        log.info("payment #%s: cancelled by the buyer (xrocket invoice %s)", payment_id, invoice_id)
+    return status
+
+
+def _own_payment(payment_id: int, user_id: int) -> str:
+    """The payment's status, if it is this account's (404 otherwise)."""
     with Session() as s:
         p = s.get(Payment, payment_id)
-        if p is None or p.user_id != u.id:
+        if p is None or p.user_id != user_id:
             raise _err(404, "no_payment")
-    status = p.status
-    if status == "pending":
-        try:
-            status = reconcile(payment_id)
-        except xrocket.Error as e:
-            log.warning("payment #%s: xrocket not reachable: %s", payment_id, e)
+        return p.status
+
+
+def _answer(payment_id: int, user_id: int) -> dict:
     with Session() as s:
         p = s.get(Payment, payment_id)
-        u = s.get(User, u.id)
+        u = s.get(User, user_id)
         if billing.settle(u, _utcnow()):
             s.commit()
         return {"id": p.id, "status": p.status, "credited": p.credited, "paid_at": _iso(p.paid_at),
                 "profile": _profile(u)}
+
+
+@router.get("/pay/{payment_id}")
+def payment_status(payment_id: int, authorization: Optional[str] = Header(None)):
+    u, _device = _auth(authorization)
+    if _own_payment(payment_id, u.id) == "pending":
+        try:
+            reconcile(payment_id)
+        except xrocket.Error as e:
+            log.warning("payment #%s: xrocket not reachable: %s", payment_id, e)
+    return _answer(payment_id, u.id)
+
+
+@router.post("/pay/{payment_id}/cancel")
+def cancel_payment(payment_id: int, authorization: Optional[str] = Header(None)):
+    """The answer is the payment as it is now: "cancelled" — done; "paid" — the
+    money came first; "pending" — xRocket could not be reached, the invoice
+    is still payable and the app says the cancelling did not work."""
+    u, _device = _auth(authorization)
+    if _own_payment(payment_id, u.id) == "pending":
+        try:
+            cancel(payment_id)
+        except xrocket.Error as e:
+            log.warning("payment #%s: not cancelled, xrocket not reachable: %s", payment_id, e)
+    return _answer(payment_id, u.id)
 
 
 @router.post("/pay/xrocket/webhook")

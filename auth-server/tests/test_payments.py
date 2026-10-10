@@ -37,7 +37,8 @@ def signed_in(client, codes, email="buyer@mail.ru"):
 
 
 class FakeRocket:
-    """xRocket's three calls, as the API answers them."""
+    """xRocket's calls, as the API answers them (a cancelled invoice is
+    forgotten: 404 afterwards — seen on the real API, 2026-10-10)."""
     def __init__(self):
         self.invoices, self.calls = {}, []
 
@@ -51,7 +52,16 @@ class FakeRocket:
 
     def get_invoice(self, iid):
         self.calls.append(("get", iid))
+        if iid not in self.invoices:
+            raise xrocket.NotFound(f"GET /api/v1/invoice: 404 {iid}")
         return dict(self.invoices[iid])
+
+    def delete_invoice(self, iid):
+        self.calls.append(("delete", iid))
+        if iid not in self.invoices:
+            raise xrocket.NotFound(f"DELETE /api/v1/invoice: 404 {iid}")
+        del self.invoices[iid]
+        return {}
 
     def paid(self, iid):
         return self.invoices[iid]["received"]
@@ -66,7 +76,7 @@ def rocket(monkeypatch):
     fake = FakeRocket()
     monkeypatch.setenv("XROCKET_TOKEN", "test-token")
     monkeypatch.setenv("XROCKET_WEBHOOK_TOKEN", SECRET)
-    for name in ("create_invoice", "get_invoice", "paid"):
+    for name in ("create_invoice", "get_invoice", "delete_invoice", "paid"):
         monkeypatch.setattr(xrocket, name, getattr(fake, name))
     return fake
 
@@ -366,6 +376,111 @@ def test_no_xrocket_no_sweep(client, codes, rocket, monkeypatch):
     monkeypatch.setenv("XROCKET_TOKEN", "")
     rocket.calls.clear()
     assert client.get("/api/v2/me", headers=h).status_code == 200 and not gets(rocket)
+
+
+# --- "Cancel" really cancels (AUD-59) -----------------------------------------------------
+
+def cancel(client, h, payment_id):
+    r = client.post(f"/api/v2/pay/{payment_id}/cancel", headers=h)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_cancel_deletes_the_invoice_at_xrocket_and_closes_the_payment(client, codes, rocket):
+    """Owner 2026-10-10: cancelling in the app must make the invoice invalid —
+    "Back" had left it payable in Telegram."""
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    iid = next(iter(rocket.invoices))
+    body = cancel(client, h, r["id"])
+    assert body["status"] == "cancelled" and body["credited"] is None and body["profile"]["plan"] == "free"
+    assert iid not in rocket.invoices, "gone at xRocket: it cannot be paid there any more"
+    assert ("delete", iid) in rocket.calls
+    rocket.calls.clear()
+    client.get("/api/v2/me", headers=h)
+    assert cancel(client, h, r["id"])["status"] == "cancelled" and not rocket.calls, "closed: xRocket is not asked again"
+
+
+def test_cancel_after_the_money_came_is_a_payment(client, codes, rocket):
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    iid = next(iter(rocket.invoices))
+    rocket.pay(iid)                                  # paid in Telegram a moment before "Cancel"
+    body = cancel(client, h, r["id"])
+    assert body["status"] == "paid" and body["credited"] == 3 and body["profile"]["plan"] == "commercial"
+    assert ("delete", iid) not in rocket.calls and iid in rocket.invoices, "a paid invoice is not deleted"
+    assert user().balance == 0
+
+
+def test_cancel_that_xrocket_would_not_do_leaves_the_invoice_payable(client, codes, rocket, monkeypatch):
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    iid = next(iter(rocket.invoices))
+
+    def refused(i):
+        raise xrocket.Error("DELETE /api/v1/invoice: timeout")
+    monkeypatch.setattr(xrocket, "delete_invoice", refused)
+    assert cancel(client, h, r["id"])["status"] == "pending", "not cancelled: the app says so"
+    rocket.pay(iid)                                  # and it is paid after all
+    assert client.get("/api/v2/me", headers=h).json()["plan"] == "commercial", "then it counts"
+
+
+def test_cancel_when_xrocket_is_down_answers_all_the_same(client, codes, rocket, monkeypatch):
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+
+    def down(i):
+        raise xrocket.Error("timeout")
+    monkeypatch.setattr(xrocket, "get_invoice", down)
+    assert cancel(client, h, r["id"])["status"] == "pending"
+
+
+def test_only_ones_own_pending_payment_is_cancelled(client, codes, rocket):
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    iid = next(iter(rocket.invoices))
+    other = signed_in(client, codes, "owner@example.com")
+    assert client.post(f"/api/v2/pay/{r['id']}/cancel", headers=other).status_code == 404
+    assert iid in rocket.invoices
+    rocket.invoices[iid]["status"] = "expired"
+    assert cancel(client, h, r["id"])["status"] == "expired" and ("delete", iid) not in rocket.calls
+
+
+def test_an_invoice_xrocket_has_forgotten_is_closed_once_past_its_life(client, codes, rocket):
+    """Cancelled at xRocket while our record stayed pending (the app killed in
+    between): young — left alone; past the invoice's life — closed."""
+    h = signed_in(client, codes)
+    r = invoice(client, h)
+    del rocket.invoices[next(iter(rocket.invoices))]
+    assert client.get("/api/v2/me", headers=h).status_code == 200
+    with accounts_db.Session() as s:
+        p = s.get(accounts_db.Payment, r["id"])
+        assert p.status == "pending", "it may still be a passing error: not closed on a 404 alone"
+        p.created_at = accounts_db._utcnow() - timedelta(minutes=payments.INVOICE_MINUTES + 11)
+        s.commit()
+    client.get("/api/v2/me", headers=h)
+    with accounts_db.Session() as s:
+        assert s.get(accounts_db.Payment, r["id"]).status == "expired"
+
+
+def test_a_404_from_xrocket_is_told_apart(monkeypatch):
+    class Answer:
+        def __init__(self, code):
+            self.status_code, self.text, self.content = code, '{"title":"Invoice not found"}', b"{}"
+
+        def json(self):
+            return {}
+    monkeypatch.setattr(xrocket.httpx, "request", lambda *a, **kw: Answer(404))
+    with pytest.raises(xrocket.NotFound):
+        xrocket.get_invoice("1")
+    monkeypatch.setattr(xrocket.httpx, "request", lambda *a, **kw: Answer(500))
+    with pytest.raises(xrocket.Error) as e:
+        xrocket.delete_invoice("1")
+    assert not isinstance(e.value, xrocket.NotFound)
+    sent = {}
+    monkeypatch.setattr(xrocket.httpx, "request", lambda method, url, **kw: sent.update(method=method, url=url, **kw) or Answer(200))
+    xrocket.delete_invoice("6436387")
+    assert sent["method"] == "DELETE" and sent["url"].endswith("/api/v1/invoice") and sent["params"] == {"invoiceId": "6436387"}
 
 
 def test_the_profile_tells_the_balance_and_renews_on_sign_in(client, codes):

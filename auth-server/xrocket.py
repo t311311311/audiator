@@ -53,11 +53,19 @@ class Error(Exception):
     """The API refused or could not be reached."""
 
 
+class NotFound(Error):
+    """xRocket does not know the invoice: a cancelled one is forgotten
+    altogether (seen on the real API 2026-10-10: 404 "Invoice not found" —
+    not the "cancelled" status the docs speak of)."""
+
+
 def _call(method: str, path: str, **kw) -> dict:
     try:
         r = httpx.request(method, _api() + path, headers=_headers(), timeout=_timeout.get(), **kw)
     except httpx.HTTPError as e:
         raise Error(f"{method} {path}: {e}") from e
+    if r.status_code == 404:
+        raise NotFound(f"{method} {path}: 404 {r.text[:200]}")
     if r.status_code >= 400:
         raise Error(f"{method} {path}: {r.status_code} {r.text[:200]}")
     return r.json() if r.content else {}
@@ -77,6 +85,12 @@ def create_invoice(amount: float, client_id: str, description: str, callback_url
 
 def get_invoice(invoice_id: str) -> dict:
     return _call("GET", "/api/v1/invoice", params={"invoiceId": invoice_id})
+
+
+def delete_invoice(invoice_id: str) -> dict:
+    """Cancel an invoice: it can no longer be paid. xRocket then forgets it
+    (get_invoice -> NotFound)."""
+    return _call("DELETE", "/api/v1/invoice", params={"invoiceId": invoice_id})
 
 
 def paid(invoice_id: str) -> float:
