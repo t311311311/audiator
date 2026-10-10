@@ -419,6 +419,20 @@ function saveHistory(list) {
 // and closing it quits — there is nothing the app can do without an account.
 let loginWindow = null;
 
+// --- One window at a time (owner 2026-10-11, AUD-63) ---
+// A window opened from another window of ours is its modal child: the one
+// opened last has the app, those under it wait — Settings behind "Contact
+// us", the main window behind Settings — until it is closed. The recording
+// hotkey works regardless. And a closed window hands the screen back to the
+// one it was opened from: left to itself, Windows gave the focus to whatever
+// program had been used before, and the main window dropped behind it when
+// Settings closed after "Contact us" (AUD-62).
+const childOf = (opener) => (opener && !opener.isDestroyed() && opener.isVisible() ? { parent: opener, modal: true } : {});
+const backTo = (win, opener) => win.on('closed', () => {
+  if (opener && !opener.isDestroyed() && opener.isVisible()) opener.focus();
+});
+const senderWindow = (event) => BrowserWindow.fromWebContents(event.sender);
+
 const showLoginWindow = () => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   if (settingsWindow) settingsWindow.close();
@@ -456,12 +470,14 @@ const showLoginWindow = () => {
   });
 };
 
-// "Написать нам" (support.html): from the main window's menu and Settings.
+// "Написать нам" (support.html): from Settings (or the main window); modal to
+// the window it is opened from.
 let supportWindow = null;
-const showSupportWindow = (lang) => {
+const showSupportWindow = (lang, opener) => {
   lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
   if (supportWindow && !supportWindow.isDestroyed()) { supportWindow.focus(); return; }
   supportWindow = new BrowserWindow({
+    ...childOf(opener),
     width: 480,
     height: 520,
     useContentSize: true,
@@ -480,6 +496,7 @@ const showSupportWindow = (lang) => {
   supportWindow.setMenu(null);
   supportWindow.loadFile(path.join(__dirname, 'support.html'), { query: { lang } });
   supportWindow.on('closed', () => { supportWindow = null; });
+  backTo(supportWindow, opener);
 };
 
 // Paying for the plan (pay.html): an xRocket invoice, paid in Telegram; the
@@ -527,6 +544,7 @@ const showPayWindow = (lang) => {
       account.cancelPayment(id).catch(() => {});
     }
   });
+  backTo(payWindow, parent);
 };
 // Topping up an xRocket wallet with rubles: the owner's referral link (a small
 // share of xRocket's fee comes back; owner's decision 2026-10-09).
@@ -542,7 +560,7 @@ const openInvoice = (url) => {
 // goes to the user's mail program.
 let termsWindow = null;
 const TERMS_PARTS = ['payment'];
-const showTermsWindow = (lang, part) => {
+const showTermsWindow = (lang, part, opener) => {
   lang = lang && i18n.LANGUAGES[lang] ? lang : currentLang();
   const theme = resolveTheme(store.get('theme'));
   const query = TERMS_PARTS.includes(part) ? { lang, theme, part } : { lang, theme };
@@ -553,6 +571,7 @@ const showTermsWindow = (lang, part) => {
     return;
   }
   termsWindow = new BrowserWindow({
+    ...childOf(opener), // the sign-in window, Settings or the payment window
     width: 560,
     height: 640,
     title: i18n.t(lang, 'terms.windowTitle'),
@@ -569,6 +588,7 @@ const showTermsWindow = (lang, part) => {
   });
   termsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   termsWindow.on('closed', () => { termsWindow = null; });
+  backTo(termsWindow, opener);
 };
 
 app.on('ready', async () => {
@@ -807,12 +827,12 @@ app.on('ready', async () => {
     return r;
   });
   // From Settings: sign out (also the way to another account).
-  ipcMain.on('open-terms', (event, lang, part) => showTermsWindow(lang, part));
+  ipcMain.on('open-terms', (event, lang, part) => showTermsWindow(lang, part, senderWindow(event)));
   ipcMain.handle('history-load', () => (account.signedIn() ? loadHistory() : []));
   ipcMain.on('history-save', (event, list) => {
     if (account.signedIn() && Array.isArray(list)) saveHistory(list);
   });
-  ipcMain.on('support-open', (event, lang) => showSupportWindow(lang));
+  ipcMain.on('support-open', (event, lang) => showSupportWindow(lang, senderWindow(event)));
   ipcMain.on('support-close', () => { if (supportWindow && !supportWindow.isDestroyed()) supportWindow.close(); });
   // What the message carries besides the text: the app's version and Windows'.
   const supportInfo = () => ({
@@ -925,7 +945,7 @@ app.on('ready', async () => {
       minimizable: false, // Prevent minimizing
       maximizable: false, // Prevent maximizing
       parent: mainWindow,
-      modal: false,
+      modal: true, // the main window waits behind Settings (AUD-63)
       frame: true, // Restore standard frame with title bar
       title: '', // Empty title to remove text from title bar
       icon: iconPath, // like every other window (without it: electron.exe's own icon, AUD-53)
@@ -971,6 +991,8 @@ app.on('ready', async () => {
       // Re-apply original settings in case real-time preview was active
       mainWindow.setOpacity(store.get('opacity'));
       mainWindow.webContents.send('settings-updated', store.get());
+      // The main window comes back to the front, not behind another program (AUD-62).
+      if (!mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.focus();
     });
   });
 

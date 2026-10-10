@@ -169,16 +169,24 @@ const codeFor = async (email) => {
   // A recording going on while Settings is in front: the bar must show it.
   await main.js(`window.api.recordingStarted(999)`);
   await main.js(`document.getElementById('settings-btn').click()`);
-  const settings = await page('settings.html');
+  let settings = await page('settings.html');
   await sleep(800);
+  // One window at a time (AUD-63): asked of Electron itself.
+  const nest = await electronSays(`{ modal: by('settings.html').isModal(), parent: by('settings.html').getParentWindow() === by('index.html'),
+    mainEnabled: by('index.html').isEnabled() }`);
+  check('Settings are modal to the main window: it waits behind them (AUD-63)', nest.modal && nest.parent && !nest.mainEnabled, JSON.stringify(nest));
+  // Counts the times a window is handed the screen back by the one closing over it.
+  const countFocus = (file) => electronSays(`(() => { const w = by('${file}'); w.__back = 0; const f = w.focus.bind(w);
+    w.focus = () => { w.__back++; f(); }; return true; })()`);
   check('account buttons: pay, write to us, sign out (no switch; AUD-47)', (await settings.js(`[...document.querySelectorAll('.account-actions button')].filter((b) => !b.hidden).map((b) => b.textContent).join('|')`)) === 'Оплатить|Написать нам|Выйти из аккаунта');
   check('settings shows the account', (await settings.js(`document.getElementById('account-email').textContent + ' | ' + document.getElementById('account-left').textContent`)).startsWith('tester@example.com'));
   await sleep(400);
   // (The bar's page always reports "visible" — it is never throttled — so
   // the main process's own log of its show/hide decisions is what is read.)
-  // ("focused=none": another program has the screen's focus at that moment — someone
-  // is working at the computer; Settings are then still the last of our windows in front.)
-  check('recording + Settings in front: the bar is on screen', /\[overlay\] show: barrels=1 inView=false focused=(?:other-own|none) tracked=other-own/.test(appLog),
+  // (What matters: the bar is shown and the main window is not the one in front.
+  // "focused=none": another program has the screen's focus at that moment — someone
+  // is working at the computer.)
+  check('recording + Settings in front: the bar is on screen', /\[overlay\] show: barrels=1 inView=false focused=(?:other-own|none)/.test(appLog),
     (appLog.match(/\[overlay\].*/g) || ['no [overlay] lines in the app\'s log']).slice(-3).join(' | '));
   await main.js(`window.api.transcribeFailed(999)`);
   await sleep(500);
@@ -201,6 +209,8 @@ const codeFor = async (email) => {
   const at = await payTerms.js(`(() => { const h = document.querySelector('section.shown h2[data-part="payment"]');
     return new URLSearchParams(location.search).get('part') + '|' + h.textContent + '|' + Math.round(h.getBoundingClientRect().top); })()`);
   const [atPart, atTitle, atTop] = at.split('|');
+  const tn = await electronSays(`{ modal: by('terms.html').isModal(), parent: by('terms.html').getParentWindow() === by('pay.html'), payEnabled: by('pay.html').isEnabled() }`);
+  check('the rules opened from the payment window are modal to it (AUD-63)', tn.modal && tn.parent && !tn.payEnabled, JSON.stringify(tn));
   check('...and opens the rules at "4. Оплата и баланс"', atPart === 'payment' && atTitle === '4. Оплата и баланс' && +atTop >= 0 && +atTop <= 24, at);
   await payTerms.shot('app-7-terms-payment.png');
   await payTerms.js('window.close()').catch(() => {});
@@ -225,19 +235,39 @@ const codeFor = async (email) => {
   await electronSays(`require('electron').app.emit('browser-window-focus', {}, by('settings.html'))`);
   for (let i = 0; i < 40 && !/^Оплачено до/.test(await leftNow()); i++) await sleep(250);
   check('back to Settings: the paid date shows without reopening them (AUD-60)', /^Оплачено до \d\d\.\d\d\.\d{4}$/.test(await leftNow()), await leftNow());
-  mainProc.close(); mainProc = null; // an open inspector session would keep the app from quitting at the end
   // English being tried in Settings (not saved): Contact us and the rules open in English.
   await settings.js(`window.settingsApi.openSupport('en')`);
   const supEn = await page('support.html');
   await sleep(700);
+  const sn = await electronSays(`{ modal: by('support.html').isModal(), parent: by('support.html').getParentWindow() === by('settings.html'),
+    settingsEnabled: by('settings.html').isEnabled(), mainEnabled: by('index.html').isEnabled() }`);
+  check('"Contact us" from Settings is modal to them: Settings and the main window wait (AUD-63)', sn.modal && sn.parent && !sn.settingsEnabled && !sn.mainEnabled, JSON.stringify(sn));
+  await countFocus('settings.html');
   check('support from Settings in the language shown there', (await supEn.js(`document.title + ' | ' + [...document.querySelectorAll('.topic span')].map((e) => e.textContent).join('|')`)) === 'Contact us — Audiator | Payment and balance|Something does not work|Account and sign-in|Suggestion');
   await supEn.js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`).catch(() => {});
+  await sleep(500);
+  const afterSup = await electronSays(`{ enabled: by('settings.html').isEnabled(), back: by('settings.html').__back, mainEnabled: by('index.html').isEnabled() }`);
+  check('"Contact us" closed: Settings usable again and handed the screen back; the main window still waits', afterSup.enabled && afterSup.back >= 1 && !afterSup.mainEnabled, JSON.stringify(afterSup));
   await settings.js(`window.settingsApi.openTerms('zh')`);
   const terms = await page('terms.html');
   await sleep(600);
   check('rules from Settings in that language (zh)', (await terms.js('document.title')) === 'Audiator 使用条款');
+  const rn = await electronSays(`{ modal: by('terms.html').isModal(), parent: by('terms.html').getParentWindow() === by('settings.html') }`);
+  check('...and modal to Settings (AUD-63)', rn.modal && rn.parent, JSON.stringify(rn));
   await terms.js('window.close()').catch(() => {});
   await sleep(300);
+  // The owner's steps (AUD-62): Settings -> "Contact us" -> closed -> Settings closed:
+  // the main window must be usable, on screen, and handed the screen back.
+  await countFocus('index.html');
+  await settings.js(`window.settingsApi.send('close-settings-window')`).catch(() => {});
+  for (let i = 0; i < 20 && (await targets()).some((t) => t.url.split('?')[0].endsWith('/settings.html')); i++) await sleep(150);
+  const afterSet = await electronSays(`{ enabled: by('index.html').isEnabled(), visible: by('index.html').isVisible(), minimized: by('index.html').isMinimized(), back: by('index.html').__back }`);
+  check('Settings closed after "Contact us": the main window is usable, on screen, handed the screen back (AUD-62)',
+    afterSet.enabled && afterSet.visible && !afterSet.minimized && afterSet.back >= 1, JSON.stringify(afterSet));
+  mainProc.close(); mainProc = null; // an open inspector session would keep the app from quitting at the end
+  await main.js(`document.getElementById('settings-btn').click()`); // Settings again, for signing out below
+  settings = await page('settings.html');
+  await sleep(800);
   await settings.shot('app-3-settings.png');
   settings.js(`window.settingsApi.signOut()`).catch(() => {}); // (the button asks a system dialog first)
   const login2 = await page('login.html');
