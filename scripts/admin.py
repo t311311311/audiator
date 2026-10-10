@@ -22,7 +22,7 @@ Accounts by email (step 4, accounts.db):
   .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com     # the balance and the paid time
   .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com zero        # the balance to 0
   .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com minus 0.02  # lower it by 0.02 USDT
-  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com reset       # as before any payment
+  .venv\\Scripts\\python.exe scripts\\admin.py balance client@firm.com reset       # like a new account
 
 Clients and support (the same card support letters carry):
   .venv\\Scripts\\python.exe scripts\\admin.py client ivan@mail.ru         # who the client is
@@ -216,9 +216,10 @@ def cmd_balance(args):
     """For testing payments (owner 2026-10-10), and for putting a balance
     right by hand: show the balance and the paid time; 'zero' — the balance to
     0; 'minus N' — lower it by N USDT, never below 0; both leave the paid time
-    alone. 'reset' — as before any payment: the balance 0 and the paid time
-    gone, the free plan again (the owner expected that of "zeroing"). Prints
-    what was there, to put it back."""
+    alone. 'reset' — like a new account (what the owner expected of
+    "zeroing"): the balance 0, the paid time gone, and the free plan's 24
+    hours not running — all 2 hours there, the next use starts them. Prints
+    what was there, to put it back (`paid`, `window`)."""
     import accounts_db
     with accounts_db.Session() as s:
         u = _account(s, args.email)
@@ -230,13 +231,15 @@ def cmd_balance(args):
         if args.action in ("zero", "reset") and args.amount is not None:
             sys.exit(f"{args.action} — без суммы: balance <email> {args.action}")
         if args.action == "reset":
-            was_until = u.paid_until
+            was_until, was_start, was_used = u.paid_until, u.window_start, u.window_used
             u.balance, u.paid_until = 0.0, None
+            u.window_start, u.window_used = None, 0
             s.commit()
             print(f"{args.email}: было — баланс {was:g} USDT, оплачено до: {paid}"
                   + (f" ({was_until.isoformat()} UTC)" if was_until else "")
-                  + " -> стало — баланс 0, срок оплаты снят: бесплатный тариф, как до оплат "
-                  "(приложение увидит, когда откроете его окно, или после перезапуска)")
+                  + f", бесплатные 24 часа: window_start={was_start} window_used={was_used}")
+            print("стало — как новый аккаунт: баланс 0, срок оплаты снят, бесплатный тариф, все 2 часа на месте "
+                  "(24 часа пойдут с первой записи; приложение увидит, когда откроете его окно, или после перезапуска)")
             return
         if args.action == "zero":
             now = 0.0
@@ -408,7 +411,7 @@ def main():
     pd.add_argument("days", type=int)
     pd.set_defaults(func=cmd_paid)
     ba = sub.add_parser("balance", help="баланс: показать; zero — обнулить баланс; minus СУММА — снизить; "
-                                        "reset — как до оплат: баланс 0 и срок оплаты снят")
+                                        "reset — как новый аккаунт: баланс 0, срок оплаты снят, все 2 бесплатных часа")
     ba.add_argument("email")
     ba.add_argument("action", nargs="?", choices=("zero", "minus", "reset"))
     ba.add_argument("amount", nargs="?", help="на сколько USDT снизить (для minus), например 0.02")
