@@ -171,6 +171,9 @@ def _profile(u: User) -> dict:
         "unlimited": bool(u.unlimited),
         "paid_until": _iso(u.paid_until),
         "balance": round(u.balance or 0.0, 2),   # USDT waiting to pay the next period
+        # What a month and a year cost now, USDT: the payment window shows these
+        # (cheap ones in a test are then seen at a glance, AUD-55).
+        "prices": {"month": billing.PRICE["month"], "year": billing.PRICE["year"]},
         "limit_seconds": FREE_DAILY_SECONDS if limited else None,
         # The account's own 24 hours: used and left in them, and when they end
         # (None: not running — the next use starts them).

@@ -39,6 +39,9 @@ const FREE = JSON.stringify({ signedIn: true, email: 'someone@example.com', plan
   resetsAt: null, limit: 7200, paidUntil: null, balance: 0 });
 const PAID = JSON.stringify({ signedIn: true, email: 'someone@example.com', plan: 'commercial', limited: false,
   paidUntil: PAID_UNTIL, balance: 2 });
+// A test with cheap prices: the server says them in the profile (AUD-55).
+const CHEAP = JSON.stringify({ signedIn: true, email: 'someone@example.com', plan: 'free', limited: true, remaining: 2600,
+  resetsAt: null, limit: 7200, paidUntil: null, balance: 0, prices: { month: 0.1, year: 1.2 } });
 const ADMIN = JSON.stringify({ signedIn: true, email: 'owner@example.com', plan: 'admin', limited: false, balance: 0 });
 
 let failed = 0;
@@ -51,7 +54,7 @@ app.whenReady().then(async () => {
     const u = new URL(req.url, 'http://x');
     const name = u.pathname.replace(/^\//, '');
     const lang = u.searchParams.get('lang') || 'ru', theme = u.searchParams.get('theme') || 'dark';
-    const acc = { free: FREE, paid: PAID, admin: ADMIN }[u.searchParams.get('acc') || 'free'];
+    const acc = { free: FREE, paid: PAID, admin: ADMIN, cheap: CHEAP }[u.searchParams.get('acc') || 'free'];
     fs.readFile(path.join(ROOT, name), 'utf8', (e, d) => {
       if (e) { res.writeHead(404); res.end(); return; }
       if (name === 'pay.html') d = d.replace('<head>', '<head>' + payStub(lang, theme, acc));
@@ -138,6 +141,15 @@ app.whenReady().then(async () => {
   check('the payment rules open', (await js('window.__calls.terms')) === 1);
   await js(`window.__accountCb({ signedIn: false })`);
   check('signed out meanwhile: the window closes', (await js('window.__calls.close')) === 1);
+
+  // The prices are the server's: a test's cheap ones show in the window (AUD-55).
+  const cards = () => js(`[...document.querySelectorAll('.period .price')].map((el) => el.textContent).join('|')`);
+  await open('lang=ru&theme=dark&acc=cheap');
+  check('the server asks 0.1 / 1.2: the window shows them, not 3 / 25', (await cards()) === '0,1\u00A0USDT|1,2\u00A0USDT', await cards());
+  await open('lang=ru&theme=dark&acc=free');
+  check('no prices from the server yet: the usual 3 / 25', (await cards()) === '3\u00A0USDT|25\u00A0USDT', await cards());
+  await js(`window.__accountCb(${CHEAP})`);
+  check('...and follows when the profile brings them', (await cards()) === '0,1\u00A0USDT|1,2\u00A0USDT', await cards());
 
   // Paid while less than a month stays on the balance: said so (AUD-43).
   await open('lang=ru&theme=dark&acc=free');

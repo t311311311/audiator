@@ -86,6 +86,7 @@ Electron (src/)                      auth-server/ (Python, FastAPI)
 
 ```bash
 npm start                                              # приложение + сам поднимет бэкенд (:8000/:3000/:5000)
+npm run start:test                                     # то же с тестовыми ценами оплаты: месяц 0,10 / год 1,20 USDT
 .venv\Scripts\python.exe -m pytest auth-server/tests   # 32 серверных теста
 node scripts/check-i18n.js                             # ключи переводов + синтаксис inline-скриптов
 .venv\Scripts\python.exe scripts\admin.py list         # аккаунты: list / create "Имя" --role admin / role / use
@@ -94,6 +95,9 @@ node scripts/check-i18n.js                             # ключи перево
 - `scripts/admin.py use <id>` пишет `token.json` + `device.json` в `%APPDATA%\audiator` —
   так приложение входит под нужным аккаунтом (у пользователя — admin, безлимит).
 - Ручной запуск бэкенда без приложения: `powershell -ExecutionPolicy Bypass -File scripts\run-local.ps1`.
+- Тест оплаты: `npm run start:test` (другие цены — `PRICE_MONTH` / `PRICE_YEAR` перед ним). Сервер, уже
+  работающий на 3000, остаётся со своими ценами — команда откажется стартовать; окно оплаты показывает цены
+  сервера. Баланс тестового аккаунта: `scripts\admin.py balance <email> [zero | minus 0.02]`, срок — `paid <email> <дней>`.
 - Доп. языки перевода: `.venv\Scripts\python.exe scripts\install-lang.py <code> <code>` (сейчас решено не качать).
 
 ## Грабли (выучено на ошибках)

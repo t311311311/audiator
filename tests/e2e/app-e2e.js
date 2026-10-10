@@ -7,7 +7,9 @@ const OUT = __dirname;
 const PORT = 3107, DBG = 9333, INSPECT = 9339; // INSPECT: the main process, to ask Electron about its windows
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aud-app-'));
 // The server's settings, shared with the support digest run against its database.
+// PRICE_*: a payment test's cheap prices — the real payment window must show them (AUD-55).
 const serverEnv = { ...process.env, PYTHONUTF8: '1', SMTP_HOST: '', MAIL_DEV_PRINT: '1', SUPPORT_TO: 'support@example.com',
+                    PRICE_MONTH: '0.10', PRICE_YEAR: '1.20',
                     ACCOUNTS_DATABASE_URL: 'sqlite:///' + path.join(tmp, 'accounts.db').replace(/\\/g, '/') };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let server, appProc, serverLog = '', appLog = '';
@@ -185,6 +187,8 @@ const codeFor = async (email) => {
   const st = await electronSays(`{ modal: by('pay.html').isModal(), parent: by('pay.html').getParentWindow() === by('settings.html'),
     settingsEnabled: by('settings.html').isEnabled(), minimizable: by('pay.html').isMinimizable() }`);
   check('the payment window is modal to Settings: Settings wait (AUD-44)', st.modal && st.parent && !st.settingsEnabled && !st.minimizable, JSON.stringify(st));
+  const shownPrices = await pay.js(`[...document.querySelectorAll('.period .price')].map((el) => el.textContent).join('|')`);
+  check('the payment window shows the prices this server asks (0.10 / 1.20), not 3 / 25', shownPrices === '0,1\u00A0USDT|1,2\u00A0USDT', shownPrices);
   await pay.shot('app-6-pay.png');
   // "Payment and balance rules": the rules open at section 4 (AUD-54).
   check('the link is named after the section', (await pay.js(`document.getElementById('terms').textContent`)) === 'Правила оплаты и баланса');

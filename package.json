@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "electron .",
+    "start:test": "node scripts/start-test.js",
     "build:engine": "node scripts/build-engine.js",
     "predist": "node scripts/build-engine.js --check",
     "dist": "electron-builder",

@@ -258,7 +258,8 @@ function view() {
     remaining = Math.max(0, p.limit_seconds - used - (pending ? pending.seconds : 0));
   }
   return { signedIn: true, email: s.email, plan: p.plan, limited, remaining, resetsAt,
-           limit: p.limit_seconds, paidUntil: p.paid_until, balance: p.balance || 0 };
+           limit: p.limit_seconds, paidUntil: p.paid_until, balance: p.balance || 0,
+           prices: p.prices || null }; // what the server asks for a month / a year, USDT
 }
 
 function signedIn() { return !!load().token; }

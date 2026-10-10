@@ -132,9 +132,11 @@
         };
         const $ = (id) => document.getElementById(id);
         const LANG = new URLSearchParams(location.search).get('lang') || undefined;
-        // The prices the server asks by default (auth-server/billing.py); the
-        // invoice itself carries the amount to pay.
+        // The prices: what the server says it asks (the account's profile), so
+        // the window and the invoice agree — in a test with cheap prices too.
+        // Until it has said: the usual ones (auth-server/billing.py).
         const PRICES = { month: 3, year: 25 };
+        const priceOf = (p) => (account && account.prices && account.prices[p] > 0 ? account.prices[p] : PRICES[p]);
         const POLL_MS = 4000;
         let period = 'month', account = null, current = null, poll = null;
 
@@ -159,7 +161,7 @@
                 name.textContent = S(`pay.${p}`);
                 const price = document.createElement('span');
                 price.className = 'price';
-                price.textContent = `${fmtUsdt(PRICES[p])} USDT`;
+                price.textContent = `${fmtUsdt(priceOf(p))} USDT`;
                 card.append(radio, name, price);
                 $('periods').appendChild(card);
             }
@@ -254,6 +256,7 @@
         window.payApi.onAccountUpdated((v) => {
             if (!v || !v.signedIn) { stopPolling(); window.payApi.close(); return; } // signed out
             account = v;
+            renderPeriods(); // the prices may have come with it
         });
 
         (async () => {

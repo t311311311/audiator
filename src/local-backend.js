@@ -59,6 +59,11 @@ async function startLocalBackend(rootDir) {
   for (const svc of SERVICES) {
     if (await portOpen(svc.port)) {
       console.log(`[backend] ${svc.name} already listening on ${svc.port}`);
+      // A payment test once ran at the real prices this way, unnoticed (AUD-55).
+      if (svc.port === 3000 && (process.env.PRICE_MONTH || process.env.PRICE_YEAR)) {
+        console.warn('[backend] PRICE_MONTH / PRICE_YEAR are NOT applied: that server keeps the prices it was started with. '
+          + 'Quit Audiator (menu -> Exit) and start again.');
+      }
       continue;
     }
     const command = svc.exe ? path.join(venvScripts, svc.exe) : python;

@@ -276,6 +276,16 @@ def test_signature_needs_every_header(monkeypatch):
         "no secret configured: nothing is trusted"
 
 
+def test_the_profile_tells_the_prices(client, codes, monkeypatch):
+    """The payment window shows what the server asks (AUD-55): the usual
+    prices, or a test's cheap ones — seen at a glance."""
+    h = signed_in(client, codes)
+    assert client.get("/api/v2/me", headers=h).json()["prices"] == {"month": 3, "year": 25}
+    monkeypatch.setitem(billing.PRICE, "month", 0.1)
+    monkeypatch.setitem(billing.PRICE, "year", 1.2)
+    assert client.get("/api/v2/me", headers=h).json()["prices"] == {"month": 0.1, "year": 1.2}
+
+
 def test_the_profile_tells_the_balance_and_renews_on_sign_in(client, codes):
     h = signed_in(client, codes)
     with accounts_db.Session() as s:
